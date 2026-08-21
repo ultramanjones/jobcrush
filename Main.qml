@@ -1,31 +1,76 @@
 import QtQuick
 
+// Main
+//
+// The application window: the navigation sidebar on the left, the current
+// page on the right. All viewmodels arrive from the composition root
+// (main.cpp) via initial properties — the view layer creates none of them.
+//
+// Pages never talk to each other (no crosstalk law): navigation wishes are
+// signalled up to here, and this window switches pages.
 Window {
-    id: root
+    id: applicationWindow
+
+    // Injected by main.cpp.
+    required property var brainChatConversationViewModel
+    required property var aiCredentialRosterViewModel
+    required property var appPreferencesViewModel
 
     width: 1280
     height: 800
     visible: true
     title: qsTr("Job Crush")
-    color: "#121418"
+    color: JobCrushTheme.appBackgroundColor
 
-    Column {
-        anchors.centerIn: parent
-        spacing: 12
+    // The theme singleton follows the preference, instantly.
+    Binding {
+        target: JobCrushTheme
+        property: "activeThemeName"
+        value: applicationWindow.appPreferencesViewModel.boardThemeName
+    }
 
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: "Job Crush"
-            color: "#E8EAED"
-            font.pixelSize: 42
-            font.weight: Font.DemiBold
+    // Which page is showing. Brain Chat is home while the board (Phase 4)
+    // doesn't exist yet.
+    property string currentPageName: "brainChat"
+
+    NavigationSidebar {
+        id: navigationSidebar
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        currentPageName: applicationWindow.currentPageName
+        onPageRequested: function(pageName) {
+            applicationWindow.currentPageName = pageName
         }
+    }
 
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTr("Phase 1 — skeleton online")
-            color: "#7A8290"
-            font.pixelSize: 16
-        }
+    Rectangle {
+        width: 1
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: navigationSidebar.right
+        color: JobCrushTheme.hairlineBorderColor
+    }
+
+    BrainChatPage {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: navigationSidebar.right
+        anchors.leftMargin: 1
+        anchors.right: parent.right
+        visible: applicationWindow.currentPageName === "brainChat"
+        conversationViewModel: applicationWindow.brainChatConversationViewModel
+        onSettingsRequested: applicationWindow.currentPageName = "settings"
+    }
+
+    SettingsPage {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: navigationSidebar.right
+        anchors.leftMargin: 1
+        anchors.right: parent.right
+        visible: applicationWindow.currentPageName === "settings"
+        credentialRosterViewModel: applicationWindow.aiCredentialRosterViewModel
+        preferencesViewModel: applicationWindow.appPreferencesViewModel
     }
 }
