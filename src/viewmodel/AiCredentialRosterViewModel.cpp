@@ -116,6 +116,11 @@ void AiCredentialRosterViewModel::openProviderKeyInstructions(
     case AiProviderKind::OpenAi:
         instructionsUrl = QStringLiteral("https://platform.openai.com/api-keys");
         break;
+    case AiProviderKind::Gemini:
+        // Google AI Studio's key page — the one sane front door into
+        // Google's API landscape.
+        instructionsUrl = QStringLiteral("https://aistudio.google.com/app/apikey");
+        break;
     case AiProviderKind::Ollama:
         instructionsUrl = QStringLiteral("https://ollama.com/download");
         break;

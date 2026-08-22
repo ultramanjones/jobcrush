@@ -12,6 +12,7 @@ namespace {
 const AiProviderKind providerRoutingOrder[] = {
     AiProviderKind::Anthropic,
     AiProviderKind::OpenAi,
+    AiProviderKind::Gemini,
     AiProviderKind::Ollama,
 };
 } // namespace
@@ -37,6 +38,7 @@ AiBrainProvider *AiBrain::providerFor(AiProviderKind providerKind) const
     case AiProviderKind::Anthropic:
         return anthropicProvider.get();
     case AiProviderKind::OpenAi:
+    case AiProviderKind::Gemini:
     case AiProviderKind::Ollama:
         return nullptr; // clients not written yet — Phase 3 ships Anthropic first
     }

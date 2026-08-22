@@ -53,8 +53,8 @@ Rectangle {
                 Text {
                     width: parent.width
                     text: "Pick a provider, drop in its key, done — green means "
-                          + "connected. AIBrain speaks Anthropic today; OpenAI and "
-                          + "Ollama are on the way."
+                          + "connected. AIBrain speaks Anthropic today; OpenAI, "
+                          + "Gemini, and Ollama are on the way."
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     wrapMode: Text.Wrap
@@ -82,7 +82,7 @@ Rectangle {
                             spacing: 8
 
                             Repeater {
-                                model: ["anthropic", "openai", "ollama"]
+                                model: ["anthropic", "openai", "gemini", "ollama"]
 
                                 delegate: Rectangle {
                                     id: providerChip
@@ -208,7 +208,11 @@ Rectangle {
                         // google their way in.
                         Text {
                             visible: !settingsPage.selectedProviderHasKey
-                            text: "Where do I get a " + settingsPage.newKeyProviderKindName
+                            // "an anthropic key" but "a gemini key" — the
+                            // article follows the provider name's first letter.
+                            text: "Where do I get "
+                                  + (/^[aeiou]/.test(settingsPage.newKeyProviderKindName) ? "an " : "a ")
+                                  + settingsPage.newKeyProviderKindName
                                   + " key?  <a href=\"open\">Open the official page</a>"
                             textFormat: Text.RichText
                             linkColor: JobCrushTheme.accentColor
