@@ -53,8 +53,8 @@ Rectangle {
                 Text {
                     width: parent.width
                     text: "Pick a provider, drop in its key, done — green means "
-                          + "connected. AIBrain speaks Anthropic today; OpenAI, "
-                          + "Gemini, and Ollama are on the way."
+                          + "connected. AIBrain speaks Anthropic and OpenRouter "
+                          + "today; OpenAI, Gemini, and Ollama are on the way."
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     wrapMode: Text.Wrap
@@ -82,7 +82,7 @@ Rectangle {
                             spacing: 8
 
                             Repeater {
-                                model: ["anthropic", "openai", "gemini", "ollama"]
+                                model: ["anthropic", "openrouter", "openai", "gemini", "ollama"]
 
                                 delegate: Rectangle {
                                     id: providerChip
@@ -203,6 +203,23 @@ Rectangle {
                             }
                         }
 
+                        // Paste guardrail: if the typed/pasted key looks like
+                        // it belongs to a different provider's slot, say so —
+                        // masked fields hide paste mistakes, this unhides them.
+                        Text {
+                            readonly property string warningText:
+                                settingsPage.credentialRosterViewModel.keyFormatWarning(
+                                    settingsPage.newKeyProviderKindName,
+                                    secretKeyInput.text)
+                            visible: !settingsPage.selectedProviderHasKey
+                                     && warningText.length > 0
+                            width: parent.width
+                            text: warningText
+                            color: JobCrushTheme.noticeTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
+                        }
+
                         // The helping hand: opens the provider's own official
                         // page for getting a key — nobody should have to
                         // google their way in.
@@ -220,6 +237,30 @@ Rectangle {
                             font.pixelSize: JobCrushTheme.smallFontSize
                             onLinkActivated: settingsPage.credentialRosterViewModel
                                 .openProviderKeyInstructions(settingsPage.newKeyProviderKindName)
+
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                cursorShape: parent.hoveredLink !== ""
+                                    ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            }
+                        }
+
+                        // For a connected provider: the accurate meter is the
+                        // provider's own dashboard — link straight to it.
+                        Text {
+                            visible: settingsPage.selectedProviderHasKey
+                                     && settingsPage.credentialRosterViewModel
+                                            .providerHasUsagePage(settingsPage.newKeyProviderKindName)
+                            text: "Wondering what this key has spent?  "
+                                  + "<a href=\"open\">Check usage on "
+                                  + settingsPage.newKeyProviderKindName + "'s dashboard</a>"
+                            textFormat: Text.RichText
+                            linkColor: JobCrushTheme.accentColor
+                            color: JobCrushTheme.secondaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            onLinkActivated: settingsPage.credentialRosterViewModel
+                                .openProviderUsagePage(settingsPage.newKeyProviderKindName)
 
                             MouseArea {
                                 anchors.fill: parent

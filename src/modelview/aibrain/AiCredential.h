@@ -10,6 +10,7 @@
 // Stored in settings as human-readable text, same philosophy as the database.
 enum class AiProviderKind {
     Anthropic,
+    OpenRouter,
     OpenAi,
     Gemini,
     Ollama
@@ -20,10 +21,11 @@ enum class AiProviderKind {
 inline QString aiProviderKindToStorageText(AiProviderKind providerKind)
 {
     switch (providerKind) {
-    case AiProviderKind::Anthropic: return QStringLiteral("anthropic");
-    case AiProviderKind::OpenAi:    return QStringLiteral("openai");
-    case AiProviderKind::Gemini:    return QStringLiteral("gemini");
-    case AiProviderKind::Ollama:    return QStringLiteral("ollama");
+    case AiProviderKind::Anthropic:  return QStringLiteral("anthropic");
+    case AiProviderKind::OpenRouter: return QStringLiteral("openrouter");
+    case AiProviderKind::OpenAi:     return QStringLiteral("openai");
+    case AiProviderKind::Gemini:     return QStringLiteral("gemini");
+    case AiProviderKind::Ollama:     return QStringLiteral("ollama");
     }
     return QStringLiteral("anthropic"); // unreachable, but the compiler deserves certainty
 }
@@ -32,9 +34,10 @@ inline QString aiProviderKindToStorageText(AiProviderKind providerKind)
 // Unknown text falls back to Anthropic rather than crashing.
 inline AiProviderKind aiProviderKindFromStorageText(const QString &storageText)
 {
-    if (storageText == QStringLiteral("openai")) return AiProviderKind::OpenAi;
-    if (storageText == QStringLiteral("gemini")) return AiProviderKind::Gemini;
-    if (storageText == QStringLiteral("ollama")) return AiProviderKind::Ollama;
+    if (storageText == QStringLiteral("openrouter")) return AiProviderKind::OpenRouter;
+    if (storageText == QStringLiteral("openai"))     return AiProviderKind::OpenAi;
+    if (storageText == QStringLiteral("gemini"))     return AiProviderKind::Gemini;
+    if (storageText == QStringLiteral("ollama"))     return AiProviderKind::Ollama;
     return AiProviderKind::Anthropic;
 }
 

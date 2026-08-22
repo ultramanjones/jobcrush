@@ -4,6 +4,7 @@
 #include "AiBrainSoul.h"
 #include "AiCredentialRoster.h"
 #include "AnthropicApiProvider.h"
+#include "OpenRouterApiProvider.h"
 
 namespace {
 // Routing order: the first kind here with an implementation AND an enabled
@@ -11,6 +12,7 @@ namespace {
 // arrives with the task layer; for now this is the whole routing policy.
 const AiProviderKind providerRoutingOrder[] = {
     AiProviderKind::Anthropic,
+    AiProviderKind::OpenRouter,
     AiProviderKind::OpenAi,
     AiProviderKind::Gemini,
     AiProviderKind::Ollama,
@@ -24,6 +26,7 @@ AiBrain::AiBrain(AiCredentialRoster &credentialRoster,
     , registeredCredentialRoster(credentialRoster)
     , brainSoul(soul)
     , anthropicProvider(std::make_unique<AnthropicApiProvider>())
+    , openRouterProvider(std::make_unique<OpenRouterApiProvider>())
 {
     // Any roster edit in Settings changes what "configured" means, instantly.
     connect(&registeredCredentialRoster, &AiCredentialRoster::rosterChanged,
@@ -37,10 +40,12 @@ AiBrainProvider *AiBrain::providerFor(AiProviderKind providerKind) const
     switch (providerKind) {
     case AiProviderKind::Anthropic:
         return anthropicProvider.get();
+    case AiProviderKind::OpenRouter:
+        return openRouterProvider.get();
     case AiProviderKind::OpenAi:
     case AiProviderKind::Gemini:
     case AiProviderKind::Ollama:
-        return nullptr; // clients not written yet — Phase 3 ships Anthropic first
+        return nullptr; // clients not written yet
     }
     return nullptr;
 }

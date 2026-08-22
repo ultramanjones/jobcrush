@@ -45,7 +45,8 @@ Rectangle {
             anchors.right: clearConversationButton.left
             anchors.rightMargin: 20
             visible: brainChatPage.conversationViewModel.brainIsConfigured
-            text: "speaking with " + brainChatPage.conversationViewModel.activeProviderName
+            text: "Moonlight · speaking via "
+                  + brainChatPage.conversationViewModel.activeProviderName
             color: JobCrushTheme.mutedTextColor
             font.pixelSize: JobCrushTheme.smallFontSize
         }
@@ -180,7 +181,7 @@ Rectangle {
                     Text {
                         id: awaitingFirstWordLabel
                         visible: messageRow.isStillStreaming && messageRow.messageText.length === 0
-                        text: "AIBrain is reading your message…"
+                        text: "Moonlight is reading your message…"
                         color: JobCrushTheme.secondaryTextColor
                         font.pixelSize: JobCrushTheme.bodyFontSize
                         font.italic: true
@@ -201,7 +202,7 @@ Rectangle {
             anchors.centerIn: parent
             visible: transcriptListView.count === 0
                      && brainChatPage.conversationViewModel.brainIsConfigured
-            text: "Ask AIBrain anything about your job search."
+            text: "Ask Moonlight anything about your job search."
             color: JobCrushTheme.mutedTextColor
             font.pixelSize: JobCrushTheme.bodyFontSize
         }
@@ -229,7 +230,7 @@ Rectangle {
 
             Text {
                 width: parent.width
-                text: "No brain configured yet"
+                text: "Moonlight isn't connected yet"
                 color: JobCrushTheme.primaryTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize + 2
                 font.weight: Font.DemiBold
@@ -238,8 +239,9 @@ Rectangle {
 
             Text {
                 width: parent.width
-                text: "Job Crush works fine without one — but Brain Chat needs "
-                      + "an AI provider. Add an API key in Settings to wake it up."
+                text: "Job Crush works fine without one — but Moonlight needs "
+                      + "an AI provider to speak through. Add an API key in "
+                      + "Settings and she wakes right up."
                 color: JobCrushTheme.secondaryTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize
                 wrapMode: Text.Wrap
@@ -322,7 +324,7 @@ Rectangle {
             // Placeholder, hand-rolled (no Controls import needed).
             Text {
                 visible: composerTextEdit.text.length === 0 && !composerTextEdit.activeFocus
-                text: "Message AIBrain…  (Enter sends, Shift+Enter for a new line)"
+                text: "Message Moonlight…  (Enter sends, Shift+Enter for a new line)"
                 color: JobCrushTheme.mutedTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize
             }

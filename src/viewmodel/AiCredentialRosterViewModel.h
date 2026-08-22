@@ -58,6 +58,18 @@ public:
     // googling (easiest-app-ever law).
     Q_INVOKABLE void openProviderKeyInstructions(const QString &providerKindName) const;
 
+    // Usage/spend lives on the provider's own dashboard — the one accurate
+    // ledger. False only for local providers (Ollama) with nothing to meter.
+    Q_INVOKABLE bool providerHasUsagePage(const QString &providerKindName) const;
+    Q_INVOKABLE void openProviderUsagePage(const QString &providerKindName) const;
+
+    // Paste guardrail: keys wear recognizable prefixes (sk-ant-, sk-or-,
+    // AIza...). If the candidate key looks like it belongs to a DIFFERENT
+    // provider than the selected slot, returns a friendly warning; empty
+    // string when all is well. Advisory only — never blocks the add.
+    Q_INVOKABLE QString keyFormatWarning(const QString &providerKindName,
+                                         const QString &candidateKey) const;
+
     // The Settings page's "add key" form lands here.
     Q_INVOKABLE void addCredential(const QString &providerKindName,
                                    const QString &secretKey,

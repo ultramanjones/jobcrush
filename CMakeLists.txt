@@ -31,6 +31,8 @@ qt_add_executable(jobcrush
     src/modelview/aibrain/AiBrainProvider.h
     src/modelview/aibrain/AnthropicApiProvider.h
     src/modelview/aibrain/AnthropicApiProvider.cpp
+    src/modelview/aibrain/OpenRouterApiProvider.h
+    src/modelview/aibrain/OpenRouterApiProvider.cpp
     src/modelview/aibrain/AiCredentialRoster.h
     src/modelview/aibrain/AiCredentialRoster.cpp
     src/modelview/aibrain/AiBrainSoul.h

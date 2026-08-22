@@ -113,6 +113,9 @@ void AiCredentialRosterViewModel::openProviderKeyInstructions(
     case AiProviderKind::Anthropic:
         instructionsUrl = QStringLiteral("https://console.anthropic.com/settings/keys");
         break;
+    case AiProviderKind::OpenRouter:
+        instructionsUrl = QStringLiteral("https://openrouter.ai/settings/keys");
+        break;
     case AiProviderKind::OpenAi:
         instructionsUrl = QStringLiteral("https://platform.openai.com/api-keys");
         break;
@@ -126,6 +129,69 @@ void AiCredentialRosterViewModel::openProviderKeyInstructions(
         break;
     }
     QDesktopServices::openUrl(QUrl(instructionsUrl));
+}
+
+bool AiCredentialRosterViewModel::providerHasUsagePage(const QString &providerKindName) const
+{
+    // Ollama runs on the user's own machine — no meter to check.
+    return aiProviderKindFromStorageText(providerKindName) != AiProviderKind::Ollama;
+}
+
+QString AiCredentialRosterViewModel::keyFormatWarning(
+    const QString &providerKindName, const QString &candidateKey) const
+{
+    const QString trimmedCandidateKey = candidateKey.trimmed();
+    if (trimmedCandidateKey.isEmpty()) {
+        return QString();
+    }
+
+    // Sniff which provider this key LOOKS like it belongs to.
+    // Order matters: "sk-or-" and "sk-ant-" are more specific than "sk-".
+    QString detectedKindName;
+    if (trimmedCandidateKey.startsWith(QStringLiteral("sk-ant-"))) {
+        detectedKindName = QStringLiteral("anthropic");
+    } else if (trimmedCandidateKey.startsWith(QStringLiteral("sk-or-"))) {
+        detectedKindName = QStringLiteral("openrouter");
+    } else if (trimmedCandidateKey.startsWith(QStringLiteral("AIza"))) {
+        detectedKindName = QStringLiteral("gemini");
+    } else if (trimmedCandidateKey.startsWith(QStringLiteral("sk-"))) {
+        detectedKindName = QStringLiteral("openai");
+    } else {
+        return QString(); // unrecognized shape — stay quiet, prefixes change
+    }
+
+    if (detectedKindName == providerKindName) {
+        return QString();
+    }
+    return QStringLiteral("Heads up — that looks like a %1 key, and this is "
+                          "the %2 slot.")
+        .arg(detectedKindName, providerKindName);
+}
+
+void AiCredentialRosterViewModel::openProviderUsagePage(const QString &providerKindName) const
+{
+    // Usage accounting belongs to the provider's own ledger — any number we
+    // computed locally would drift (other apps share the same key, token
+    // math differs per vendor). So the app links to the ONE accurate source.
+    QString usagePageUrl;
+    switch (aiProviderKindFromStorageText(providerKindName)) {
+    case AiProviderKind::Anthropic:
+        usagePageUrl = QStringLiteral("https://console.anthropic.com/settings/usage");
+        break;
+    case AiProviderKind::OpenRouter:
+        usagePageUrl = QStringLiteral("https://openrouter.ai/activity");
+        break;
+    case AiProviderKind::OpenAi:
+        usagePageUrl = QStringLiteral("https://platform.openai.com/usage");
+        break;
+    case AiProviderKind::Gemini:
+        // AI Studio's key page shows per-key usage alongside the keys.
+        usagePageUrl = QStringLiteral("https://aistudio.google.com/app/apikey");
+        break;
+    case AiProviderKind::Ollama:
+        return; // local models have no meter
+    }
+    QDesktopServices::openUrl(QUrl(usagePageUrl));
 }
 
 void AiCredentialRosterViewModel::addCredential(const QString &providerKindName,

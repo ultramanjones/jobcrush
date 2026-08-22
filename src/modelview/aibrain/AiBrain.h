@@ -69,4 +69,5 @@ private:
     AiBrainSoul &brainSoul;
 
     std::unique_ptr<AiBrainProvider> anthropicProvider;
+    std::unique_ptr<AiBrainProvider> openRouterProvider;
 };

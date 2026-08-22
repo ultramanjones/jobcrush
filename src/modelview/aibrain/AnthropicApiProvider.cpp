@@ -144,9 +144,18 @@ AiBrainReply *AnthropicApiProvider::streamConversation(
         }
 
         if (networkReply->error() != QNetworkReply::NoError) {
-            // Non-streaming error responses (bad key, overloaded, no network)
-            // arrive as one JSON body; surface Anthropic's own message when
-            // there is one, the network error text otherwise.
+            // A 401 makes Qt discard the body, so the vendor's own message is
+            // usually gone — say something a human can act on instead.
+            if (networkReply->error() == QNetworkReply::AuthenticationRequiredError) {
+                brainReply->markFailed(QStringLiteral(
+                    "Anthropic did not accept this key. Double-check it in "
+                    "Settings — or delete it there and add a fresh one from "
+                    "Anthropic's key page."));
+                return;
+            }
+            // Other error responses (overloaded, no network) arrive as one
+            // JSON body; surface Anthropic's own message when there is one,
+            // the network error text otherwise.
             const QJsonObject errorBodyObject =
                 QJsonDocument::fromJson(networkReply->readAll()).object();
             const QString apiErrorMessage = errorBodyObject

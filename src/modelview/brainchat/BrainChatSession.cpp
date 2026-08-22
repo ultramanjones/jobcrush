@@ -141,7 +141,7 @@ void BrainChatSession::sendHumanMessage(const QString &messageText)
         // bubble pretending something happened.
         transcriptMessages[brainMessageIndex].author = BrainChatMessage::Author::SystemNotice;
         transcriptMessages[brainMessageIndex].messageText =
-            QStringLiteral("AIBrain could not answer: %1").arg(humanReadableReason);
+            QStringLiteral("Moonlight could not answer: %1").arg(humanReadableReason);
         transcriptMessages[brainMessageIndex].isStillStreaming = false;
         emit messageUpdated(brainMessageIndex);
         activeBrainReply->deleteLater();
