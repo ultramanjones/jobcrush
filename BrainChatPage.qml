@@ -34,7 +34,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             anchors.left: parent.left
             anchors.leftMargin: 28
-            text: "Brain Chat"
+            text: "Moonlight (AI Brain) Chat"
             color: JobCrushTheme.primaryTextColor
             font.pixelSize: JobCrushTheme.titleFontSize
             font.weight: Font.DemiBold
@@ -45,8 +45,7 @@ Rectangle {
             anchors.right: clearConversationButton.left
             anchors.rightMargin: 20
             visible: brainChatPage.conversationViewModel.brainIsConfigured
-            text: "Moonlight · speaking via "
-                  + brainChatPage.conversationViewModel.activeProviderName
+            text: "speaking via " + brainChatPage.conversationViewModel.activeProviderName
             color: JobCrushTheme.mutedTextColor
             font.pixelSize: JobCrushTheme.smallFontSize
         }
