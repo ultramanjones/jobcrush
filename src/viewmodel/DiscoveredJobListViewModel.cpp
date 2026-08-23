@@ -1,5 +1,7 @@
 #include "DiscoveredJobListViewModel.h"
 
+#include "../modelview/pipelines/JobPipelines.h"
+
 #include <QDate>
 #include <QDesktopServices>
 #include <QLocale>
@@ -43,9 +45,12 @@ QString sourceDisplayNameFor(const QString &sourceStorageName)
 
 } // namespace
 
-DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout, QObject *parent)
+DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
+                                                       JobPipelines &pipelines,
+                                                       QObject *parent)
     : QAbstractListModel(parent)
     , discoveryJobScout(jobScout)
+    , board(pipelines)
 {
     connect(&discoveryJobScout, &JobScout::discoveriesChanged, this, [this]() {
         rebuildRowsFromJobScout();
@@ -211,4 +216,36 @@ void DiscoveredJobListViewModel::openJobPostingInBrowser(int rowIndex) const
         return;
     }
     QDesktopServices::openUrl(QUrl(sourceUrl));
+}
+
+int DiscoveredJobListViewModel::boardRevision() const
+{
+    return boardChangeCounter;
+}
+
+QString DiscoveredJobListViewModel::crushJobPostingAt(int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
+        return QStringLiteral("That job isn't on this list any more — run a sweep and "
+                              "try again.");
+    }
+
+    QString reasonText;
+    board.crushJobPosting(displayedJobPostings.at(rowIndex).jobPosting.jobPostingId,
+                          reasonText);
+
+    // Either outcome is worth saying out loud. "Already on your board" is not
+    // a failure — it is the answer to the question the user just asked.
+    ++boardChangeCounter;
+    emit boardChanged();
+    return reasonText;
+}
+
+bool DiscoveredJobListViewModel::jobPostingAtIsOnTheBoard(int rowIndex) const
+{
+    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
+        return false;
+    }
+    return board.jobPostingIsOnTheBoard(
+        displayedJobPostings.at(rowIndex).jobPosting.jobPostingId);
 }

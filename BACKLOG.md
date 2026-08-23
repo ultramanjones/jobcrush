@@ -10,36 +10,41 @@ A backlog nobody updates is a lie with a filename.
 
 ## Next up
 
-**1. Job source coverage.** The source interface and the roster are done;
+**1. Transcripts produce nothing.** A resume has an EDUCATION heading; a
+transcript does not. All three transcripts in testing were stored, read, and
+yielded zero entries, while the resume yielded everything — so the schools a
+transcript proves are the ones Job Crush cannot see. A document already
+classified as a transcript should be read as schooling whether or not it
+announces itself with a heading.
+
+**2. Job source coverage.** The source interface and the roster are done;
 Remotive and Arbeitnow are wired. Every other free board is a class that
 implements `JobSourceProvider` and a row in the roster. No scraping — APIs and
 published feeds only.
 
-**2. OAuth for OpenAI (Sign in with ChatGPT).** Launched 2 August 2026 as a
+**3. OAuth for OpenAI (Sign in with ChatGPT).** Launched 2 August 2026 as a
 closed beta: six partners, no open enrollment. The flow gets built against the
 published shape and sits behind an honest "waiting on OpenAI program access"
 state rather than a button that does nothing.
 
-**3. The rest of the brains.** An OpenAI API-key provider (an OpenRouter clone
+**4. The rest of the brains.** An OpenAI API-key provider (an OpenRouter clone
 pointed elsewhere) and Ollama. Ollama needs `providerIsSelectable` to stop
 demanding a credential — it runs on the user's own machine and has no key.
 
-**4. Brain levels.** Per-provider model choice, so "which brain" and "how much
+**5. Brain levels.** Per-provider model choice, so "which brain" and "how much
 brain" are separate questions. Replaces the hardcoded model constant in each
 provider. The naming is the hard part: model version numbers mean nothing to
 somebody who just wants their cover letter to sound like them.
 
-**5. "Moonlight clean this up!"** The button on ProDocs that hands a messy
+**6. "Moonlight clean this up!"** The button on ProDocs that hands a messy
 parse to the connected brain. Label above it reads "If you have connected an
 AI brain you can have…", and with no brain connected it greys out *and says
 why*.
 
-**6. An app-owned soul capabilities file** that refreshes on every launch, so
+**7. An app-owned soul capabilities file** that refreshes on every launch, so
 what Job Crush can DO stays current while the user's own edits to `soul.txt`
 stay theirs. Today a stale soul file means a brain that describes an app that
 no longer exists.
-
-**7. Job Pipelines (Phase 4).** The board. Drag and drop between stages.
 
 **8. Tests.** `ProspectScorer` and `JobSearchProfile` under QTest, wired into
 CI. The README says the core is testable without a window; nothing currently
@@ -58,6 +63,13 @@ a page, and Job Crush could only tell them so. Must not spend the user's AI
 credits to do it.
 
 ---
+
+## Shipped
+
+The Job Pipelines board (what used to be Phase 4): five columns, cards dragged
+between them, notes on each card, and CRUSH on every Discoveries row to put a
+job up there. Reaching Applied stamps the date, once, and dragging back out
+does not erase it.
 
 ## Talk about first
 
@@ -81,6 +93,29 @@ like?
 **A first-launch tutorial.** Very fast. Reachable later from Settings.
 Dismissible, with an unchecked box reading exactly "Never Show Me This Again".
 Building it before the features settle means writing it twice.
+
+**Forwarding jobs in by email.** Give each person a virtual address when they
+sign in — verified against their real one — so they can forward a LinkedIn job
+alert straight into Job Crush. A LinkedIn alert carries only the first few
+lines of a posting, but that is enough to go looking for the SAME job on the
+sites Job Crush can actually read, and hand back the full description from
+there. It turns the one board we will not scrape into a lead instead of a dead
+end.
+
+Cloudflare Email Routing is the candidate: inbound routing is free, catch-all
+is supported, and an Email Worker can take the whole domain. Checked 23 Aug
+2026 — the caps are **200 routing rules per domain** and **200 verified
+destination addresses per account**, which rules out one rule per user; the
+shape has to be a catch-all into an Email Worker that reads the address and
+does the routing itself. Inbound messages are capped at 25 MiB.
+
+Ultra has details to work out first. Not started until he says so.
+
+**Adding a job by hand, or by pasting the description in.** For the sites no
+API and no automation can reach. Somebody who found a job anywhere at all
+should be able to put it on their board and track it like any other — an app
+that only tracks the jobs IT found is an app that quietly tells people their
+real leads do not count.
 
 **Paid and subscription job sources.** Not v1, not alpha. Later.
 

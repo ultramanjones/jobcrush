@@ -37,5 +37,5 @@ struct ParsedResumeInsights {
 // A calculation with no state, so it stays a plain ModelView class.
 class ResumeInsightParser {
 public:
-    ParsedResumeInsights parseResumeText(const QString &resumeText) const;
+    ParsedResumeInsights parseResumeText(const QString &rawResumeText) const;
 };

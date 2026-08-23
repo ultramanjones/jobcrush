@@ -44,6 +44,23 @@ public:
     // from this, which is how documents make job matching sharper.
     QString allDocumentTextJoined() const;
 
+    // --- When the reader itself gets better -------------------------------
+    //
+    // Job Crush's resume reader improves between builds, and the entries in
+    // the database were produced by whichever version happened to be running
+    // that day. A user who dropped a resume in August should not be stuck
+    // forever with August's mistakes — "Tulsa Community College 2000 - 2001
+    // Auburn University 1993 - 1994" sitting in a school box because that
+    // build could not tell two schools apart.
+    //
+    // So the reader carries a version. When the running one is newer than the
+    // one that last read this database, everything the READER produced and
+    // nobody has typed into is thrown away, every document is marked unread,
+    // and they are read again by the better reader. Words the user typed are
+    // never touched. Returns how many entries the fresh reading produced, or
+    // 0 when the reader has not changed and there is nothing to do.
+    int rereadEverythingIfTheReaderImproved();
+
     // Reads any document that has never been read, and nothing else.
     //
     // Called once at startup so documents dropped before this feature existed

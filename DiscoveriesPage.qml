@@ -16,6 +16,11 @@ Rectangle {
 
     // Injected from Main.
     property var discoveredJobListViewModel
+
+    // What the last CRUSH did, in the app's own words. Shown in a strip at the
+    // bottom rather than a dialog: pressing CRUSH is a small, frequent act and
+    // a modal for every one of them would make the good part feel like work.
+    property string crushOutcomeText: ""
     property var jobSourceRosterViewModel
 
     // Asks Main to navigate (empty states point the user at Settings).
@@ -431,9 +436,10 @@ Rectangle {
             // cleaner should be able to make a row look wrong, never to make
             // it a screen tall. The ceiling is the real fix's second lock:
             // nothing a source sends can push a row past this.
-            readonly property int tallestARowMayEver: 132
+            readonly property int tallestARowMayEver: 138
             height: Math.min(tallestARowMayEver,
-                             discoveredJobRowColumn.implicitHeight + 24)
+                             Math.max(rowRightLane.implicitHeight + 24,
+                                      discoveredJobRowColumn.implicitHeight + 24))
             clip: true
             radius: 8
             color: discoveredJobRowMouseArea.containsMouse
@@ -441,16 +447,30 @@ Rectangle {
             border.color: JobCrushTheme.hairlineBorderColor
             border.width: 1
 
+            // The right-hand lane: the score, and the button that acts on it.
+            //
+            // A LANE rather than two free-floating anchors, because the words
+            // on the left have to know where to stop. Without it the summary
+            // line ran clean underneath the CRUSH button and came out looking
+            // like a rendering fault.
+            Item {
+                id: rowRightLane
+                anchors.right: parent.right
+                anchors.rightMargin: 14
+                anchors.top: parent.top
+                anchors.topMargin: 12
+                width: 84
+                implicitHeight: matchScoreBadge.height + 8 + crushButton.height
+            }
+
             // The match badge. Only shown once there is a profile to match
             // against — a score of 0 for everything would be noise dressed up
             // as information.
             Rectangle {
                 id: matchScoreBadge
                 visible: discoveriesPage.discoveredJobListViewModel.canRankProspects
-                anchors.right: parent.right
-                anchors.rightMargin: 14
-                anchors.top: parent.top
-                anchors.topMargin: 14
+                anchors.right: rowRightLane.right
+                anchors.top: rowRightLane.top
                 width: 46
                 height: 26
                 radius: 6
@@ -479,7 +499,7 @@ Rectangle {
                 id: discoveredJobRowColumn
                 anchors.left: parent.left
                 anchors.leftMargin: 16
-                anchors.right: matchScoreBadge.visible ? matchScoreBadge.left : parent.right
+                anchors.right: rowRightLane.left
                 anchors.rightMargin: 14
                 anchors.top: parent.top
                 anchors.topMargin: 12
@@ -540,6 +560,61 @@ Rectangle {
                 }
             }
 
+            // CRUSH. The whole point of finding a job is going after it, and
+            // the moment you decide is the moment you are looking at the row —
+            // not after navigating somewhere else to look for a button.
+            Rectangle {
+                id: crushButton
+
+                anchors.right: rowRightLane.right
+                anchors.top: matchScoreBadge.visible
+                    ? matchScoreBadge.bottom : rowRightLane.top
+                anchors.topMargin: matchScoreBadge.visible ? 8 : 0
+                width: Math.max(crushButtonLabel.implicitWidth + 24, 78)
+                height: 28
+                radius: 6
+                z: 2
+
+                readonly property bool alreadyOnTheBoard: {
+                    discoveriesPage.discoveredJobListViewModel.boardRevision
+                    return discoveriesPage.discoveredJobListViewModel
+                        .jobPostingAtIsOnTheBoard(discoveredJobRow.index)
+                }
+
+                color: crushButton.alreadyOnTheBoard
+                    ? "transparent"
+                    : (crushButtonMouseArea.containsMouse
+                           ? Qt.lighter(JobCrushTheme.callToActionColor, 1.15)
+                           : JobCrushTheme.callToActionColor)
+                border.width: crushButton.alreadyOnTheBoard ? 1 : 0
+                border.color: JobCrushTheme.positiveColor
+
+                Text {
+                    id: crushButtonLabel
+                    anchors.centerIn: parent
+                    // Says what IS rather than what to do, once it is done.
+                    // A button that still says CRUSH after you crushed it
+                    // invites you to press it again and be told no.
+                    text: crushButton.alreadyOnTheBoard ? "on your board" : "CRUSH"
+                    color: crushButton.alreadyOnTheBoard
+                        ? JobCrushTheme.positiveColor : JobCrushTheme.onAccentTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    font.weight: Font.Bold
+                    font.letterSpacing: crushButton.alreadyOnTheBoard ? 0 : 1
+                }
+
+                MouseArea {
+                    id: crushButtonMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: !crushButton.alreadyOnTheBoard
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: discoveriesPage.crushOutcomeText
+                        = discoveriesPage.discoveredJobListViewModel
+                              .crushJobPostingAt(discoveredJobRow.index)
+                }
+            }
+
             MouseArea {
                 id: discoveredJobRowMouseArea
                 anchors.fill: parent
@@ -561,6 +636,55 @@ Rectangle {
         anchors.right: parent.right
         anchors.rightMargin: 18
         flickableTarget: discoveredJobListView
+    }
+
+    // ------------------------------------------------------------------
+    // What the last CRUSH did
+    // ------------------------------------------------------------------
+    Rectangle {
+        id: crushOutcomeStrip
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 16
+        visible: discoveriesPage.crushOutcomeText.length > 0
+        height: 42
+        radius: 8
+        z: 20
+        color: JobCrushTheme.panelBackgroundColor
+        border.width: 2
+        border.color: JobCrushTheme.positiveColor
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.right: dismissCrushOutcome.left
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            text: discoveriesPage.crushOutcomeText
+            textFormat: Text.PlainText
+            color: JobCrushTheme.primaryTextColor
+            font.pixelSize: JobCrushTheme.smallFontSize
+            elide: Text.ElideRight
+        }
+
+        Text {
+            id: dismissCrushOutcome
+            anchors.right: parent.right
+            anchors.rightMargin: 14
+            anchors.verticalCenter: parent.verticalCenter
+            text: "×"
+            color: JobCrushTheme.mutedTextColor
+            font.pixelSize: JobCrushTheme.bodyFontSize
+
+            MouseArea {
+                anchors.fill: parent
+                anchors.margins: -8
+                cursorShape: Qt.PointingHandCursor
+                onClicked: discoveriesPage.crushOutcomeText = ""
+            }
+        }
     }
 
     // ------------------------------------------------------------------

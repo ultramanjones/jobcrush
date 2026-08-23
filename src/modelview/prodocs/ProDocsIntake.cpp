@@ -1,6 +1,7 @@
 #include "ProDocsIntake.h"
 
 #include <QDateTime>
+#include <QSettings>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -9,6 +10,28 @@
 #include "../../model/ProfessionalDocumentRepository.h"
 #include "DocumentKind.h"
 #include "DroppedFileTypes.h"
+
+namespace {
+
+// THE READER'S VERSION. Bump this whenever ResumeInsightParser learns
+// something — a new heading, a smarter split, a bug fixed — and every user's
+// documents are read again by the better reader on their next launch,
+// replacing what the old one got wrong.
+//
+//   1  the first reader that shipped
+//   2  fixed: non-breaking spaces made every resume line one unsplittable
+//      word, so two schools on one line became one school with a strange
+//      name. Explicit "|" field separators are no longer second-guessed, and
+//      a run of spaces is now read as the column gap it is.
+constexpr int currentInsightsReaderVersion = 3;
+
+// Where the last-used reader version is remembered. QSettings alongside the
+// rest of the app's preferences — this is a fact about the installation, not
+// about any one document.
+const QString insightsReaderVersionSettingsKey =
+    QStringLiteral("proDocs/insightsReaderVersion");
+
+} // namespace
 
 ProDocsIntake::ProDocsIntake(ProfessionalDocumentRepository &documentRepository,
                              CareerHistoryRepository &careerRepository,
@@ -149,9 +172,22 @@ int ProDocsIntake::recordInsightsFromDocument(qint64 professionalDocumentId,
     const ParsedResumeInsights parsedInsights = resumeParser.parseResumeText(documentText);
     int storedEntryCount = 0;
 
+    // Reading a document twice must not say everything twice.
+    //
+    // This is the half that was missing. "Read my documents again" clears the
+    // entries Job Crush guessed and keeps the ones the user confirmed — which
+    // is right — and then re-read every document and created the confirmed
+    // ones all over again. Every entry the user had ticked ended up with an
+    // identical unconfirmed twin sitting under it, and a second press made a
+    // third. Skipping a line already on record from this same document ends
+    // that, and leaves genuine hand-typed entries (which carry no source
+    // line) completely alone.
     for (WorkExperience workExperience : parsedInsights.workExperiences) {
         workExperience.sourceDocumentId = professionalDocumentId;
         workExperience.isConfirmedByUser = false; // a reading, not a fact
+        if (careerHistoryRepository.workExperienceAlreadyRecorded(workExperience)) {
+            continue;
+        }
         if (careerHistoryRepository.insertWorkExperience(workExperience)) {
             ++storedEntryCount;
         }
@@ -159,6 +195,9 @@ int ProDocsIntake::recordInsightsFromDocument(qint64 professionalDocumentId,
     for (EducationRecord educationRecord : parsedInsights.educationRecords) {
         educationRecord.sourceDocumentId = professionalDocumentId;
         educationRecord.isConfirmedByUser = false;
+        if (careerHistoryRepository.educationRecordAlreadyRecorded(educationRecord)) {
+            continue;
+        }
         if (careerHistoryRepository.insertEducationRecord(educationRecord)) {
             ++storedEntryCount;
         }
@@ -184,6 +223,33 @@ int ProDocsIntake::readAnyDocumentsNotReadYet()
         emit careerHistoryChanged();
     }
     return entriesFound;
+}
+
+int ProDocsIntake::rereadEverythingIfTheReaderImproved()
+{
+    QSettings settings;
+    const int readerVersionThatLastRead =
+        settings.value(insightsReaderVersionSettingsKey, 0).toInt();
+
+    if (readerVersionThatLastRead >= currentInsightsReaderVersion) {
+        return 0; // same reader, same answers — nothing to be gained
+    }
+
+    // Record the new version FIRST. If something below fails, the user gets
+    // one disappointing startup rather than a re-read that tries and fails on
+    // every launch from now on.
+    settings.setValue(insightsReaderVersionSettingsKey, currentInsightsReaderVersion);
+
+    // Out with the old reader's work — and nothing else. Entries somebody
+    // typed into carry wasEditedByUser and are left exactly where they are.
+    if (!careerHistoryRepository.removeEntriesTheReaderProducedAndNobodyTouched()) {
+        return 0;
+    }
+    if (!repository.markEveryDocumentUnread()) {
+        return 0;
+    }
+
+    return readAnyDocumentsNotReadYet();
 }
 
 QString ProDocsIntake::rereadEveryDocument()

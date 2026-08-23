@@ -181,6 +181,19 @@ bool JobCrushDatabase::createSchemaIfMissing()
         return false;
     }
 
+    // Did a PERSON touch this entry, or is it still exactly what the reader
+    // produced? The difference decides what a better reader is allowed to
+    // throw away and re-do. Defaults to 0, which is the truth for every row
+    // that existed before the column did: they were read, not written.
+    if (!addColumnIfMissing(QStringLiteral("workExperience"),
+                            QStringLiteral("wasEditedByUser"),
+                            QStringLiteral("INTEGER NOT NULL DEFAULT 0"))
+        || !addColumnIfMissing(QStringLiteral("educationRecord"),
+                               QStringLiteral("wasEditedByUser"),
+                               QStringLiteral("INTEGER NOT NULL DEFAULT 0"))) {
+        return false;
+    }
+
     // The same job must never land twice. A source's own id, paired with the
     // source name, is the only identity Job Crush trusts — titles and company
     // names are written by humans and vary between boards.

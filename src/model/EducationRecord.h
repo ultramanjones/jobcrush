@@ -18,4 +18,8 @@ struct EducationRecord {
     QString sourceLineText;
 
     bool isConfirmedByUser = false;
+
+    // See WorkExperience: agreeing with a reading and writing your own words
+    // are different promises, and only the second one is untouchable.
+    bool wasEditedByUser = false;
 };

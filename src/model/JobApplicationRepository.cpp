@@ -8,6 +8,17 @@
 
 namespace {
 
+// An unassigned QString is NULL, not empty, and binding NULL to a NOT NULL
+// column makes SQLite refuse the whole row. This trap has now cost this
+// project twice — it swallowed every Arbeitnow discovery for days, and then
+// it stopped CRUSH putting anything on the board at all, because a campaign
+// that has not been applied to yet has no appliedTimestamp. Every repository
+// in Job Crush carries this guard for exactly that reason.
+QString textOrEmpty(const QString &possiblyNullText)
+{
+    return possiblyNullText.isNull() ? QString::fromLatin1("") : possiblyNullText;
+}
+
 // One place that knows how a query row becomes a JobApplication.
 JobApplication jobApplicationFromQueryRow(const QSqlQuery &row)
 {
@@ -44,14 +55,18 @@ bool JobApplicationRepository::insertJobApplication(JobApplication &jobApplicati
     insertQuery.bindValue(QStringLiteral(":pipelineStage"),
                           pipelineStageToStorageText(jobApplication.pipelineStage));
     insertQuery.bindValue(QStringLiteral(":targetedTimestamp"),
-                          jobApplication.targetedTimestamp.toString(Qt::ISODate));
+                          textOrEmpty(jobApplication.targetedTimestamp.toString(Qt::ISODate)));
     insertQuery.bindValue(QStringLiteral(":appliedTimestamp"),
                           jobApplication.appliedTimestamp.isValid()
                               ? jobApplication.appliedTimestamp.toString(Qt::ISODate)
-                              : QString());
-    insertQuery.bindValue(QStringLiteral(":notesText"), jobApplication.notesText);
+                              : QString::fromLatin1(""));
+    insertQuery.bindValue(QStringLiteral(":notesText"),
+                          textOrEmpty(jobApplication.notesText));
 
     if (!insertQuery.exec()) {
+        // A repository that returns false and keeps the reason to itself
+        // forces every caller above it to guess. This one cost an afternoon.
+        lastErrorDescription = insertQuery.lastError().text();
         return false;
     }
 
@@ -93,7 +108,36 @@ bool JobApplicationRepository::updateNotesText(qint64 jobApplicationId,
     updateQuery.prepare(QStringLiteral(
         "UPDATE jobApplication SET notesText = :notesText "
         "WHERE jobApplicationId = :jobApplicationId"));
-    updateQuery.bindValue(QStringLiteral(":notesText"), newNotesText);
+    updateQuery.bindValue(QStringLiteral(":notesText"), textOrEmpty(newNotesText));
     updateQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
     return updateQuery.exec();
+}
+
+bool JobApplicationRepository::updateAppliedTimestamp(qint64 jobApplicationId,
+                                                      const QDateTime &appliedTimestamp)
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE jobApplication SET appliedTimestamp = :appliedTimestamp "
+        "WHERE jobApplicationId = :jobApplicationId"));
+    updateQuery.bindValue(QStringLiteral(":appliedTimestamp"),
+                          appliedTimestamp.isValid()
+                              ? appliedTimestamp.toString(Qt::ISODate)
+                              : QString::fromLatin1(""));
+    updateQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
+    return updateQuery.exec();
+}
+
+bool JobApplicationRepository::removeJobApplication(qint64 jobApplicationId)
+{
+    QSqlQuery deleteQuery(jobCrushDatabase.connection());
+    deleteQuery.prepare(QStringLiteral(
+        "DELETE FROM jobApplication WHERE jobApplicationId = :jobApplicationId"));
+    deleteQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
+    return deleteQuery.exec();
+}
+
+QString JobApplicationRepository::lastErrorText() const
+{
+    return lastErrorDescription;
 }

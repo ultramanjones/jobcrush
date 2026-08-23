@@ -13,6 +13,7 @@ Window {
 
     // Injected by main.cpp.
     required property var brainChatConversationViewModel
+    required property var jobPipelineBoardViewModel
     required property var aiCredentialRosterViewModel
     required property var appPreferencesViewModel
     required property var selectedBrainConnectionViewModel
@@ -36,8 +37,9 @@ Window {
         value: applicationWindow.appPreferencesViewModel.boardThemeName
     }
 
-    // Which page is showing. Brain Chat is home while the board (Phase 4)
-    // doesn't exist yet.
+    // Which page is showing. Brain Chat is home rather than the board: on a
+    // first run the board is empty, and an empty board is a worse greeting
+    // than something that can talk back.
     property string currentPageName: "brainChat"
 
     NavigationSidebar {
@@ -57,6 +59,16 @@ Window {
         anchors.bottom: parent.bottom
         anchors.left: navigationSidebar.right
         color: JobCrushTheme.hairlineBorderColor
+    }
+
+    JobPipelinesPage {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: navigationSidebar.right
+        anchors.leftMargin: 1
+        anchors.right: parent.right
+        visible: applicationWindow.currentPageName === "pipelines"
+        jobPipelineBoardViewModel: applicationWindow.jobPipelineBoardViewModel
     }
 
     BrainChatPage {
@@ -109,6 +121,27 @@ Window {
 
         anchors.fill: parent
 
+        // FILES ONLY, by KEY. Not a detail — a bug that cost real time.
+        //
+        // A DropArea filling the window accepts EVERY drag, including the
+        // app's own. Dragging a card between columns on the Job Pipelines
+        // board raised this basket over the whole window, dimmed the board the
+        // user was aiming at, and swallowed the drop — so cards simply refused
+        // to move, with no error and nothing in a log.
+        //
+        // Refusing the drag in onEntered is NOT enough: containsDrag still
+        // goes true and the basket still flashes up. Keys are the mechanism
+        // that actually works. "text/uri-list" is the MIME type a file drag
+        // from the desktop carries, and Job Crush's own board cards carry
+        // "jobCrushBoardCard" — so neither can ever be mistaken for the other.
+        keys: ["text/uri-list"]
+        //
+        // A DropArea filling the window accepts EVERY drag, including the
+        // app's own. Dragging a card between columns on the Job Pipelines
+        // board raised the ProDocs basket over the whole window, dimmed the
+        // board the user was aiming at, and swallowed the drop — so cards
+        // simply refused to move, with no error and nothing in a log.
+        //
         onDropped: function(dropEvent) {
             if (!dropEvent.hasUrls) {
                 return

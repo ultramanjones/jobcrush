@@ -89,6 +89,21 @@ bool EducationListViewModel::saveRow(int rowIndex)
     return true;
 }
 
+// Saving a value the USER typed, as opposed to one Job Crush read.
+//
+// The difference is not cosmetic. When the reader improves and re-reads every
+// document, it is allowed to throw away and redo its own output — and it must
+// not touch a word somebody wrote. This is where a row stops being a reading
+// and becomes the user's.
+bool EducationListViewModel::saveRowTheUserTypedInto(int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= loadedEducationRecords.count()) {
+        return false;
+    }
+    loadedEducationRecords[rowIndex].wasEditedByUser = true;
+    return saveRow(rowIndex);
+}
+
 void EducationListViewModel::setSchoolNameAt(int rowIndex, const QString &schoolName)
 {
     if (rowIndex < 0 || rowIndex >= loadedEducationRecords.count()
@@ -96,7 +111,7 @@ void EducationListViewModel::setSchoolNameAt(int rowIndex, const QString &school
         return;
     }
     loadedEducationRecords[rowIndex].schoolName = schoolName;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void EducationListViewModel::setCredentialTextAt(int rowIndex, const QString &credentialText)
@@ -106,7 +121,7 @@ void EducationListViewModel::setCredentialTextAt(int rowIndex, const QString &cr
         return;
     }
     loadedEducationRecords[rowIndex].credentialText = credentialText;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void EducationListViewModel::setFieldOfStudyTextAt(int rowIndex, const QString &fieldOfStudyText)
@@ -116,7 +131,7 @@ void EducationListViewModel::setFieldOfStudyTextAt(int rowIndex, const QString &
         return;
     }
     loadedEducationRecords[rowIndex].fieldOfStudyText = fieldOfStudyText;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void EducationListViewModel::setStartDateTextAt(int rowIndex, const QString &startDateText)
@@ -126,7 +141,7 @@ void EducationListViewModel::setStartDateTextAt(int rowIndex, const QString &sta
         return;
     }
     loadedEducationRecords[rowIndex].startDateText = startDateText;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void EducationListViewModel::setEndDateTextAt(int rowIndex, const QString &endDateText)
@@ -136,7 +151,7 @@ void EducationListViewModel::setEndDateTextAt(int rowIndex, const QString &endDa
         return;
     }
     loadedEducationRecords[rowIndex].endDateText = endDateText;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void EducationListViewModel::setConfirmedAt(int rowIndex, bool isConfirmed)
@@ -151,7 +166,8 @@ void EducationListViewModel::setConfirmedAt(int rowIndex, bool isConfirmed)
 void EducationListViewModel::addEmptyEducationRecord()
 {
     EducationRecord educationRecord;
-    educationRecord.isConfirmedByUser = true; // typed by hand, so it is theirs
+    educationRecord.isConfirmedByUser = true;
+    educationRecord.wasEditedByUser = true; // typed by hand, so it is theirs
     if (repository.insertEducationRecord(educationRecord)) {
         reload();
     }

@@ -71,6 +71,9 @@ private:
     void reload();
     bool saveRow(int rowIndex);
 
+    // saveRow, plus the record that a person wrote this. See the .cpp.
+    bool saveRowTheUserTypedInto(int rowIndex);
+
     CareerHistoryRepository &repository;
     QList<WorkExperience> loadedWorkExperiences;
 };

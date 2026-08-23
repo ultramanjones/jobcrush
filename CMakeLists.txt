@@ -86,6 +86,9 @@ qt_add_executable(jobcrush
     src/modelview/prodocs/ZipArchiveReader.cpp
     src/modelview/prodocs/WordDocumentReader.h
     src/modelview/prodocs/WordDocumentReader.cpp
+    src/modelview/pipelines/JobPipelines.h
+    src/modelview/pipelines/JobPipelines.cpp
+    src/modelview/prodocs/PlainTextNormalizer.h
     src/modelview/prodocs/ResumeInsightParser.h
     src/modelview/prodocs/ResumeInsightParser.cpp
     src/modelview/prodocs/ProDocsIntake.h
@@ -100,6 +103,8 @@ qt_add_executable(jobcrush
     src/viewmodel/AppPreferencesViewModel.cpp
     src/viewmodel/SelectedBrainConnectionViewModel.h
     src/viewmodel/SelectedBrainConnectionViewModel.cpp
+    src/viewmodel/JobPipelineBoardViewModel.h
+    src/viewmodel/JobPipelineBoardViewModel.cpp
     src/viewmodel/DiscoveredJobListViewModel.h
     src/viewmodel/DiscoveredJobListViewModel.cpp
     src/viewmodel/JobSourceRosterViewModel.h
@@ -143,6 +148,7 @@ qt_add_qml_module(jobcrush
         NavigationSidebar.qml
         BrainChatPage.qml
         DiscoveriesPage.qml
+        JobPipelinesPage.qml
         ProDocsPage.qml
         SettingsPage.qml
         InlineEditField.qml

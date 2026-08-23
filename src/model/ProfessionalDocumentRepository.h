@@ -28,6 +28,11 @@ public:
     // so it is never read a second time behind the user's back.
     bool markDocumentAsRead(qint64 professionalDocumentId);
 
+    // Puts every document back to "not read yet", so the next startup reads
+    // them all again. Used when the READER has improved — the documents have
+    // not changed, but what Job Crush can get out of them has.
+    bool markEveryDocumentUnread();
+
     // The user correcting a guess. Classification is a heuristic, so being
     // wrong is expected and putting it right must cost one click.
     bool updateDocumentKind(qint64 professionalDocumentId, const QString &documentKind);

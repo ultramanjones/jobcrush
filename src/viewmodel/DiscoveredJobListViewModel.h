@@ -6,6 +6,8 @@
 
 #include "../modelview/jobscout/JobScout.h"
 
+class JobPipelines;
+
 // DiscoveredJobListViewModel
 //
 // Serves the Discoveries page its rows: either one job site's finds, or the
@@ -73,7 +75,11 @@ public:
         IsRemoteRoleRole
     };
 
-    DiscoveredJobListViewModel(JobScout &jobScout, QObject *parent = nullptr);
+    // Takes the board as well as the scout: a discovery's whole purpose is to
+    // become something on the board, and the button that does it belongs on
+    // the row where the job is, not on a screen the user has to go and find.
+    DiscoveredJobListViewModel(JobScout &jobScout, JobPipelines &pipelines,
+                               QObject *parent = nullptr);
 
     int rowCount(const QModelIndex &parentIndex = QModelIndex()) const override;
     QVariant data(const QModelIndex &modelIndex, int role) const override;
@@ -101,7 +107,23 @@ public:
     // reproduces a posting as if it were its own.
     Q_INVOKABLE void openJobPostingInBrowser(int rowIndex) const;
 
+    // CRUSH. Puts this job on the board at Crushed. Returns the sentence to
+    // show the user — it says what happened either way, including "already on
+    // your board", which is information rather than a failure.
+    Q_INVOKABLE QString crushJobPostingAt(int rowIndex);
+
+    // Whether this row is already on the board, so the row can say so instead
+    // of offering a button that will only decline.
+    Q_INVOKABLE bool jobPostingAtIsOnTheBoard(int rowIndex) const;
+
+    // Bumped whenever the board changes, so the per-row bindings above
+    // re-evaluate. Same technique as the credential roster.
+    Q_PROPERTY(int boardRevision READ boardRevision NOTIFY boardChanged)
+    int boardRevision() const;
+
 signals:
+    void boardChanged();
+
     void activeTabSourceNameChanged();
     void showingOutsideSearchAreaChanged();
     void discoveredJobsChanged();
@@ -111,6 +133,8 @@ private:
     void rebuildRowsFromJobScout();
 
     JobScout &discoveryJobScout;
+    JobPipelines &board;
+    int boardChangeCounter = 0;
     QString storedActiveTabSourceName;   // empty = Top Prospects
     bool storedShowingOutsideSearchArea = false;
     QList<ScoredJobPosting> displayedJobPostings;

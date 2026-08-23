@@ -89,6 +89,21 @@ bool WorkExperienceListViewModel::saveRow(int rowIndex)
     return true;
 }
 
+// Saving a value the USER typed, as opposed to one Job Crush read.
+//
+// The difference is not cosmetic. When the reader improves and re-reads every
+// document, it is allowed to throw away and redo its own output — and it must
+// not touch a word somebody wrote. This is where a row stops being a reading
+// and becomes the user's.
+bool WorkExperienceListViewModel::saveRowTheUserTypedInto(int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= loadedWorkExperiences.count()) {
+        return false;
+    }
+    loadedWorkExperiences[rowIndex].wasEditedByUser = true;
+    return saveRow(rowIndex);
+}
+
 void WorkExperienceListViewModel::setEmployerNameAt(int rowIndex, const QString &employerName)
 {
     if (rowIndex < 0 || rowIndex >= loadedWorkExperiences.count()
@@ -96,7 +111,7 @@ void WorkExperienceListViewModel::setEmployerNameAt(int rowIndex, const QString 
         return;
     }
     loadedWorkExperiences[rowIndex].employerName = employerName;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void WorkExperienceListViewModel::setRoleTitleAt(int rowIndex, const QString &roleTitle)
@@ -106,7 +121,7 @@ void WorkExperienceListViewModel::setRoleTitleAt(int rowIndex, const QString &ro
         return;
     }
     loadedWorkExperiences[rowIndex].roleTitle = roleTitle;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void WorkExperienceListViewModel::setStartDateTextAt(int rowIndex, const QString &startDateText)
@@ -116,7 +131,7 @@ void WorkExperienceListViewModel::setStartDateTextAt(int rowIndex, const QString
         return;
     }
     loadedWorkExperiences[rowIndex].startDateText = startDateText;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void WorkExperienceListViewModel::setEndDateTextAt(int rowIndex, const QString &endDateText)
@@ -126,7 +141,7 @@ void WorkExperienceListViewModel::setEndDateTextAt(int rowIndex, const QString &
         return;
     }
     loadedWorkExperiences[rowIndex].endDateText = endDateText;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void WorkExperienceListViewModel::setSummaryTextAt(int rowIndex, const QString &summaryText)
@@ -136,7 +151,7 @@ void WorkExperienceListViewModel::setSummaryTextAt(int rowIndex, const QString &
         return;
     }
     loadedWorkExperiences[rowIndex].summaryText = summaryText;
-    saveRow(rowIndex);
+    saveRowTheUserTypedInto(rowIndex);
 }
 
 void WorkExperienceListViewModel::setConfirmedAt(int rowIndex, bool isConfirmed)
@@ -154,6 +169,7 @@ void WorkExperienceListViewModel::addEmptyWorkExperience()
     // Typed by hand, so it is the user's own from the first keystroke and
     // survives every re-read of their documents.
     workExperience.isConfirmedByUser = true;
+    workExperience.wasEditedByUser = true;
     if (repository.insertWorkExperience(workExperience)) {
         reload();
     }

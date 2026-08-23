@@ -20,9 +20,15 @@ public:
         QString note;             // empty when the text came out fine
     };
 
+    // Reads the file AND normalizes what came out — see the .cpp for why the
+    // normalizing step is not optional.
     ExtractionResult extractTextFrom(const QString &filePath) const;
 
 private:
+    // Picks the right reader for the file. Called only by extractTextFrom,
+    // which is what guarantees nothing skips normalization on the way out.
+    ExtractionResult extractTextFromFileByKind(const QString &filePath) const;
+
     ExtractionResult extractFromPlainTextFile(const QString &filePath) const;
     ExtractionResult extractFromPortableDocument(const QString &filePath) const;
     ExtractionResult extractFromWordDocument(const QString &filePath) const;

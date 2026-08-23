@@ -28,4 +28,11 @@ struct WorkExperience {
     // True once the user has looked at this entry and let it stand. Until
     // then it is Job Crush's reading, not a fact, and the UI says so.
     bool isConfirmedByUser = false;
+
+    // True once the user has TYPED in this entry — as opposed to merely
+    // agreeing with it. The two are different promises: ticking says "your
+    // reading is right", typing says "these are my words". When the reader
+    // improves and re-reads everything, its own old output is fair game and
+    // somebody's words never are.
+    bool wasEditedByUser = false;
 };

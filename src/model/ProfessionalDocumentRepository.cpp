@@ -166,6 +166,17 @@ QString ProfessionalDocumentRepository::lastErrorText() const
     return lastErrorDescription;
 }
 
+bool ProfessionalDocumentRepository::markEveryDocumentUnread()
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    if (!updateQuery.exec(QStringLiteral(
+            "UPDATE professionalDocument SET hasBeenReadForInsights = 0"))) {
+        lastErrorDescription = updateQuery.lastError().text();
+        return false;
+    }
+    return true;
+}
+
 bool ProfessionalDocumentRepository::markDocumentAsRead(qint64 professionalDocumentId)
 {
     QSqlQuery updateQuery(jobCrushDatabase.connection());

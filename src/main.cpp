@@ -15,6 +15,7 @@
 #include "modelview/AppPreferences.h"
 #include "modelview/aibrain/AiBrain.h"
 #include "modelview/aibrain/AiBrainSoul.h"
+#include "modelview/pipelines/JobPipelines.h"
 #include "modelview/aibrain/AiCredentialRoster.h"
 #include "modelview/brainchat/BrainChatSession.h"
 #include "modelview/jobscout/JobScout.h"
@@ -27,6 +28,7 @@
 #include "viewmodel/BrainChatConversationViewModel.h"
 #include "viewmodel/SelectedBrainConnectionViewModel.h"
 #include "viewmodel/DiscoveredJobListViewModel.h"
+#include "viewmodel/JobPipelineBoardViewModel.h"
 #include "viewmodel/JobSearchProfileViewModel.h"
 #include "viewmodel/JobSourceRosterViewModel.h"
 #include "viewmodel/ProfessionalDocumentListViewModel.h"
@@ -89,10 +91,23 @@ int main(int argc, char *argv[])
     ProDocsIntake proDocsIntake(professionalDocumentRepository, careerHistoryRepository,
                                 applicationDataFolderPath);
 
+    // A database that got itself into a mess before the guard existed heals
+    // here rather than leaving the user to delete rows by hand. Re-reading
+    // documents used to duplicate every entry the user had confirmed, so
+    // there are databases in the wild carrying twins of everything.
+    careerHistoryRepository.removeDuplicateEntries();
+
     // Anything dropped before Job Crush knew how to read jobs and schooling
     // out of documents gets read now, once, so the Experience tab is
     // populated the first time the user opens it rather than sitting empty
     // behind a button nobody knew to press.
+    // The resume reader improves between builds. When the running one is
+    // newer than the one that last read this database, its predecessor's work
+    // is thrown out and every document is read again — so a mistake fixed in
+    // the code actually reaches the person who was living with it, rather
+    // than waiting for them to notice a button.
+    proDocsIntake.rereadEverythingIfTheReaderImproved();
+
     proDocsIntake.readAnyDocumentsNotReadYet();
 
     JobSearchProfile jobSearchProfile;
@@ -103,6 +118,11 @@ int main(int argc, char *argv[])
 
     JobScout jobScout(jobPostingRepository, jobSourceRoster, jobSearchProfile,
                       applicationDataFolderPath);
+
+    // The board. Loaded now so every screen that asks "is this job already on
+    // my board?" gets a straight answer from the first frame.
+    JobPipelines jobPipelines(jobApplicationRepository, jobPostingRepository);
+    jobPipelines.loadFromDatabase();
 
     AiBrain aiBrain(aiCredentialRoster, aiBrainSoul);
     aiBrain.loadFromSettings(); // which brain the user chose last time
@@ -115,7 +135,8 @@ int main(int argc, char *argv[])
     AiCredentialRosterViewModel aiCredentialRosterViewModel(aiCredentialRoster);
     AppPreferencesViewModel appPreferencesViewModel(appPreferences, aiBrainSoul);
     SelectedBrainConnectionViewModel selectedBrainConnectionViewModel(aiBrain);
-    DiscoveredJobListViewModel discoveredJobListViewModel(jobScout);
+    DiscoveredJobListViewModel discoveredJobListViewModel(jobScout, jobPipelines);
+    JobPipelineBoardViewModel jobPipelineBoardViewModel(jobPipelines);
     JobSourceRosterViewModel jobSourceRosterViewModel(jobSourceRoster);
     JobSearchProfileViewModel jobSearchProfileViewModel(jobSearchProfile);
     ProfessionalDocumentListViewModel professionalDocumentListViewModel(
@@ -134,6 +155,8 @@ int main(int argc, char *argv[])
     qmlEngine.setInitialProperties({
         { QStringLiteral("brainChatConversationViewModel"),
           QVariant::fromValue(&brainChatConversationViewModel) },
+        { QStringLiteral("jobPipelineBoardViewModel"),
+          QVariant::fromValue(&jobPipelineBoardViewModel) },
         { QStringLiteral("aiCredentialRosterViewModel"),
           QVariant::fromValue(&aiCredentialRosterViewModel) },
         { QStringLiteral("appPreferencesViewModel"),

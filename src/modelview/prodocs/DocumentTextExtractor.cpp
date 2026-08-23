@@ -6,6 +6,7 @@
 #include <QTextStream>
 
 #include "DroppedFileTypes.h"
+#include "PlainTextNormalizer.h"
 #include "WordDocumentReader.h"
 
 namespace {
@@ -83,6 +84,17 @@ DocumentTextExtractor::extractFromWordDocument(const QString &filePath) const
 
 DocumentTextExtractor::ExtractionResult
 DocumentTextExtractor::extractTextFrom(const QString &filePath) const
+{
+    // One door in, one alphabet out. Every reader below hands its result
+    // through the normalizer, so nothing downstream ever meets a non-breaking
+    // space or somebody's favourite bullet glyph.
+    const ExtractionResult rawResult = extractTextFromFileByKind(filePath);
+    return { withEveryLookalikeCharacterNormalized(rawResult.extractedText),
+             rawResult.note };
+}
+
+DocumentTextExtractor::ExtractionResult
+DocumentTextExtractor::extractTextFromFileByKind(const QString &filePath) const
 {
     const QString extension = DroppedFileTypes::loweredExtensionOf(filePath);
 

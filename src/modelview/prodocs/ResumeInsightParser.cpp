@@ -2,6 +2,8 @@
 
 #include <QRegularExpression>
 
+#include "PlainTextNormalizer.h"
+
 namespace {
 
 // --- Section headings ----------------------------------------------------
@@ -206,13 +208,34 @@ QString withoutPunctuationDebris(const QString &text)
     QString cleanedText = text;
     cleanedText.remove(emptyBracketsPattern);
     cleanedText.remove(danglingEdgePattern);
+
+    // A bracket that has a partner is not debris. "Verb Surgical (Johnson &
+    // Johnson)" lost its closing bracket to the sweep above and came out
+    // looking like the parser had given up halfway through the name.
+    const int openBracketCount = text.count(QLatin1Char('('));
+    const int closeBracketCount = text.count(QLatin1Char(')'));
+    if (openBracketCount == closeBracketCount && openBracketCount > 0
+            && cleanedText.count(QLatin1Char('(')) != cleanedText.count(QLatin1Char(')'))) {
+        cleanedText = text;
+        cleanedText.remove(emptyBracketsPattern);
+        static const QRegularExpression danglingEdgeKeepingBracketsPattern(
+            QStringLiteral("^[\\s,;:|\\-–—•·]+|[\\s,;:|\\-–—•·]+$"));
+        cleanedText.remove(danglingEdgeKeepingBracketsPattern);
+    }
+
     return cleanedText.simplified();
 }
 
 QStringList piecesOfEntryLine(const QString &lineRemainder)
 {
+    // A RUN OF SPACES is a separator too. Resumes lay their education and
+    // employment out in columns, and once the PDF is flattened the only thing
+    // left of the column gap is the whitespace. Without this, "2000 – 2001
+    // <gap> Auburn University" reads as one piece and the school ends up
+    // called "2001 Auburn University". Three is the threshold: two spaces
+    // after a full stop is typing, three is layout.
     static const QRegularExpression separatorPattern(
-        QStringLiteral("\\s+[–—|·•]\\s+|\\s+-\\s+|\\s+at\\s+|,\\s+|\\t+"),
+        QStringLiteral("\\s+[–—|·•]\\s+|\\s+-\\s+|\\s+at\\s+|,\\s+|\\t+|\\s{3,}"),
         QRegularExpression::CaseInsensitiveOption);
 
     QStringList pieces;
@@ -230,7 +253,28 @@ QStringList piecesOfEntryLine(const QString &lineRemainder)
 // not in the employer box.
 bool looksLikeProse(const QString &piece)
 {
-    return piece.length() > 60 || piece.endsWith(QLatin1Char('.'));
+    if (piece.length() > 60) {
+        return true;
+    }
+    if (!piece.endsWith(QLatin1Char('.'))) {
+        return false;
+    }
+
+    // A full stop is not proof of a sentence. "Acme Robotics, Inc." ends in
+    // one, and calling that prose threw away the employer on every job at a
+    // company whose name ends in Inc., Ltd. or Corp. — and then, because the
+    // name was still sitting there unclaimed, read it as part of the PREVIOUS
+    // job's description. Two wrong entries out of one punctuation mark.
+    //
+    // A closing abbreviation is short. A sentence is not.
+    const QStringList wordsOfThePiece =
+        piece.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+    if (wordsOfThePiece.count() > 4) {
+        return true;
+    }
+    QString lastWord = wordsOfThePiece.isEmpty() ? QString() : wordsOfThePiece.last();
+    lastWord.remove(QRegularExpression(QStringLiteral("[^A-Za-z]")));
+    return lastWord.length() > 4;
 }
 
 // --- Education -----------------------------------------------------------
@@ -328,6 +372,14 @@ bool wordStartsAProperNoun(const QString &word)
     return !word.isEmpty() && word.at(0).isUpper();
 }
 
+// A piece that is nothing but a year: "2001". Transcripts and resumes list
+// these right after the school they belong to.
+bool pieceIsABareYear(const QString &piece)
+{
+    static const QRegularExpression bareYearPattern(QStringLiteral("^(19|20)\\d{2}$"));
+    return bareYearPattern.match(piece.trimmed()).hasMatch();
+}
+
 // Pulls apart a run of text that names MORE THAN ONE institution.
 //
 // Transcripts do this constantly: a degree page lists the school that granted
@@ -347,8 +399,13 @@ bool wordStartsAProperNoun(const QString &word)
 // One institution in, one out — the common case costs nothing.
 QStringList institutionNamesIn(const QString &text)
 {
-    const QStringList words =
-        text.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+    // UseUnicodeProperties because "\s" alone walks straight past a
+    // non-breaking space. DocumentTextExtractor normalizes those away before
+    // the parser ever sees them; this is the second lock on the same door,
+    // for text that arrives from somewhere else one day.
+    static const QRegularExpression anyWhitespacePattern(
+        QStringLiteral("\\s+"), QRegularExpression::UseUnicodePropertiesOption);
+    const QStringList words = text.split(anyWhitespacePattern, Qt::SkipEmptyParts);
 
     QList<int> markerWordIndexes;
     for (int wordIndex = 0; wordIndex < words.count(); ++wordIndex) {
@@ -434,16 +491,31 @@ QString fieldOfStudyIn(const QString &line, const QString &credentialPhrase)
                               + credentialPhrase.length();
     QString tail = line.mid(credentialEnd).trimmed();
 
+    // "in" and "of" need their word boundary. Without one this matched the
+    // "In" inside "Information Sciences" and handed the user a subject called
+    // "formation Sciences" — a typo invented by the app, sitting in a box on
+    // the one screen whose whole job is being trustworthy about their past.
     static const QRegularExpression leadInPattern(
-        QStringLiteral("^(?:in|of|,|-|–|—|:)\\s*"), QRegularExpression::CaseInsensitiveOption);
+        QStringLiteral("^(?:(?:in|of)\\b|[,:]|-|–|—)\\s*"),
+        QRegularExpression::CaseInsensitiveOption);
     const QRegularExpressionMatch leadIn = leadInPattern.match(tail);
-    if (!leadIn.hasMatch()) {
+    if (leadIn.hasMatch()) {
+        tail = tail.mid(leadIn.capturedLength()).trimmed();
+    }
+    // No lead-in word at all is fine: "B.S. Information Sciences" writes the
+    // subject straight after the degree. Whatever follows still has to pass
+    // every test below before it goes anywhere near the subject box.
+    if (tail.isEmpty()) {
         return QString();
     }
-    tail = tail.mid(leadIn.capturedLength()).trimmed();
 
     // Stop at the next separator — anything past it is the school or a date.
-    static const QRegularExpression tailStopPattern(QStringLiteral("\\s*[,|–—•]|\\s+-\\s+"));
+    // The middle dot belongs in here. DocumentTextExtractor now turns every
+    // bullet a designer might have used into "·", so it is THE separator a
+    // resume uses between fields — and without it the subject box swallowed
+    // "Computer Simulation / Game Development · 2012 · GPA 3.75" whole.
+    static const QRegularExpression tailStopPattern(
+        QStringLiteral("\\s*[,|–—•·]|\\s+-\\s+|\\s{3,}"));
     const QRegularExpressionMatch stop = tailStopPattern.match(tail);
     if (stop.hasMatch()) {
         tail = tail.left(stop.capturedStart()).trimmed();
@@ -454,13 +526,27 @@ QString fieldOfStudyIn(const QString &line, const QString &credentialPhrase)
     if (looksLikeProse(tail) || looksLikeSchoolName(tail)) {
         return QString();
     }
+    // "GED, 1998" — what follows the comma is the year, not the subject. A
+    // year in the subject box is the app telling somebody they studied 1998.
+    static const QRegularExpression nothingButNumbersPattern(
+        QStringLiteral("^[^A-Za-z]*$"));
+    if (nothingButNumbersPattern.match(tail).hasMatch()) {
+        return QString();
+    }
     return tail;
 }
 
 } // namespace
 
-ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeText) const
+ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResumeText) const
 {
+    // Normalized HERE as well as at extraction, and that is not belt and
+    // braces — it is the only thing that helps a document imported by an
+    // older build. Its text is already sitting in the database full of
+    // non-breaking spaces, and re-reading it would reproduce the same mangled
+    // entries forever if the parser trusted what it was handed.
+    const QString resumeText = withEveryLookalikeCharacterNormalized(rawResumeText);
+
     ParsedResumeInsights parsedInsights;
     if (resumeText.trimmed().isEmpty()) {
         return parsedInsights;
@@ -540,10 +626,22 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeT
                         recentNonEmptyLines.last() + QStringLiteral("  /  ") + line;
                 }
 
+                // Did the WRITER already separate the fields? A line reading
+                // "Contract UI Software Engineer | Specific Impulses Inc." has
+                // said, in as many words, where the title ends and the
+                // employer begins. Guessing a second cut inside one of those
+                // pieces then overrules the person who wrote the resume — and
+                // it did: the title became "Software Engineer" and the
+                // employer became "Contract UI", which is not a company.
+                const bool writerAlreadySeparatedTheFields =
+                    lineRemainder.contains(QLatin1Char('|'))
+                    || lineRemainder.contains(QChar(0x00B7));
+
                 for (const QString &piece : pieces) {
                     QString splitEmployer;
                     QString splitRole;
-                    if (workEntryBeingBuilt.employerName.isEmpty()
+                    if (!writerAlreadySeparatedTheFields
+                            && workEntryBeingBuilt.employerName.isEmpty()
                             && workEntryBeingBuilt.roleTitle.isEmpty()
                             && splitCombinedEmployerAndRole(piece, splitEmployer, splitRole)) {
                         workEntryBeingBuilt.employerName = splitEmployer;
@@ -590,6 +688,21 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeT
                         workEntryBeingBuilt.employerName = withoutPunctuationDebris(lineAbove);
                         workEntryBeingBuilt.sourceLineText =
                             lineAbove + QStringLiteral("  /  ") + line;
+
+                        // That line was read a moment ago as one more sentence
+                        // about the PREVIOUS job, because nothing had yet said
+                        // it was a heading for this one. Now that it turns out
+                        // to be an employer, take it back out of the job above
+                        // — otherwise every description on the page ends with
+                        // the name of the next company down.
+                        if (!parsedInsights.workExperiences.isEmpty()) {
+                            WorkExperience &previousEntry = parsedInsights.workExperiences.last();
+                            const QString trailingText = lineAbove.trimmed();
+                            if (previousEntry.summaryText.endsWith(trailingText)) {
+                                previousEntry.summaryText.chop(trailingText.length());
+                                previousEntry.summaryText = previousEntry.summaryText.trimmed();
+                            }
+                        }
                     }
                 }
             } else if (buildingWorkEntry) {
@@ -629,44 +742,81 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeT
             educationRecord.credentialText = credentialPhrase;
             educationRecord.fieldOfStudyText = fieldOfStudyIn(line, credentialPhrase);
 
-            // Schools this line names beyond the first. Transcripts list
-            // transfer credit right alongside the granting school, and each
-            // of those IS a place the user went — its own row, not a longer
-            // string crammed into one box.
-            QStringList additionalSchoolNames;
+            // Every school this line names, in the order it names them, each
+            // paired with where it sat so the years beside it can be found.
+            //
+            // "Tulsa Community College · 2000 – 2001    Auburn University ·
+            // 1993 – 1994" is ONE line naming TWO schools, and a resume that
+            // sets its education out in two columns produces exactly this.
+            // Taking only the first school silently loses the second, which
+            // is worse than mangling it: the user has no way to notice.
+            struct SchoolFoundOnThisLine {
+                QString schoolName;
+                int pieceIndex = 0;   // where it sat, for finding its years
+            };
+            QList<SchoolFoundOnThisLine> schoolsFoundOnThisLine;
 
-            for (const QString &piece : piecesOfEntryLine(line)) {
-                if (looksLikeSchoolName(piece) && educationRecord.schoolName.isEmpty()) {
-                    QString schoolNamePiece = piece;
+            const QStringList piecesOfThisLine = piecesOfEntryLine(line);
+            for (int pieceIndex = 0; pieceIndex < piecesOfThisLine.count(); ++pieceIndex) {
+                QString schoolNamePiece = piecesOfThisLine.at(pieceIndex);
+                if (!looksLikeSchoolName(schoolNamePiece)) {
+                    continue;
+                }
 
-                    // "Auburn University B.S. in Computer Science" is a school
-                    // AND a degree with nothing between them. Cut at the
-                    // degree, or the school box ends up holding the lot.
-                    if (!credentialPhrase.isEmpty()) {
-                        const int credentialStart =
-                            schoolNamePiece.indexOf(credentialPhrase, 0, Qt::CaseInsensitive);
-                        if (credentialStart > 0) {
-                            schoolNamePiece = schoolNamePiece.left(credentialStart);
-                        }
+                // "Auburn University B.S. in Computer Science" is a school
+                // AND a degree with nothing between them. Cut at the
+                // degree, or the school box ends up holding the lot.
+                if (!credentialPhrase.isEmpty()) {
+                    const int credentialStart =
+                        schoolNamePiece.indexOf(credentialPhrase, 0, Qt::CaseInsensitive);
+                    if (credentialStart > 0) {
+                        schoolNamePiece = schoolNamePiece.left(credentialStart);
                     }
+                }
 
-                    const QStringList schoolNamesInThisPiece =
-                        institutionNamesIn(withoutPunctuationDebris(schoolNamePiece));
-                    educationRecord.schoolName = schoolNamesInThisPiece.first();
-                    for (int extraIndex = 1; extraIndex < schoolNamesInThisPiece.count();
-                         ++extraIndex) {
-                        additionalSchoolNames.append(schoolNamesInThisPiece.at(extraIndex));
+                // A single piece can still hold several institutions when a
+                // transcript runs transfer credit together with no separator
+                // at all. institutionNamesIn takes those apart.
+                for (const QString &institutionName :
+                         institutionNamesIn(withoutPunctuationDebris(schoolNamePiece))) {
+                    if (!institutionName.isEmpty()) {
+                        schoolsFoundOnThisLine.append({ institutionName, pieceIndex });
                     }
+                }
+            }
+
+            // Schools beyond the first. Each becomes its own row.
+            QList<SchoolFoundOnThisLine> additionalSchoolsFound;
+            if (!schoolsFoundOnThisLine.isEmpty()) {
+                educationRecord.schoolName = schoolsFoundOnThisLine.first().schoolName;
+                for (int extraIndex = 1; extraIndex < schoolsFoundOnThisLine.count();
+                     ++extraIndex) {
+                    additionalSchoolsFound.append(schoolsFoundOnThisLine.at(extraIndex));
                 }
             }
             // The credential and the school often sit on consecutive lines.
             if (educationRecord.schoolName.isEmpty() && !recentNonEmptyLines.isEmpty()
                     && looksLikeSchoolName(recentNonEmptyLines.last())) {
-                const QStringList schoolNamesAbove =
-                    institutionNamesIn(recentNonEmptyLines.last().trimmed());
+                // Read that line in PIECES, exactly the way this one was read.
+                // Taking it whole is how "Purdue University, West Lafayette,
+                // IN" became the name of a school — and, being a different
+                // name from the "Purdue University" read a second earlier, it
+                // came back as a SECOND row for the same degree.
+                QStringList schoolNamesAbove;
+                for (const QString &pieceAbove :
+                         piecesOfEntryLine(recentNonEmptyLines.last().trimmed())) {
+                    if (looksLikeSchoolName(pieceAbove)) {
+                        schoolNamesAbove += institutionNamesIn(withoutPunctuationDebris(pieceAbove));
+                    }
+                }
+                if (schoolNamesAbove.isEmpty()) {
+                    schoolNamesAbove = institutionNamesIn(recentNonEmptyLines.last().trimmed());
+                }
                 educationRecord.schoolName = schoolNamesAbove.first();
                 for (int extraIndex = 1; extraIndex < schoolNamesAbove.count(); ++extraIndex) {
-                    additionalSchoolNames.append(schoolNamesAbove.at(extraIndex));
+                    // No piece index: these came off a different line, so
+                    // there are no neighbouring years to claim.
+                    additionalSchoolsFound.append({ schoolNamesAbove.at(extraIndex), -1 });
                 }
                 educationRecord.sourceLineText =
                     recentNonEmptyLines.last() + QStringLiteral("  /  ") + line;
@@ -681,6 +831,29 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeT
                 const QRegularExpressionMatch yearMatch = loneYearPattern.match(line);
                 if (yearMatch.hasMatch()) {
                     educationRecord.endDateText = yearMatch.captured(0);
+                }
+            }
+
+            // Plenty of places people study are not called a university, a
+            // college or a school: "Tulsa Technology Center", "Le Cordon
+            // Bleu", "Ivy Tech". Under an EDUCATION heading, a plain name
+            // sitting beside a credential is where somebody studied — and an
+            // empty school box on a certificate is this app reading a degree
+            // perfectly and shrugging at a trade.
+            if (educationRecord.schoolName.isEmpty() && !credentialPhrase.isEmpty()) {
+                for (const QString &piece : piecesOfThisLine) {
+                    const bool readsLikeAName =
+                        piece.length() >= 3
+                        && !piece.contains(credentialPhrase, Qt::CaseInsensitive)
+                        && piece.compare(educationRecord.fieldOfStudyText,
+                                         Qt::CaseInsensitive) != 0
+                        && !looksLikeProse(piece)
+                        && !piece.contains(QRegularExpression(QStringLiteral("\\d")))
+                        && piece.at(0).isUpper();
+                    if (readsLikeAName) {
+                        educationRecord.schoolName = withoutPunctuationDebris(piece);
+                        break;
+                    }
                 }
             }
 
@@ -719,14 +892,40 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeT
             // school too would be a confident lie on the user's own history.
             // The row arrives unconfirmed, which is exactly right — this is a
             // guess, and the user is the one who knows.
-            for (const QString &additionalSchoolName : additionalSchoolNames) {
-                if (additionalSchoolName.isEmpty()) {
+            for (const SchoolFoundOnThisLine &additionalSchool : additionalSchoolsFound) {
+                if (additionalSchool.schoolName.isEmpty()) {
                     continue;
                 }
-                EducationRecord transferSchoolRecord;
-                transferSchoolRecord.schoolName = additionalSchoolName;
-                transferSchoolRecord.sourceLineText = line;
-                parsedInsights.educationRecords.append(transferSchoolRecord);
+                EducationRecord additionalSchoolRecord;
+                additionalSchoolRecord.schoolName = additionalSchool.schoolName;
+                additionalSchoolRecord.sourceLineText = line;
+
+                // The years sitting immediately after this school on the line
+                // are ITS years. This is the one thing about a second school
+                // we can know rather than guess: "Auburn University · 1993 –
+                // 1994" puts them right there. Anything further along the
+                // line belongs to somebody else and is left alone.
+                if (additionalSchool.pieceIndex >= 0) {
+                    QStringList yearsRightAfterThisSchool;
+                    for (int lookAhead = additionalSchool.pieceIndex + 1;
+                         lookAhead < piecesOfThisLine.count(); ++lookAhead) {
+                        if (!pieceIsABareYear(piecesOfThisLine.at(lookAhead))) {
+                            break;
+                        }
+                        yearsRightAfterThisSchool.append(piecesOfThisLine.at(lookAhead));
+                    }
+                    if (yearsRightAfterThisSchool.count() >= 2) {
+                        additionalSchoolRecord.startDateText = yearsRightAfterThisSchool.first();
+                        additionalSchoolRecord.endDateText = yearsRightAfterThisSchool.at(1);
+                    } else if (yearsRightAfterThisSchool.count() == 1) {
+                        additionalSchoolRecord.endDateText = yearsRightAfterThisSchool.first();
+                    }
+                }
+
+                // The DEGREE is not copied across. It belonged to the first
+                // school, and putting it on a second one would be a confident
+                // lie printed on the user's own history.
+                parsedInsights.educationRecords.append(additionalSchoolRecord);
             }
         }
 
