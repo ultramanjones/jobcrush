@@ -279,7 +279,12 @@ Rectangle {
                                             : (providerEntry.slotIsFilled
                                                    ? JobCrushTheme.positiveColor
                                                    : JobCrushTheme.hairlineBorderColor)
-                                        border.width: 1
+                                        // Double thickness on the focused tab. Color alone
+                                        // is not enough to carry "this is the one you're
+                                        // looking at" — in Grayscale there is no accent hue
+                                        // to notice, so the WEIGHT of the border has to say
+                                        // it too.
+                                        border.width: providerEntry.isFocusedTab ? 2 : 1
 
                                         Text {
                                             id: providerTabLabel
