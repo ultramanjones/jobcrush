@@ -293,7 +293,7 @@ Rectangle {
                     id: openSettingsLabel
                     anchors.centerIn: parent
                     text: "Open Settings"
-                    color: "#0D0F14"
+                    color: JobCrushTheme.onAccentTextColor
                     font.pixelSize: JobCrushTheme.bodyFontSize
                     font.weight: Font.DemiBold
                 }
@@ -386,7 +386,7 @@ Rectangle {
                 anchors.centerIn: parent
                 text: brainChatPage.conversationViewModel.brainIsResponding
                     ? "answering…" : "Send"
-                color: sendButton.sendIsPossible ? "#0D0F14" : JobCrushTheme.mutedTextColor
+                color: sendButton.sendIsPossible ? JobCrushTheme.onAccentTextColor : JobCrushTheme.mutedTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize
                 font.weight: Font.DemiBold
             }

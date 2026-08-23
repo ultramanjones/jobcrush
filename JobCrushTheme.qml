@@ -4,15 +4,23 @@ import QtQuick
 // JobCrushTheme
 //
 // The one theme object every component reads — no component ever hardcodes a
-// color, so palettes are swappable by design. Three ship today:
+// color, so palettes are swappable by design. Five ship today:
 //
 //   "classic"    — retro-80s neons and pastels on near-black (default)
 //   "grayscale"  — same dark base, distinguished by shade, for sensitive eyes
 //                  (and quietly colorblind-friendly)
 //   "fruitloops" — the loud one: red, yellow, orange, lime and purple
+//   "amish"      — the daylight one, and the only light palette: muslin
+//                  paper, morning straw, buggy black ink, Sunday blue,
+//                  barn red and walnut
+//   "traceon"    — the digital void: cyan program glow on black, with
+//                  hostile orange and circuit green
 //
 // Main.qml binds activeThemeName to the preferences viewmodel; everything
 // else just reads the semantic tokens below and re-renders on change.
+//
+// Adding a palette means adding one branch per token and a chip in Settings.
+// Nothing else in the app changes, which is the whole point.
 QtObject {
     id: theme
 
@@ -20,55 +28,178 @@ QtObject {
 
     readonly property bool isGrayscale: activeThemeName === "grayscale"
     readonly property bool isFruitLoops: activeThemeName === "fruitloops"
+    readonly property bool isAmish: activeThemeName === "amish"
+    readonly property bool isTraceOn: activeThemeName === "traceon"
+
+    // Amish is the one palette that is light rather than dark. Anything that
+    // needs to know which way round it is asks HERE rather than checking for
+    // a theme by name — otherwise every future light palette means hunting
+    // down the places that assumed dark.
+    readonly property bool isLightTheme: isAmish
 
     // --- Base surfaces (dark first, always — every palette) ---------------
-    //
-    // Fruit Loops leans its darks very slightly purple so the bright cereal
-    // colors sit on something that belongs with them rather than on the same
-    // neutral near-black as everything else.
-    readonly property color appBackgroundColor: isFruitLoops ? "#120A18" : "#0D0F14"
-    readonly property color sidebarBackgroundColor: isFruitLoops ? "#170D20" : "#101319"
-    readonly property color panelBackgroundColor: isFruitLoops ? "#1D1129" : "#151922"
-    readonly property color cardBackgroundColor: isFruitLoops ? "#261635" : "#1B202C"
-    readonly property color hairlineBorderColor: isFruitLoops ? "#3A2350" : "#262C3A"
+    readonly property color appBackgroundColor: {
+        if (isFruitLoops) return "#120A18"
+        if (isAmish)      return "#F2EFE9"   // Plain Muslin — paper
+        if (isTraceOn)    return "#050505"   // deep digital void
+        return "#0D0F14"
+    }
+    readonly property color sidebarBackgroundColor: {
+        if (isFruitLoops) return "#170D20"
+        if (isAmish)      return "#DFCFA8"   // Morning Straw, full-strength wall
+        if (isTraceOn)    return "#080A0C"
+        return "#101319"
+    }
+    readonly property color panelBackgroundColor: {
+        if (isFruitLoops) return "#1D1129"
+        if (isAmish)      return "#FAF7F0"   // muslin, for the straw to sit against
+        if (isTraceOn)    return "#0B0F12"
+        return "#151922"
+    }
+    readonly property color cardBackgroundColor: {
+        if (isFruitLoops) return "#261635"
+        if (isAmish)      return "#E4D9BE"   // a Morning Straw block
+        if (isTraceOn)    return "#101619"
+        return "#1B202C"
+    }
+    readonly property color hairlineBorderColor: {
+        if (isFruitLoops) return "#3A2350"
+        if (isAmish)      return "#2B2B2B"   // Buggy Black — quilt binding, not a
+                                             // whisper. Every block gets a seam.
+        if (isTraceOn)    return "#3A4A5A"   // inactive wireframe gray
+        return "#262C3A"
+    }
 
     // --- Text -------------------------------------------------------------
-    readonly property color primaryTextColor: isFruitLoops ? "#FFF6E5" : "#E8EAED"
-    readonly property color secondaryTextColor: isFruitLoops ? "#C4A8D8" : "#8A93A5"
-    readonly property color mutedTextColor: isFruitLoops ? "#8A6BA3" : "#5A6272"
+    readonly property color primaryTextColor: {
+        if (isFruitLoops) return "#FFF6E5"
+        if (isAmish)      return "#2B2B2B"   // Buggy Black — ink on paper
+        if (isTraceOn)    return "#FFFFFF"   // high-energy core
+        return "#E8EAED"
+    }
+    readonly property color secondaryTextColor: {
+        if (isFruitLoops) return "#C4A8D8"
+        if (isAmish)      return "#5C5248"   // walnut-gray, still comfortably readable
+        if (isTraceOn)    return "#8FA6B8"
+        return "#8A93A5"
+    }
+    readonly property color mutedTextColor: {
+        if (isFruitLoops) return "#8A6BA3"
+        if (isAmish)      return "#8A8177"   // faded ink
+        if (isTraceOn)    return "#5A6C7A"
+        return "#5A6272"
+    }
+
+    // Text and glyphs that sit ON a filled accent or call-to-action shape.
+    //
+    // This exists because a palette can be dark-on-bright (neon buttons) or
+    // bright-on-dark (Barn Red buttons), and a component cannot know which.
+    // Before this token every button hardcoded near-black label text, which
+    // was invisible the moment a palette used a dark button.
+    readonly property color onAccentTextColor: {
+        if (isAmish)   return "#F2EFE9"   // muslin on barn red, blue or walnut fills
+        if (isTraceOn) return "#050505"   // void black on a glowing program
+        return "#0D0F14"
+    }
 
     // --- Accents -----------------------------------------------------------
     //
-    // Fruit Loops mapping (Ultra's colors, assigned by job):
-    //   accent        = Lively Orange  — the "you are here" color, everywhere
-    //   call to action= Bright Red     — the button you are meant to press
-    //   positive      = Lime Green     — connected, matched, good news
-    // Sunny Yellow and Deep Purple carry the pipeline stages below.
-    readonly property color accentColor:
-        isGrayscale ? "#C9CED9" : (isFruitLoops ? "#FF6600" : "#35D6EE")        // cyan
-    readonly property color callToActionColor:
-        isGrayscale ? "#E8EAED" : (isFruitLoops ? "#FF0033" : "#FF3D8A")        // hot pink
-    readonly property color positiveColor:
-        isGrayscale ? "#AEB6C4" : (isFruitLoops ? "#66CC33" : "#3DF08C")        // terminal green
+    // Amish note: this is the daylight palette. Muslin is the paper, Buggy
+    // Black is the ink, and Morning Straw carries the sidebar and the Saved
+    // stage so it is visible constantly rather than only when something goes
+    // wrong. The palette ships no green, so "positive" takes Dark Walnut
+    // Wood — solid, and dark enough to read as text on paper, which a warm
+    // gold simply is not. Where a token has to be a shade rather than one of
+    // the six exact colors, it is a tint of one of them and says so.
+    readonly property color accentColor: {
+        if (isGrayscale)  return "#C9CED9"
+        if (isFruitLoops) return "#FF6600"   // Lively Orange
+        if (isAmish)      return "#3B5973"   // Amish Sunday Blue, at full strength
+        if (isTraceOn)    return "#00F0FF"   // standard program glow
+        return "#35D6EE"                     // cyan
+    }
+    readonly property color callToActionColor: {
+        if (isGrayscale)  return "#E8EAED"
+        if (isFruitLoops) return "#FF0033"   // Bright Red
+        if (isAmish)      return "#6B1A1B"   // Barn Red
+        if (isTraceOn)    return "#FF2A00"   // hostile program glow
+        return "#FF3D8A"                     // hot pink
+    }
+    readonly property color positiveColor: {
+        if (isGrayscale)  return "#AEB6C4"
+        if (isFruitLoops) return "#66CC33"   // Lime Green
+        if (isAmish)      return "#4A321E"   // Dark Walnut Wood — solid, and dark
+                                             // enough to read as text on paper
+        if (isTraceOn)    return "#00FF66"   // secondary circuit paths
+        return "#3DF08C"                     // terminal green
+    }
 
     // --- Pipeline stage colors (used by the Job Pipelines board in Phase 4;
     //     defined now so every palette is complete from day one) -----------
-    readonly property color stageSavedColor:
-        isGrayscale ? "#7A8290" : (isFruitLoops ? "#FFCC00" : "#8A93A5")        // Sunny Yellow
-    readonly property color stageAppliedColor:
-        isGrayscale ? "#9AA2B1" : (isFruitLoops ? "#66CC33" : "#3DF08C")        // green
-    readonly property color stageInterviewColor:
-        isGrayscale ? "#C9CED9" : (isFruitLoops ? "#FF6600" : "#35D6EE")        // cyan
-    readonly property color stageOfferColor:
-        isGrayscale ? "#F0F2F5" : (isFruitLoops ? "#FF0033" : "#FF3D8A")        // pink
-    readonly property color stageClosedColor: isFruitLoops ? "#660099" : "#5A6272"
+    readonly property color stageSavedColor: {
+        if (isGrayscale)  return "#7A8290"
+        if (isFruitLoops) return "#FFCC00"   // Sunny Yellow
+        if (isAmish)      return "#D6B35A"   // Morning Straw — freshly gathered
+        if (isTraceOn)    return "#3A4A5A"
+        return "#8A93A5"
+    }
+    readonly property color stageAppliedColor: {
+        if (isGrayscale)  return "#9AA2B1"
+        if (isFruitLoops) return "#66CC33"
+        if (isAmish)      return "#4A321E"
+        if (isTraceOn)    return "#00FF66"
+        return "#3DF08C"
+    }
+    readonly property color stageInterviewColor: {
+        if (isGrayscale)  return "#C9CED9"
+        if (isFruitLoops) return "#FF6600"
+        if (isAmish)      return "#3B5973"
+        if (isTraceOn)    return "#00F0FF"
+        return "#35D6EE"
+    }
+    readonly property color stageOfferColor: {
+        if (isGrayscale)  return "#F0F2F5"
+        if (isFruitLoops) return "#FF0033"
+        if (isAmish)      return "#6B1A1B"   // Barn Red
+        if (isTraceOn)    return "#FF2A00"
+        return "#FF3D8A"
+    }
+    readonly property color stageClosedColor: {
+        if (isFruitLoops) return "#660099"   // Deep Purple
+        if (isAmish)      return "#9A9086"
+        if (isTraceOn)    return "#3A4A5A"
+        return "#5A6272"
+    }
 
     // --- Brain Chat -------------------------------------------------------
-    readonly property color humanBubbleColor:
-        isGrayscale ? "#232936" : (isFruitLoops ? "#331A47" : "#20303E")
-    readonly property color brainBubbleColor: isFruitLoops ? "#261635" : "#1B202C"
-    readonly property color noticeTextColor:
-        isGrayscale ? "#AEB6C4" : (isFruitLoops ? "#FFCC00" : "#FFB86B")        // Sunny Yellow
+    readonly property color humanBubbleColor: {
+        if (isGrayscale)  return "#232936"
+        if (isFruitLoops) return "#331A47"
+        if (isAmish)      return "#DDE4EC"   // Sunday Blue, washed out to a paper tint
+        if (isTraceOn)    return "#08262B"
+        return "#20303E"
+    }
+    readonly property color brainBubbleColor: {
+        if (isFruitLoops) return "#261635"
+        if (isAmish)      return "#FBF9F5"
+        if (isTraceOn)    return "#101619"
+        return "#1B202C"
+    }
+    readonly property color noticeTextColor: {
+        if (isGrayscale)  return "#AEB6C4"
+        if (isFruitLoops) return "#FFCC00"
+        if (isAmish)      return "#8A6B1F"   // Morning Straw, darkened so a warning
+                                             // still reads as text on pale paper
+        if (isTraceOn)    return "#FF2A00"
+        return "#FFB86B"
+    }
+
+    // --- Glow -------------------------------------------------------------
+    //
+    // How strongly lit shapes bleed into the dark around them, 0 to 1. Only
+    // Trace On lights up; every other palette sits flat at zero so nothing
+    // else in the app changes appearance because this token exists.
+    readonly property real glowStrength: isTraceOn ? 1.0 : 0.0
 
     // --- Type scale -------------------------------------------------------
     readonly property int titleFontSize: 22

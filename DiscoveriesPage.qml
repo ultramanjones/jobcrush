@@ -142,7 +142,7 @@ Rectangle {
                 text: discoveriesPage.discoveredJobListViewModel.sweepIsRunning
                     ? "scouting…" : "Scout now"
                 color: scoutNowButton.sweepIsPossible
-                    ? "#0D0F14" : JobCrushTheme.mutedTextColor
+                    ? JobCrushTheme.onAccentTextColor : JobCrushTheme.mutedTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize
                 font.weight: Font.DemiBold
             }
@@ -513,7 +513,7 @@ Rectangle {
                     id: openSettingsFromDiscoveriesLabel
                     anchors.centerIn: parent
                     text: "Open Settings"
-                    color: "#0D0F14"
+                    color: JobCrushTheme.onAccentTextColor
                     font.pixelSize: JobCrushTheme.bodyFontSize
                     font.weight: Font.DemiBold
                 }

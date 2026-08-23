@@ -262,7 +262,7 @@ Rectangle {
                                             visible: providerEntry.isSelectedBrain
                                             text: "\u2713"
                                             color: providerEntry.isSelectedAndActive
-                                                ? "#0D0F14" : JobCrushTheme.positiveColor
+                                                ? JobCrushTheme.onAccentTextColor : JobCrushTheme.positiveColor
                                             font.pixelSize: 15
                                             font.weight: Font.Bold
 
@@ -575,7 +575,7 @@ Rectangle {
                                     anchors.centerIn: parent
                                     text: actionButton.slotIsFilled ? "Delete key" : "Add key"
                                     color: (actionButton.slotIsFilled || actionButton.addIsPossible)
-                                        ? "#0D0F14" : JobCrushTheme.mutedTextColor
+                                        ? JobCrushTheme.onAccentTextColor : JobCrushTheme.mutedTextColor
                                     font.pixelSize: JobCrushTheme.bodyFontSize
                                     font.weight: Font.DemiBold
                                 }
@@ -648,7 +648,7 @@ Rectangle {
                             id: openSoulFolderLabel
                             anchors.centerIn: parent
                             text: "Open soul folder"
-                            color: "#0D0F14"
+                            color: JobCrushTheme.onAccentTextColor
                             font.pixelSize: JobCrushTheme.bodyFontSize
                             font.weight: Font.DemiBold
                         }
@@ -748,7 +748,7 @@ Rectangle {
                                         anchors.centerIn: parent
                                         visible: jobSourceRow.modelData.isEnabled
                                         text: "\u2713"
-                                        color: "#0D0F14"
+                                        color: JobCrushTheme.onAccentTextColor
                                         font.pixelSize: 15
                                         font.weight: Font.Bold
                                     }
@@ -1059,7 +1059,7 @@ Rectangle {
                                     anchors.centerIn: parent
                                     visible: settingsPage.jobSearchProfileViewModel.remoteRolesOnly
                                     text: "\u2713"
-                                    color: "#0D0F14"
+                                    color: JobCrushTheme.onAccentTextColor
                                     font.pixelSize: 15
                                     font.weight: Font.Bold
                                 }
@@ -1106,7 +1106,9 @@ Rectangle {
                         model: [
                             { themeName: "classic",    displayLabel: "Classic Job Crush" },
                             { themeName: "grayscale",  displayLabel: "Grayscale" },
-                            { themeName: "fruitloops", displayLabel: "Fruit Loops" }
+                            { themeName: "fruitloops", displayLabel: "Fruit Loops" },
+                            { themeName: "amish",      displayLabel: "Amish" },
+                            { themeName: "traceon",    displayLabel: "Trace On" }
                         ]
 
                         delegate: Rectangle {
@@ -1135,7 +1137,7 @@ Rectangle {
                                 anchors.centerIn: parent
                                 text: themeChip.modelData.displayLabel
                                 color: themeChip.isSelected
-                                    ? "#0D0F14" : JobCrushTheme.secondaryTextColor
+                                    ? JobCrushTheme.onAccentTextColor : JobCrushTheme.secondaryTextColor
                                 font.pixelSize: JobCrushTheme.smallFontSize
                                 font.weight: themeChip.isSelected
                                     ? Font.DemiBold : Font.Normal
