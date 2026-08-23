@@ -201,12 +201,25 @@ AiBrainReply *AnthropicApiProvider::verifyCredentialConnection(
             return;
         }
         if (networkReply->error() == QNetworkReply::AuthenticationRequiredError) {
-            brainReply->markFailed(QStringLiteral(
-                "Anthropic did not accept this key. Delete it in Settings and "
-                "add a fresh one from Anthropic's key page."));
+            brainReply->markFailed(
+                QStringLiteral("Anthropic would not accept that key."),
+                QStringLiteral(
+                    "Sign in at console.anthropic.com, open API keys, and copy "
+                    "the key again — Anthropic keys begin with \"sk-ant-\". "
+                    "Delete the old one on the anthropic tab above and paste the "
+                    "new one in. If you regenerated the key anywhere else, every "
+                    "older copy of it stopped working the moment you did."));
             return;
         }
-        brainReply->markFailed(networkReply->errorString());
+        // Not a key problem — say so, so nobody spends the evening replacing a
+        // key that was fine all along.
+        brainReply->markFailed(
+            networkReply->errorString(),
+            QStringLiteral(
+                "That looks like the connection rather than the key. Check that "
+                "you are online and tick the box again. On a work laptop or a "
+                "VPN, api.anthropic.com is sometimes blocked outright — trying "
+                "it in a browser will tell you in a few seconds."));
     });
 
     return brainReply;

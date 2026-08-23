@@ -16,6 +16,64 @@
 // descriptions are simple markup, and the goal is readable words, not a
 // faithful document tree.
 
+// Decodes the character entities that actually turn up in job descriptions,
+// plus the numeric form. Deliberately not the full HTML entity table: an
+// unknown entity is left alone rather than guessed at, because "&pound;60k"
+// half-decoded into nonsense is worse than "&pound;60k" left intact.
+inline void decodeOneLayerOfCharacterEntities(QString &workingText)
+{
+    static const QList<QPair<QString, QString>> namedEntities = {
+        { QStringLiteral("&nbsp;"),   QStringLiteral(" ")  },
+        { QStringLiteral("&lt;"),     QStringLiteral("<")  },
+        { QStringLiteral("&gt;"),     QStringLiteral(">")  },
+        { QStringLiteral("&quot;"),   QStringLiteral("\"") },
+        { QStringLiteral("&apos;"),   QStringLiteral("'")  },
+        { QStringLiteral("&#39;"),    QStringLiteral("'")  },
+        { QStringLiteral("&rsquo;"),  QStringLiteral("'")  },
+        { QStringLiteral("&lsquo;"),  QStringLiteral("'")  },
+        { QStringLiteral("&ldquo;"),  QStringLiteral("“") },
+        { QStringLiteral("&rdquo;"),  QStringLiteral("”") },
+        { QStringLiteral("&ndash;"),  QStringLiteral("–") },
+        { QStringLiteral("&mdash;"),  QStringLiteral("—") },
+        { QStringLiteral("&hellip;"), QStringLiteral("…") },
+        { QStringLiteral("&bull;"),   QStringLiteral("•") },
+        { QStringLiteral("&middot;"), QStringLiteral("·") },
+        { QStringLiteral("&pound;"),  QStringLiteral("£") },
+        { QStringLiteral("&euro;"),   QStringLiteral("€") },
+        { QStringLiteral("&trade;"),  QStringLiteral("™") },
+        { QStringLiteral("&reg;"),    QStringLiteral("®") },
+        // Ampersand LAST. Decoding it first would turn "&amp;lt;" into
+        // "&lt;" and then into "<" in the same pass, which is precisely the
+        // double-escaping trick this whole file exists to survive.
+        { QStringLiteral("&amp;"),    QStringLiteral("&")  },
+    };
+    for (const auto &entity : namedEntities) {
+        workingText.replace(entity.first, entity.second);
+    }
+
+    // The numeric forms: &#8212; and &#x2014;
+    static const QRegularExpression numericEntityPattern(
+        QStringLiteral("&#(x?)([0-9a-fA-F]{1,6});"));
+    QString decodedText;
+    decodedText.reserve(workingText.size());
+    int copiedUpTo = 0;
+    QRegularExpressionMatchIterator matches = numericEntityPattern.globalMatch(workingText);
+    while (matches.hasNext()) {
+        const QRegularExpressionMatch match = matches.next();
+        bool digitsParsed = false;
+        const uint codePoint = match.captured(2).toUInt(
+            &digitsParsed, match.captured(1).isEmpty() ? 10 : 16);
+        if (!digitsParsed || codePoint == 0 || codePoint > 0x10FFFF) {
+            continue;
+        }
+        decodedText += workingText.mid(copiedUpTo, match.capturedStart() - copiedUpTo);
+        decodedText += QString::fromUcs4(reinterpret_cast<const char32_t *>(&codePoint), 1);
+        copiedUpTo = match.capturedEnd();
+    }
+    decodedText += workingText.mid(copiedUpTo);
+    workingText = decodedText;
+}
+
 // Turns an HTML description fragment into plain readable text.
 inline QString plainTextFromHtmlFragment(const QString &htmlFragment)
 {
@@ -26,20 +84,43 @@ inline QString plainTextFromHtmlFragment(const QString &htmlFragment)
     static const QRegularExpression blockBreakTagPattern(
         QStringLiteral("<\\s*/?\\s*(p|br|div|li|tr|h[1-6])\\b[^>]*>"),
         QRegularExpression::CaseInsensitiveOption);
-    workingText.replace(blockBreakTagPattern, QStringLiteral("\n"));
 
-    // Everything else in angle brackets goes.
-    static const QRegularExpression anyRemainingTagPattern(QStringLiteral("<[^>]*>"));
-    workingText.remove(anyRemainingTagPattern);
+    // Tag-SHAPED, not merely bracketed. A blanket "<...>" sweep is tempting
+    // and wrong: it eats "we get 5 > 3 candidates <shrug>" down to nothing,
+    // and a job description is allowed to contain a less-than sign.
+    static const QRegularExpression htmlTagPattern(
+        QStringLiteral("<\\s*/?\\s*[a-zA-Z][a-zA-Z0-9:-]*(?:\\s[^<>]*)?/?\\s*>"));
+    static const QRegularExpression htmlCommentPattern(
+        QStringLiteral("<!--.*?-->"), QRegularExpression::DotMatchesEverythingOption);
 
-    // The handful of entities that actually show up in job descriptions.
-    workingText.replace(QStringLiteral("&nbsp;"), QStringLiteral(" "));
-    workingText.replace(QStringLiteral("&amp;"),  QStringLiteral("&"));
-    workingText.replace(QStringLiteral("&lt;"),   QStringLiteral("<"));
-    workingText.replace(QStringLiteral("&gt;"),   QStringLiteral(">"));
-    workingText.replace(QStringLiteral("&quot;"), QStringLiteral("\""));
-    workingText.replace(QStringLiteral("&#39;"),  QStringLiteral("'"));
-    workingText.replace(QStringLiteral("&rsquo;"), QStringLiteral("'"));
+    // Strip, decode, strip again — and mean it.
+    //
+    // Some boards escape their HTML once and some escape it twice. Decoding
+    // "&lt;img src=…&gt;" AFTER stripping tags puts a live <img> back into
+    // text we had just finished cleaning, and a Text element in Qt's default
+    // AutoText mode will happily go and fetch it. That is exactly how a
+    // recruiter's banner ended up rendered full-size inside a Discoveries row.
+    //
+    // So each pass strips what it can see, then decodes one layer of escaping,
+    // and the loop goes round again until a pass changes nothing. Three passes
+    // is far more than real postings need, and the ceiling stops a
+    // hand-crafted payload from spinning here forever.
+    for (int cleanupPass = 0; cleanupPass < 3; ++cleanupPass) {
+        const QString textBeforeThisPass = workingText;
+
+        workingText.remove(htmlCommentPattern);
+        workingText.replace(blockBreakTagPattern, QStringLiteral("\n"));
+        workingText.remove(htmlTagPattern);
+        decodeOneLayerOfCharacterEntities(workingText);
+
+        if (workingText == textBeforeThisPass) {
+            break;
+        }
+    }
+
+    // Whatever the last decode revealed does not get a free pass upward.
+    workingText.remove(htmlCommentPattern);
+    workingText.remove(htmlTagPattern);
 
     // Collapse the runs of blank space that stripping always leaves behind.
     static const QRegularExpression runOfSpacesPattern(QStringLiteral("[ \\t]+"));

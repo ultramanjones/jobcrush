@@ -226,12 +226,25 @@ AiBrainReply *GeminiApiProvider::verifyCredentialConnection(
         const int httpStatusCode = networkReply
             ->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (httpStatusCode == 400 || httpStatusCode == 401 || httpStatusCode == 403) {
-            brainReply->markFailed(QStringLiteral(
-                "Google did not accept this key. Delete it in Settings and add a fresh "
-                "one from Google AI Studio."));
+            brainReply->markFailed(
+                QStringLiteral("Google would not accept that key."),
+                QStringLiteral(
+                    "Go to aistudio.google.com/apikey, copy the key again, then "
+                    "delete the old one on the gemini tab above and paste the new "
+                    "one in. Two things catch people out here: the key has to "
+                    "belong to a project with the Generative Language API turned "
+                    "on, and a key restricted by IP address or referrer will be "
+                    "refused when a desktop app uses it."));
             return;
         }
-        brainReply->markFailed(networkReply->errorString());
+        brainReply->markFailed(
+            networkReply->errorString(),
+            QStringLiteral(
+                "That looks like the connection rather than the key. Check that "
+                "you are online and tick the box again. On a work laptop or a "
+                "VPN, generativelanguage.googleapis.com is sometimes blocked "
+                "outright — trying it in a browser will tell you in a few "
+                "seconds."));
     });
 
     return brainReply;

@@ -42,11 +42,23 @@ public:
     }
 
     // Called by the provider exactly once, on any failure. Not for consumers.
-    void markFailed(const QString &humanReadableReason)
+    //
+    // whatToDoNextText is the second half of an honest error: the reason says
+    // what happened, this says what the user can do about it. Providers fill
+    // it in wherever they know (a rejected key, a vendor outage); AIBrain
+    // supplies a sensible one when they don't. Nothing in Job Crush shows a
+    // failure without a way forward — that is the law, not a nicety.
+    void markFailed(const QString &humanReadableReason,
+                    const QString &whatToDoNextText = QString())
     {
         replyHasFinished = true;
+        suggestedNextStepText = whatToDoNextText;
         emit failed(humanReadableReason);
     }
+
+    // What the user can do about the failure. Empty when the provider had
+    // nothing specific to add.
+    QString suggestedNextStep() const { return suggestedNextStepText; }
 
 signals:
     // A new piece of response text just arrived from the provider.
@@ -61,5 +73,6 @@ signals:
 
 private:
     QString accumulatedResponseText;
+    QString suggestedNextStepText;
     bool replyHasFinished = false;
 };

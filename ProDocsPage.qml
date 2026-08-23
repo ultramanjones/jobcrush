@@ -23,6 +23,14 @@ Rectangle {
     // "documents" | "experience"
     property string activeTabName: "documents"
 
+    // Sent to every experience and schooling card at once.
+    //
+    // A broadcast rather than a binding on purpose: a card that opens or
+    // closes because the user clicked it has to STAY that way, and a bound
+    // property would snap it back on the next repaint. Each card listens,
+    // obeys, and then goes back to minding its own state.
+    signal setEveryCareerCardExpanded(bool shouldExpand)
+
     Item {
         id: proDocsHeader
         anchors.top: parent.top
@@ -491,6 +499,46 @@ Rectangle {
                     color: JobCrushTheme.noticeTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                 }
+
+                // Shuts every card on the page down to its one-line summary,
+                // which is how you check that nothing is MISSING — a different
+                // question from whether any one entry is right, and one you
+                // cannot answer while scrolling past full-height cards.
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "shut them all"
+                    color: shutThemAllMouseArea.containsMouse
+                        ? JobCrushTheme.accentColor : JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    font.underline: shutThemAllMouseArea.containsMouse
+
+                    MouseArea {
+                        id: shutThemAllMouseArea
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: proDocsPage.setEveryCareerCardExpanded(false)
+                    }
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "open them all"
+                    color: openThemAllMouseArea.containsMouse
+                        ? JobCrushTheme.accentColor : JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    font.underline: openThemAllMouseArea.containsMouse
+
+                    MouseArea {
+                        id: openThemAllMouseArea
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: proDocsPage.setEveryCareerCardExpanded(true)
+                    }
+                }
             }
 
             Repeater {
@@ -508,6 +556,31 @@ Rectangle {
                     required property string sourceLineText
                     required property bool isConfirmedByUser
 
+                    // Collapsed is the resting state for anything the user has
+                    // already checked off. What is still waiting on them stays
+                    // open, so the work left to do is the work you can see.
+                    property bool isExpanded: !isConfirmedByUser
+
+                    // One line that says whether this entry is right, without
+                    // opening it. That is the whole job of a collapsed card.
+                    readonly property string glanceLine: {
+                        const title = roleTitle.length > 0 ? roleTitle : "Untitled job"
+                        const employer = employerName.length > 0
+                            ? "  ·  " + employerName : ""
+                        const years = (startDateText.length > 0 || endDateText.length > 0)
+                            ? "  ·  " + startDateText
+                              + (endDateText.length > 0 ? " – " + endDateText : "")
+                            : ""
+                        return title + employer + years
+                    }
+
+                    Connections {
+                        target: proDocsPage
+                        function onSetEveryCareerCardExpanded(shouldExpand) {
+                            workExperienceCard.isExpanded = shouldExpand
+                        }
+                    }
+
                     width: careerHistoryColumn.width
                     height: workExperienceColumn.implicitHeight + 28
                     radius: 8
@@ -522,140 +595,199 @@ Rectangle {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.margins: 14
-                        spacing: 8
+                        spacing: 10
 
-                        Row {
+                        // ---- The header. Always visible, open or shut. ----
+                        //
+                        // The confirm tick lives up here rather than down in
+                        // the body, so a whole list can be checked off without
+                        // opening a single card.
+                        Item {
                             width: parent.width
-                            spacing: 12
+                            height: 24
 
-                            InlineEditField {
-                                width: (parent.width - 24) * 0.42
-                                labelText: "Job title"
-                                placeholderText: "what you were called"
-                                fieldText: workExperienceCard.roleTitle
-                                onEditingCommitted: function(newText) {
-                                    proDocsPage.workExperienceListViewModel
-                                        .setRoleTitleAt(workExperienceCard.index, newText)
-                                }
-                            }
-
-                            InlineEditField {
-                                width: (parent.width - 24) * 0.42
-                                labelText: "Employer"
-                                placeholderText: "who you worked for"
-                                fieldText: workExperienceCard.employerName
-                                onEditingCommitted: function(newText) {
-                                    proDocsPage.workExperienceListViewModel
-                                        .setEmployerNameAt(workExperienceCard.index, newText)
-                                }
-                            }
-
-                            InlineEditField {
-                                width: (parent.width - 24) * 0.08
-                                labelText: "From"
-                                placeholderText: "2016"
-                                fieldText: workExperienceCard.startDateText
-                                onEditingCommitted: function(newText) {
-                                    proDocsPage.workExperienceListViewModel
-                                        .setStartDateTextAt(workExperienceCard.index, newText)
-                                }
-                            }
-
-                            InlineEditField {
-                                width: (parent.width - 24) * 0.08
-                                labelText: "To"
-                                placeholderText: "2019"
-                                fieldText: workExperienceCard.endDateText
-                                onEditingCommitted: function(newText) {
-                                    proDocsPage.workExperienceListViewModel
-                                        .setEndDateTextAt(workExperienceCard.index, newText)
-                                }
-                            }
-                        }
-
-                        InlineEditField {
-                            width: parent.width
-                            labelText: "What you did there"
-                            placeholderText: "the short version"
-                            fieldText: workExperienceCard.summaryText
-                            onEditingCommitted: function(newText) {
-                                proDocsPage.workExperienceListViewModel
-                                    .setSummaryTextAt(workExperienceCard.index, newText)
-                            }
-                        }
-
-                        // Where this came from. A wrong guess should always be
-                        // traceable rather than merely doubted.
-                        Text {
-                            width: parent.width
-                            visible: workExperienceCard.sourceLineText.length > 0
-                            text: "read from your document: “" + workExperienceCard.sourceLineText + "”"
-                            color: JobCrushTheme.mutedTextColor
-                            font.pixelSize: JobCrushTheme.smallFontSize
-                            elide: Text.ElideRight
-                        }
-
-                        Row {
-                            spacing: 10
-
-                            Rectangle {
+                            Row {
+                                anchors.left: parent.left
+                                anchors.right: workExperienceRemoveButton.left
+                                anchors.rightMargin: 10
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 20
-                                height: 20
-                                radius: 5
-                                color: workExperienceCard.isConfirmedByUser
-                                    ? JobCrushTheme.positiveColor : "transparent"
-                                border.width: 2
-                                border.color: workExperienceCard.isConfirmedByUser
-                                    ? JobCrushTheme.positiveColor : JobCrushTheme.secondaryTextColor
+                                spacing: 10
 
                                 Text {
-                                    anchors.centerIn: parent
-                                    visible: workExperienceCard.isConfirmedByUser
-                                    text: "\u2713"
-                                    color: JobCrushTheme.onAccentTextColor
-                                    font.pixelSize: 14
-                                    font.weight: Font.Bold
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 12
+                                    text: workExperienceCard.isExpanded ? "\u25BE" : "\u25B8"
+                                    color: JobCrushTheme.secondaryTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
                                 }
 
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: proDocsPage.workExperienceListViewModel
-                                        .setConfirmedAt(workExperienceCard.index,
-                                                        !workExperienceCard.isConfirmedByUser)
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 20
+                                    height: 20
+                                    radius: 5
+                                    color: workExperienceCard.isConfirmedByUser
+                                        ? JobCrushTheme.positiveColor : "transparent"
+                                    border.width: 2
+                                    border.color: workExperienceCard.isConfirmedByUser
+                                        ? JobCrushTheme.positiveColor
+                                        : JobCrushTheme.secondaryTextColor
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: workExperienceCard.isConfirmedByUser
+                                        text: "\u2713"
+                                        color: JobCrushTheme.onAccentTextColor
+                                        font.pixelSize: 14
+                                        font.weight: Font.Bold
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: proDocsPage.workExperienceListViewModel
+                                            .setConfirmedAt(workExperienceCard.index,
+                                                            !workExperienceCard.isConfirmedByUser)
+                                    }
                                 }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - 60
+                                    text: workExperienceCard.glanceLine
+                                    textFormat: Text.PlainText
+                                    color: workExperienceCard.roleTitle.length > 0
+                                        ? JobCrushTheme.primaryTextColor
+                                        : JobCrushTheme.mutedTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            // Anywhere on the header opens and shuts the card —
+                            // except the tick and the ×, which sit above it.
+                            MouseArea {
+                                anchors.fill: parent
+                                z: -1
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: workExperienceCard.isExpanded
+                                    = !workExperienceCard.isExpanded
                             }
 
                             Text {
+                                id: workExperienceRemoveButton
+                                anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: workExperienceCard.isConfirmedByUser
-                                    ? "Checked by you" : "That's right — keep it"
-                                color: workExperienceCard.isConfirmedByUser
-                                    ? JobCrushTheme.positiveColor : JobCrushTheme.secondaryTextColor
-                                font.pixelSize: JobCrushTheme.smallFontSize
+                                text: "\u00D7"
+                                color: removeWorkExperienceMouseArea.containsMouse
+                                    ? JobCrushTheme.callToActionColor
+                                    : JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.titleFontSize
+
+                                MouseArea {
+                                    id: removeWorkExperienceMouseArea
+                                    anchors.fill: parent
+                                    anchors.margins: -6
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: proDocsPage.workExperienceListViewModel
+                                        .removeWorkExperienceAt(workExperienceCard.index)
+                                }
                             }
                         }
-                    }
 
-                    Text {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 14
-                        anchors.top: parent.top
-                        anchors.topMargin: 8
-                        text: "×"
-                        color: removeWorkExperienceMouseArea.containsMouse
-                            ? JobCrushTheme.callToActionColor : JobCrushTheme.mutedTextColor
-                        font.pixelSize: JobCrushTheme.titleFontSize
+                        // ---- The body. Only when it is wanted. ----
+                        Column {
+                            width: parent.width
+                            visible: workExperienceCard.isExpanded
+                            spacing: 8
 
-                        MouseArea {
-                            id: removeWorkExperienceMouseArea
-                            anchors.fill: parent
-                            anchors.margins: -6
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: proDocsPage.workExperienceListViewModel
-                                .removeWorkExperienceAt(workExperienceCard.index)
+                            Row {
+                                width: parent.width
+                                spacing: 12
+
+                                InlineEditField {
+                                    width: (parent.width - 36) * 0.42
+                                    labelText: "Job title"
+                                    placeholderText: "what you were called"
+                                    fieldText: workExperienceCard.roleTitle
+                                    onEditingCommitted: function(newText) {
+                                        proDocsPage.workExperienceListViewModel
+                                            .setRoleTitleAt(workExperienceCard.index, newText)
+                                    }
+                                }
+
+                                InlineEditField {
+                                    width: (parent.width - 36) * 0.42
+                                    labelText: "Employer"
+                                    placeholderText: "who you worked for"
+                                    fieldText: workExperienceCard.employerName
+                                    onEditingCommitted: function(newText) {
+                                        proDocsPage.workExperienceListViewModel
+                                            .setEmployerNameAt(workExperienceCard.index, newText)
+                                    }
+                                }
+
+                                InlineEditField {
+                                    width: (parent.width - 36) * 0.08
+                                    labelText: "From"
+                                    placeholderText: "2016"
+                                    fieldText: workExperienceCard.startDateText
+                                    onEditingCommitted: function(newText) {
+                                        proDocsPage.workExperienceListViewModel
+                                            .setStartDateTextAt(workExperienceCard.index, newText)
+                                    }
+                                }
+
+                                InlineEditField {
+                                    width: (parent.width - 36) * 0.08
+                                    labelText: "To"
+                                    placeholderText: "2019"
+                                    fieldText: workExperienceCard.endDateText
+                                    onEditingCommitted: function(newText) {
+                                        proDocsPage.workExperienceListViewModel
+                                            .setEndDateTextAt(workExperienceCard.index, newText)
+                                    }
+                                }
+                            }
+
+                            // Grows to hold whatever is in it. A resume
+                            // paragraph pasted in here is a paragraph you can
+                            // read, not four words and a scrollbar.
+                            InlineEditField {
+                                width: parent.width
+                                labelText: "What you did there"
+                                placeholderText: "the short version"
+                                allowsMultipleLines: true
+                                fieldText: workExperienceCard.summaryText
+                                onEditingCommitted: function(newText) {
+                                    proDocsPage.workExperienceListViewModel
+                                        .setSummaryTextAt(workExperienceCard.index, newText)
+                                }
+                            }
+
+                            // Where this came from. A wrong guess should always
+                            // be traceable rather than merely doubted.
+                            Text {
+                                width: parent.width
+                                visible: workExperienceCard.sourceLineText.length > 0
+                                text: "read from your document: \u201C"
+                                      + workExperienceCard.sourceLineText + "\u201D"
+                                textFormat: Text.PlainText
+                                color: JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                                wrapMode: Text.Wrap
+                            }
+
+                            Text {
+                                text: workExperienceCard.isConfirmedByUser
+                                    ? "Checked by you" : "Tick the box above once this is right"
+                                color: workExperienceCard.isConfirmedByUser
+                                    ? JobCrushTheme.positiveColor
+                                    : JobCrushTheme.secondaryTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
                         }
                     }
                 }
@@ -725,6 +857,25 @@ Rectangle {
                     required property string sourceLineText
                     required property bool isConfirmedByUser
 
+                    property bool isExpanded: !isConfirmedByUser
+
+                    readonly property string glanceLine: {
+                        const school = schoolName.length > 0 ? schoolName : "Unnamed school"
+                        const credential = credentialText.length > 0
+                            ? "  ·  " + credentialText : ""
+                        const subject = fieldOfStudyText.length > 0
+                            ? "  ·  " + fieldOfStudyText : ""
+                        const finished = endDateText.length > 0 ? "  ·  " + endDateText : ""
+                        return school + credential + subject + finished
+                    }
+
+                    Connections {
+                        target: proDocsPage
+                        function onSetEveryCareerCardExpanded(shouldExpand) {
+                            educationCard.isExpanded = shouldExpand
+                        }
+                    }
+
                     width: careerHistoryColumn.width
                     height: educationColumn.implicitHeight + 28
                     radius: 8
@@ -739,127 +890,173 @@ Rectangle {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.margins: 14
-                        spacing: 8
+                        spacing: 10
 
-                        Row {
+                        Item {
                             width: parent.width
-                            spacing: 12
+                            height: 24
 
-                            InlineEditField {
-                                width: (parent.width - 36) * 0.38
-                                labelText: "School"
-                                placeholderText: "where you studied"
-                                fieldText: educationCard.schoolName
-                                onEditingCommitted: function(newText) {
-                                    proDocsPage.educationListViewModel
-                                        .setSchoolNameAt(educationCard.index, newText)
-                                }
-                            }
-
-                            InlineEditField {
-                                width: (parent.width - 36) * 0.24
-                                labelText: "Degree or certificate"
-                                placeholderText: "B.S., diploma…"
-                                fieldText: educationCard.credentialText
-                                onEditingCommitted: function(newText) {
-                                    proDocsPage.educationListViewModel
-                                        .setCredentialTextAt(educationCard.index, newText)
-                                }
-                            }
-
-                            InlineEditField {
-                                width: (parent.width - 36) * 0.24
-                                labelText: "Subject"
-                                placeholderText: "what you studied"
-                                fieldText: educationCard.fieldOfStudyText
-                                onEditingCommitted: function(newText) {
-                                    proDocsPage.educationListViewModel
-                                        .setFieldOfStudyTextAt(educationCard.index, newText)
-                                }
-                            }
-
-                            InlineEditField {
-                                width: (parent.width - 36) * 0.14
-                                labelText: "Finished"
-                                placeholderText: "2001"
-                                fieldText: educationCard.endDateText
-                                onEditingCommitted: function(newText) {
-                                    proDocsPage.educationListViewModel
-                                        .setEndDateTextAt(educationCard.index, newText)
-                                }
-                            }
-                        }
-
-                        Text {
-                            width: parent.width
-                            visible: educationCard.sourceLineText.length > 0
-                            text: "read from your document: “" + educationCard.sourceLineText + "”"
-                            color: JobCrushTheme.mutedTextColor
-                            font.pixelSize: JobCrushTheme.smallFontSize
-                            elide: Text.ElideRight
-                        }
-
-                        Row {
-                            spacing: 10
-
-                            Rectangle {
+                            Row {
+                                anchors.left: parent.left
+                                anchors.right: educationRemoveButton.left
+                                anchors.rightMargin: 10
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 20
-                                height: 20
-                                radius: 5
-                                color: educationCard.isConfirmedByUser
-                                    ? JobCrushTheme.positiveColor : "transparent"
-                                border.width: 2
-                                border.color: educationCard.isConfirmedByUser
-                                    ? JobCrushTheme.positiveColor : JobCrushTheme.secondaryTextColor
+                                spacing: 10
 
                                 Text {
-                                    anchors.centerIn: parent
-                                    visible: educationCard.isConfirmedByUser
-                                    text: "\u2713"
-                                    color: JobCrushTheme.onAccentTextColor
-                                    font.pixelSize: 14
-                                    font.weight: Font.Bold
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 12
+                                    text: educationCard.isExpanded ? "\u25BE" : "\u25B8"
+                                    color: JobCrushTheme.secondaryTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
                                 }
 
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 20
+                                    height: 20
+                                    radius: 5
+                                    color: educationCard.isConfirmedByUser
+                                        ? JobCrushTheme.positiveColor : "transparent"
+                                    border.width: 2
+                                    border.color: educationCard.isConfirmedByUser
+                                        ? JobCrushTheme.positiveColor
+                                        : JobCrushTheme.secondaryTextColor
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: educationCard.isConfirmedByUser
+                                        text: "\u2713"
+                                        color: JobCrushTheme.onAccentTextColor
+                                        font.pixelSize: 14
+                                        font.weight: Font.Bold
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: proDocsPage.educationListViewModel
+                                            .setConfirmedAt(educationCard.index,
+                                                            !educationCard.isConfirmedByUser)
+                                    }
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - 60
+                                    text: educationCard.glanceLine
+                                    textFormat: Text.PlainText
+                                    color: educationCard.schoolName.length > 0
+                                        ? JobCrushTheme.primaryTextColor
+                                        : JobCrushTheme.mutedTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                z: -1
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: educationCard.isExpanded = !educationCard.isExpanded
+                            }
+
+                            Text {
+                                id: educationRemoveButton
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "\u00D7"
+                                color: removeEducationMouseArea.containsMouse
+                                    ? JobCrushTheme.callToActionColor
+                                    : JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.titleFontSize
+
                                 MouseArea {
+                                    id: removeEducationMouseArea
                                     anchors.fill: parent
+                                    anchors.margins: -6
+                                    hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: proDocsPage.educationListViewModel
-                                        .setConfirmedAt(educationCard.index,
-                                                        !educationCard.isConfirmedByUser)
+                                        .removeEducationRecordAt(educationCard.index)
+                                }
+                            }
+                        }
+
+                        Column {
+                            width: parent.width
+                            visible: educationCard.isExpanded
+                            spacing: 8
+
+                            Row {
+                                width: parent.width
+                                spacing: 12
+
+                                InlineEditField {
+                                    width: (parent.width - 36) * 0.38
+                                    labelText: "School"
+                                    placeholderText: "where you studied"
+                                    fieldText: educationCard.schoolName
+                                    onEditingCommitted: function(newText) {
+                                        proDocsPage.educationListViewModel
+                                            .setSchoolNameAt(educationCard.index, newText)
+                                    }
+                                }
+
+                                InlineEditField {
+                                    width: (parent.width - 36) * 0.24
+                                    labelText: "Degree or certificate"
+                                    placeholderText: "B.S., diploma…"
+                                    fieldText: educationCard.credentialText
+                                    onEditingCommitted: function(newText) {
+                                        proDocsPage.educationListViewModel
+                                            .setCredentialTextAt(educationCard.index, newText)
+                                    }
+                                }
+
+                                InlineEditField {
+                                    width: (parent.width - 36) * 0.24
+                                    labelText: "Subject"
+                                    placeholderText: "what you studied"
+                                    fieldText: educationCard.fieldOfStudyText
+                                    onEditingCommitted: function(newText) {
+                                        proDocsPage.educationListViewModel
+                                            .setFieldOfStudyTextAt(educationCard.index, newText)
+                                    }
+                                }
+
+                                InlineEditField {
+                                    width: (parent.width - 36) * 0.14
+                                    labelText: "Finished"
+                                    placeholderText: "2001"
+                                    fieldText: educationCard.endDateText
+                                    onEditingCommitted: function(newText) {
+                                        proDocsPage.educationListViewModel
+                                            .setEndDateTextAt(educationCard.index, newText)
+                                    }
                                 }
                             }
 
                             Text {
-                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width
+                                visible: educationCard.sourceLineText.length > 0
+                                text: "read from your document: \u201C"
+                                      + educationCard.sourceLineText + "\u201D"
+                                textFormat: Text.PlainText
+                                color: JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                                wrapMode: Text.Wrap
+                            }
+
+                            Text {
                                 text: educationCard.isConfirmedByUser
-                                    ? "Checked by you" : "That's right — keep it"
+                                    ? "Checked by you" : "Tick the box above once this is right"
                                 color: educationCard.isConfirmedByUser
-                                    ? JobCrushTheme.positiveColor : JobCrushTheme.secondaryTextColor
+                                    ? JobCrushTheme.positiveColor
+                                    : JobCrushTheme.secondaryTextColor
                                 font.pixelSize: JobCrushTheme.smallFontSize
                             }
-                        }
-                    }
-
-                    Text {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 14
-                        anchors.top: parent.top
-                        anchors.topMargin: 8
-                        text: "×"
-                        color: removeEducationMouseArea.containsMouse
-                            ? JobCrushTheme.callToActionColor : JobCrushTheme.mutedTextColor
-                        font.pixelSize: JobCrushTheme.titleFontSize
-
-                        MouseArea {
-                            id: removeEducationMouseArea
-                            anchors.fill: parent
-                            anchors.margins: -6
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: proDocsPage.educationListViewModel
-                                .removeEducationRecordAt(educationCard.index)
                         }
                     }
                 }

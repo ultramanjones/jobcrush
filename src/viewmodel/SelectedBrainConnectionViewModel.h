@@ -44,6 +44,21 @@ class SelectedBrainConnectionViewModel : public QObject {
     // invokables below re-evaluate (same technique as the credential roster).
     Q_PROPERTY(int connectionRevision READ connectionRevision NOTIFY connectionChanged)
 
+    // --- "That brain would not connect" ----------------------------------
+    //
+    // A tick that quietly undoes itself is the app shrugging at the user. So
+    // when a check the user started comes back refused, these four carry the
+    // explanation to the screen: what happened, in whose words, and what to
+    // do about it. Showing is true only until the user says they have read it.
+    Q_PROPERTY(bool connectionRefusalIsShowing READ connectionRefusalIsShowing
+                   NOTIFY connectionRefusalChanged)
+    Q_PROPERTY(QString connectionRefusalTitle READ connectionRefusalTitle
+                   NOTIFY connectionRefusalChanged)
+    Q_PROPERTY(QString connectionRefusalReason READ connectionRefusalReason
+                   NOTIFY connectionRefusalChanged)
+    Q_PROPERTY(QString connectionRefusalNextStep READ connectionRefusalNextStep
+                   NOTIFY connectionRefusalChanged)
+
 public:
     SelectedBrainConnectionViewModel(AiBrain &aiBrain, QObject *parent = nullptr);
 
@@ -53,6 +68,15 @@ public:
     QString statusDetailText() const;
     QString selectedProviderKindName() const;
     int connectionRevision() const;
+
+    bool connectionRefusalIsShowing() const;
+    QString connectionRefusalTitle() const;
+    QString connectionRefusalReason() const;
+    QString connectionRefusalNextStep() const;
+
+    // The user has read it. Nothing else is undone — the brain stays
+    // unselected because it genuinely did not answer.
+    Q_INVOKABLE void dismissConnectionRefusal();
 
     // --- Per-provider, for the Settings checkboxes -----------------------
 
@@ -83,8 +107,14 @@ public:
 
 signals:
     void connectionChanged();
+    void connectionRefusalChanged();
 
 private:
     AiBrain &brain;
     int connectionChangeCounter = 0;
+
+    bool refusalIsShowing = false;
+    QString refusalVendorName;
+    QString refusalReasonText;
+    QString refusalNextStepText;
 };

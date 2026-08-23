@@ -60,6 +60,18 @@ QString providerDisplayNameFor(AiProviderKind providerKind)
     return QString();
 }
 
+// The floor under every failure message. A provider that had nothing
+// specific to say still does not get to leave the user with a dead end.
+QString defaultNextStepFor(const QString &vendorName)
+{
+    return QStringLiteral(
+        "Open the %1 tab above, delete the key and paste in a fresh copy from "
+        "%1's own key page. If that changes nothing, check that you are online "
+        "— Job Crush has to reach %1 over the internet to use it. Everything "
+        "else in Job Crush keeps working in the meantime; only the AI parts "
+        "need a brain.").arg(vendorName);
+}
+
 } // namespace
 
 AiBrain::AiBrain(AiCredentialRoster &credentialRoster,
@@ -80,7 +92,9 @@ AiBrain::AiBrain(AiCredentialRoster &credentialRoster,
         resetConnectionStateAfterChange();
         emit selectedProviderChanged();
         emit configurationChanged();
-        checkConnectionNow();
+        // A key was pasted, toggled or deleted in Settings — that is a person
+        // acting, so a refusal here has earned the right to speak up.
+        checkConnectionBecauseUserAskedFor();
     });
 }
 
@@ -220,8 +234,9 @@ void AiBrain::selectProviderKind(AiProviderKind providerKind)
     emit configurationChanged();
 
     // Switching brains is a key moment: find out right now whether the new
-    // one actually answers.
-    checkConnectionNow();
+    // one actually answers. The user just ticked a box, so if the vendor
+    // refuses, they hear about it rather than watching the tick vanish.
+    checkConnectionBecauseUserAskedFor();
 }
 
 void AiBrain::clearSelectedProvider()
@@ -299,6 +314,22 @@ void AiBrain::resetConnectionStateAfterChange()
     setConnectionState(AiBrainConnectionState::NotYetChecked, QString());
 }
 
+void AiBrain::checkConnectionBecauseUserAskedFor()
+{
+    // A person is standing there waiting for an answer, so a cached "we
+    // already know this failed" is not good enough — ask again, properly.
+    if (currentConnectionState == AiBrainConnectionState::ConnectionFailed) {
+        setConnectionState(AiBrainConnectionState::NotYetChecked, QString());
+    }
+    checkInFlightWasStartedByUser = true;
+    checkConnectionNow();
+    // Nothing went out (no brain, or a cached success answered instantly), so
+    // there is no pending refusal for this flag to belong to.
+    if (currentConnectionState != AiBrainConnectionState::Checking) {
+        checkInFlightWasStartedByUser = false;
+    }
+}
+
 void AiBrain::checkConnectionNow()
 {
     bool found = false;
@@ -341,17 +372,29 @@ void AiBrain::checkConnectionNow()
             [this, fingerprint](const QString &) {
         verifiedCredentialFingerprint = fingerprint;
         lastSuccessfulVerificationTime = QDateTime::currentDateTime();
+        checkInFlightWasStartedByUser = false;
         setConnectionState(AiBrainConnectionState::ConnectedAndActive, QString());
         activeVerificationReply->deleteLater();
         activeVerificationReply = nullptr;
     });
 
     connect(activeVerificationReply, &AiBrainReply::failed, this,
-            [this](const QString &humanReadableReason) {
+            [this, vendorName](const QString &humanReadableReason) {
         // Facts about the situation, never a verdict about the person.
+        const QString whatToDoNext = activeVerificationReply->suggestedNextStep();
+        const bool announceOutLoud = checkInFlightWasStartedByUser;
+        checkInFlightWasStartedByUser = false;
+
         setConnectionState(AiBrainConnectionState::ConnectionFailed, humanReadableReason);
         activeVerificationReply->deleteLater();
         activeVerificationReply = nullptr;
+
+        if (announceOutLoud) {
+            emit connectionAttemptRefused(vendorName, humanReadableReason,
+                                          whatToDoNext.isEmpty()
+                                              ? defaultNextStepFor(vendorName)
+                                              : whatToDoNext);
+        }
     });
 }
 

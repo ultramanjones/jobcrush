@@ -103,6 +103,9 @@ Two other places worth a look:
 
 Next: the Job Pipelines board, then ProDocs document intake.
 
+What is coming next, what is deliberately parked, and why, is in
+[BACKLOG.md](BACKLOG.md).
+
 ## Conventions
 
 Long explicit `camelCase` names — code is written for humans. In-house subsystems get identity names (`AIBrain`, `JobScout`, `ProDocs`, `ModelView`) so they read differently from framework API. Dense logic is commented heavily. No Qt Widgets anywhere: the QML components are hand-written and meant to be read.

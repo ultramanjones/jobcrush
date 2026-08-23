@@ -425,7 +425,16 @@ Rectangle {
             required property bool isRemoteRole
 
             width: ListView.view.width
-            height: discoveredJobRowColumn.implicitHeight + 24
+
+            // Capped on purpose. A row's height comes from text we did not
+            // write — and a job board that slips one piece of markup past the
+            // cleaner should be able to make a row look wrong, never to make
+            // it a screen tall. The ceiling is the real fix's second lock:
+            // nothing a source sends can push a row past this.
+            readonly property int tallestARowMayEver: 132
+            height: Math.min(tallestARowMayEver,
+                             discoveredJobRowColumn.implicitHeight + 24)
+            clip: true
             radius: 8
             color: discoveredJobRowMouseArea.containsMouse
                 ? JobCrushTheme.cardBackgroundColor : JobCrushTheme.panelBackgroundColor
@@ -476,9 +485,16 @@ Rectangle {
                 anchors.topMargin: 12
                 spacing: 4
 
+                // PlainText, everywhere a job board's words are shown.
+                //
+                // Qt's default is AutoText, which sniffs the string and
+                // switches to rich text when it smells like markup — which
+                // means a remote party gets to decide whether their text is
+                // markup in our window. It isn't. Not here, not ever.
                 Text {
                     width: parent.width
                     text: discoveredJobRow.positionTitle
+                    textFormat: Text.PlainText
                     color: JobCrushTheme.primaryTextColor
                     font.pixelSize: JobCrushTheme.bodyFontSize
                     font.weight: Font.DemiBold
@@ -494,6 +510,7 @@ Rectangle {
                           + (discoveredJobRow.salaryText.length > 0
                                  ? "   ·   " + discoveredJobRow.salaryText : "")
                           + "   ·   via " + discoveredJobRow.sourceDisplayName
+                    textFormat: Text.PlainText
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     elide: Text.ElideRight
@@ -506,6 +523,7 @@ Rectangle {
                     visible: discoveredJobRow.matchReasonsText.length > 0
                              && discoveriesPage.discoveredJobListViewModel.canRankProspects
                     text: discoveredJobRow.matchReasonsText
+                    textFormat: Text.PlainText
                     color: JobCrushTheme.positiveColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     elide: Text.ElideRight
@@ -515,6 +533,7 @@ Rectangle {
                     width: parent.width
                     visible: discoveredJobRow.summaryLine.length > 0
                     text: discoveredJobRow.summaryLine
+                    textFormat: Text.PlainText
                     color: JobCrushTheme.mutedTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     elide: Text.ElideRight

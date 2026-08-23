@@ -15,6 +15,51 @@ SelectedBrainConnectionViewModel::SelectedBrainConnectionViewModel(
     };
     connect(&brain, &AiBrain::selectedProviderChanged, this, announceChange);
     connect(&brain, &AiBrain::connectionStateChanged, this, announceChange);
+
+    // A refusal the user is owed an explanation for. Held here rather than
+    // shown from below: the ModelView states the fact, the view decides how
+    // loudly to say it.
+    connect(&brain, &AiBrain::connectionAttemptRefused, this,
+            [this](const QString &vendorName, const QString &plainReason,
+                   const QString &whatToDoNext) {
+        refusalVendorName = vendorName;
+        refusalReasonText = plainReason;
+        refusalNextStepText = whatToDoNext;
+        refusalIsShowing = true;
+        emit connectionRefusalChanged();
+    });
+}
+
+bool SelectedBrainConnectionViewModel::connectionRefusalIsShowing() const
+{
+    return refusalIsShowing;
+}
+
+QString SelectedBrainConnectionViewModel::connectionRefusalTitle() const
+{
+    if (refusalVendorName.isEmpty()) {
+        return QStringLiteral("That brain would not connect");
+    }
+    return QStringLiteral("%1 would not connect").arg(refusalVendorName);
+}
+
+QString SelectedBrainConnectionViewModel::connectionRefusalReason() const
+{
+    return refusalReasonText;
+}
+
+QString SelectedBrainConnectionViewModel::connectionRefusalNextStep() const
+{
+    return refusalNextStepText;
+}
+
+void SelectedBrainConnectionViewModel::dismissConnectionRefusal()
+{
+    if (!refusalIsShowing) {
+        return;
+    }
+    refusalIsShowing = false;
+    emit connectionRefusalChanged();
 }
 
 QString SelectedBrainConnectionViewModel::bannerText() const
@@ -113,6 +158,7 @@ void SelectedBrainConnectionViewModel::setProviderSelected(
         brain.clearSelectedProvider();
         return;
     }
+    // Ticking the box IS the user asking. A refusal from here is announced.
     brain.selectProviderKind(aiProviderKindFromStorageText(providerKindName));
 }
 

@@ -100,6 +100,11 @@ public:
     // moments changes something — Job Crush never polls a vendor in a loop.
     void checkConnectionNow();
 
+    // The same check, but the user asked for it — so a refusal is announced
+    // rather than only recorded. Ticking a brain's checkbox comes through
+    // here; a screen merely opening does not.
+    void checkConnectionBecauseUserAskedFor();
+
     // --- Asking the brain something ---------------------------------------
 
     // Starts a streaming conversation with the selected brain. The returned
@@ -115,6 +120,16 @@ signals:
 
     // connectionState()/connectionStatusText() changed.
     void connectionStateChanged();
+
+    // A check the USER started just came back refused. The tick has already
+    // come off the box; this is what gets said out loud about it.
+    //
+    // Only fires for a check the user set in motion — ticking a box, pasting
+    // a key. A check that runs because a screen opened fails quietly into the
+    // banner, because nobody should be met with an error box on launch.
+    void connectionAttemptRefused(const QString &vendorName,
+                                  const QString &plainReason,
+                                  const QString &whatToDoNext);
 
     // Configuration changed (a key added/removed/toggled in Settings, or a
     // different brain selected).
@@ -162,4 +177,9 @@ private:
     QString verifiedCredentialFingerprint;
     QDateTime lastSuccessfulVerificationTime;
     AiBrainReply *activeVerificationReply = nullptr; // owned via Qt parentage to this
+
+    // Whether the check now in flight was set in motion by the user. Decides
+    // whether a refusal is announced out loud or simply recorded in the
+    // banner. Cleared as soon as the check settles.
+    bool checkInFlightWasStartedByUser = false;
 };

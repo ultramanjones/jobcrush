@@ -167,8 +167,13 @@ Rectangle {
 
                 Text {
                     width: parent.width
+                    // The color word comes from the theme, not from this
+                    // sentence. Hardcoded, "green" was a lie in four palettes
+                    // out of six — and a UI that describes itself wrongly is
+                    // worse than one that says nothing.
                     text: "Two separate things live here. The TABS pick whose key "
-                          + "you're editing — a green ● means that slot already holds "
+                          + "you're editing — a " + JobCrushTheme.positiveColorName
+                          + " ● means that slot already holds "
                           + "one. The CHECKBOX picks which brain actually answers you. "
                           + "AIBrain speaks Anthropic, OpenRouter and Gemini today; "
                           + "OpenAI and Ollama are on the way."
@@ -240,26 +245,66 @@ Rectangle {
                                     readonly property bool isFocusedTab:
                                         settingsPage.newKeyProviderKindName === providerEntry.modelData
 
+                                    // Ticked, and Job Crush is asking the vendor
+                                    // right now whether the key works. The box
+                                    // sits gray and breathes for exactly as long
+                                    // as that question is unanswered.
+                                    readonly property bool isBeingConfirmed:
+                                        providerEntry.isSelectedBrain
+                                        && settingsPage.brainConnectionViewModel
+                                               .connectionIsBeingChecked
+
                                     // ---- The checkbox: the user's choice of brain ----
                                     Rectangle {
+                                        id: brainChoiceBox
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 22
                                         height: 22
                                         radius: 5
+
+                                        // Three states, in this order and no
+                                        // other: gray while we are asking the
+                                        // vendor, filled once the vendor has
+                                        // said yes, empty otherwise. It NEVER
+                                        // goes to positiveColor on the strength
+                                        // of a click — only on an answer.
                                         color: providerEntry.isSelectedAndActive
-                                            ? JobCrushTheme.positiveColor : "transparent"
+                                            ? JobCrushTheme.positiveColor
+                                            : (providerEntry.isBeingConfirmed
+                                                   ? JobCrushTheme.pendingColor
+                                                   : "transparent")
                                         border.width: 2
                                         border.color: !providerEntry.canBeSelected
                                             ? JobCrushTheme.hairlineBorderColor
-                                            : (providerEntry.isSelectedBrain
-                                                   ? JobCrushTheme.positiveColor
-                                                   : JobCrushTheme.secondaryTextColor)
+                                            : (providerEntry.isBeingConfirmed
+                                                   ? JobCrushTheme.pendingColor
+                                                   : (providerEntry.isSelectedBrain
+                                                          ? JobCrushTheme.positiveColor
+                                                          : JobCrushTheme.secondaryTextColor))
                                         opacity: providerEntry.canBeSelected ? 1.0 : 0.45
+
+                                        // The wait made visible, on the box
+                                        // itself so it reads from across the
+                                        // room. (No spinner. Ever.)
+                                        SequentialAnimation on scale {
+                                            running: providerEntry.isBeingConfirmed
+                                            loops: Animation.Infinite
+                                            NumberAnimation { from: 1.0; to: 0.82; duration: 520
+                                                              easing.type: Easing.InOutQuad }
+                                            NumberAnimation { from: 0.82; to: 1.0; duration: 520
+                                                              easing.type: Easing.InOutQuad }
+                                            onRunningChanged: {
+                                                if (!running) {
+                                                    brainChoiceBox.scale = 1.0
+                                                }
+                                            }
+                                        }
 
                                         Text {
                                             id: brainChoiceTick
                                             anchors.centerIn: parent
                                             visible: providerEntry.isSelectedBrain
+                                                     && !providerEntry.isBeingConfirmed
                                             text: "\u2713"
                                             color: providerEntry.isSelectedAndActive
                                                 ? JobCrushTheme.onAccentTextColor : JobCrushTheme.positiveColor
@@ -272,6 +317,7 @@ Rectangle {
                                             SequentialAnimation on opacity {
                                                 running: providerEntry.isSelectedBrain
                                                          && !providerEntry.isSelectedAndActive
+                                                         && !providerEntry.isBeingConfirmed
                                                 loops: Animation.Infinite
                                                 NumberAnimation { from: 1.0; to: 0.3; duration: 650 }
                                                 NumberAnimation { from: 0.3; to: 1.0; duration: 650 }
@@ -1113,7 +1159,8 @@ Rectangle {
                             { themeName: "grayscale",  displayLabel: "Grayscale" },
                             { themeName: "fruitloops", displayLabel: "Fruit Loops" },
                             { themeName: "amish",      displayLabel: "Amish" },
-                            { themeName: "traceon",    displayLabel: "Trace On" }
+                            { themeName: "traceon",    displayLabel: "Trace On" },
+                            { themeName: "traceon2",   displayLabel: "Trace On II" }
                         ]
 
                         delegate: Rectangle {
@@ -1169,6 +1216,115 @@ Rectangle {
         anchors.bottomMargin: 12
         anchors.rightMargin: 4
         flickableTarget: settingsFlickable
+    }
+
+    // ==================================================================
+    // "That brain would not connect"
+    //
+    // Ticking a box is a promise that the brain will answer. When the vendor
+    // refuses, the tick comes straight back off — and saying nothing at that
+    // moment would leave the user watching a checkbox undo itself for no
+    // stated reason. So: what happened, in whose words, and what to do about
+    // it. Never a status code on its own.
+    //
+    // It only ever appears after a check the USER started. Job Crush does not
+    // greet anyone with an error box on launch.
+    // ==================================================================
+    Rectangle {
+        id: connectionRefusalScreen
+
+        anchors.fill: parent
+        visible: settingsPage.brainConnectionViewModel.connectionRefusalIsShowing
+        color: Qt.rgba(0, 0, 0, 0.55)
+        z: 100
+
+        // Swallows every click behind it, so nothing can be ticked while an
+        // unread explanation is on screen.
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: settingsPage.brainConnectionViewModel.dismissConnectionRefusal()
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(520, settingsPage.width - 80)
+            height: connectionRefusalColumn.implicitHeight + 44
+            radius: 12
+            color: JobCrushTheme.panelBackgroundColor
+            border.width: 2
+            border.color: JobCrushTheme.callToActionColor
+
+            // The card itself is not a dismiss target — clicking the words you
+            // are trying to read should not close them.
+            MouseArea { anchors.fill: parent }
+
+            Column {
+                id: connectionRefusalColumn
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 22
+                spacing: 12
+
+                Text {
+                    width: parent.width
+                    text: settingsPage.brainConnectionViewModel.connectionRefusalTitle
+                    color: JobCrushTheme.callToActionColor
+                    font.pixelSize: JobCrushTheme.titleFontSize
+                    font.weight: Font.Bold
+                    wrapMode: Text.Wrap
+                }
+
+                // The vendor's own words, cleaned up for human eyes.
+                Text {
+                    width: parent.width
+                    visible: text.length > 0
+                    text: settingsPage.brainConnectionViewModel.connectionRefusalReason
+                    color: JobCrushTheme.primaryTextColor
+                    font.pixelSize: JobCrushTheme.bodyFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                // The half that makes this worth showing at all.
+                Text {
+                    width: parent.width
+                    visible: text.length > 0
+                    text: settingsPage.brainConnectionViewModel.connectionRefusalNextStep
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.bodyFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                Rectangle {
+                    anchors.right: parent.right
+                    width: connectionRefusalDismissLabel.implicitWidth + 34
+                    height: 36
+                    radius: 8
+                    color: connectionRefusalDismissMouseArea.containsMouse
+                        ? Qt.lighter(JobCrushTheme.accentColor, 1.12)
+                        : JobCrushTheme.accentColor
+
+                    Text {
+                        id: connectionRefusalDismissLabel
+                        anchors.centerIn: parent
+                        text: "Got it"
+                        color: JobCrushTheme.onAccentTextColor
+                        font.pixelSize: JobCrushTheme.bodyFontSize
+                        font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        id: connectionRefusalDismissMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: settingsPage.brainConnectionViewModel
+                            .dismissConnectionRefusal()
+                    }
+                }
+            }
+        }
     }
 
     // The provider chip selection for the key form (view-local UI state).

@@ -268,7 +268,9 @@ QString credentialPhraseIn(const QString &line)
     return line.mid(match.capturedStart(0), matchEnd - match.capturedStart(0)).trimmed();
 }
 
-bool looksLikeSchoolName(const QString &piece)
+// The words that mark an institution. One list, so the detector below and
+// the splitter below THAT can never disagree about what a school looks like.
+const QStringList &wordsThatNameASchool()
 {
     static const QStringList schoolWords = {
         QStringLiteral("university"), QStringLiteral("college"), QStringLiteral("institute"),
@@ -278,13 +280,147 @@ bool looksLikeSchoolName(const QString &piece)
         // matching only the full word would have missed it entirely.
         QStringLiteral("univ"),
     };
+    return schoolWords;
+}
+
+bool looksLikeSchoolName(const QString &piece)
+{
     const QString loweredPiece = piece.toLower();
-    for (const QString &schoolWord : schoolWords) {
+    for (const QString &schoolWord : wordsThatNameASchool()) {
         if (loweredPiece.contains(schoolWord)) {
             return true;
         }
     }
     return false;
+}
+
+// One word, stripped of the punctuation transcripts sprinkle around, asked
+// whether it is the word that names an institution.
+bool thisWordNamesASchool(const QString &word)
+{
+    QString bareWord = word.toLower();
+    static const QRegularExpression edgePunctuationPattern(
+        QStringLiteral("^[^a-z]+|[^a-z]+$"));
+    bareWord.remove(edgePunctuationPattern);
+    if (bareWord.isEmpty()) {
+        return false;
+    }
+    for (const QString &schoolWord : wordsThatNameASchool()) {
+        if (bareWord == schoolWord || bareWord == schoolWord + QStringLiteral("s")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Small words that belong INSIDE an institution's name rather than ending it.
+bool wordBelongsInsideASchoolName(const QString &word)
+{
+    static const QStringList joiningWords = {
+        QStringLiteral("of"), QStringLiteral("at"), QStringLiteral("the"),
+        QStringLiteral("and"), QStringLiteral("for"), QStringLiteral("in"),
+    };
+    return joiningWords.contains(word.toLower());
+}
+
+bool wordStartsAProperNoun(const QString &word)
+{
+    return !word.isEmpty() && word.at(0).isUpper();
+}
+
+// Pulls apart a run of text that names MORE THAN ONE institution.
+//
+// Transcripts do this constantly: a degree page lists the school that granted
+// it and then, with nothing between them, every school that sent transfer
+// credit. Extracted from a PDF it arrives as one line with no separator, and
+// a school box that reads "Pennsylvania State University Community College of
+// Allegheny County Univ Alabama Huntsville" is not one school with a strange
+// name — it is three schools the user now has to untangle by hand.
+//
+// The shape of an institution's name decides where it ends:
+//   - a name that BEGINS with the marker word keeps going ("Univ Alabama
+//     Huntsville", "University of Alabama in Huntsville"),
+//   - a name that ENDS with it stops there ("Pennsylvania State University"),
+//   - a connector after the marker pulls the rest in ("College of Allegheny
+//     County").
+//
+// One institution in, one out — the common case costs nothing.
+QStringList institutionNamesIn(const QString &text)
+{
+    const QStringList words =
+        text.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+
+    QList<int> markerWordIndexes;
+    for (int wordIndex = 0; wordIndex < words.count(); ++wordIndex) {
+        if (thisWordNamesASchool(words.at(wordIndex))) {
+            markerWordIndexes.append(wordIndex);
+        }
+    }
+    if (markerWordIndexes.count() < 2) {
+        return QStringList{text.trimmed()};
+    }
+
+    QStringList institutionNames;
+    int spanStartIndex = 0;
+
+    for (int markerNumber = 0; markerNumber < markerWordIndexes.count(); ++markerNumber) {
+        const int markerIndex = markerWordIndexes.at(markerNumber);
+        const int nextMarkerIndex = (markerNumber + 1 < markerWordIndexes.count())
+            ? markerWordIndexes.at(markerNumber + 1)
+            : words.count();
+
+        int spanEndIndex = markerIndex;
+
+        // A leading marker ("Univ …", "University of …") owns what follows it.
+        // A trailing one ("… State University") does not.
+        const bool markerLeadsTheName = (markerIndex == spanStartIndex)
+            || (markerIndex + 1 < words.count()
+                && wordBelongsInsideASchoolName(words.at(markerIndex + 1)));
+
+        if (markerLeadsTheName) {
+            int candidateIndex = markerIndex + 1;
+            while (candidateIndex < nextMarkerIndex
+                   && (wordStartsAProperNoun(words.at(candidateIndex))
+                       || wordBelongsInsideASchoolName(words.at(candidateIndex)))) {
+                spanEndIndex = candidateIndex;
+                ++candidateIndex;
+            }
+            // A connector cannot be the last word of a name — "College of"
+            // is not a school.
+            while (spanEndIndex > markerIndex
+                   && wordBelongsInsideASchoolName(words.at(spanEndIndex))) {
+                --spanEndIndex;
+            }
+        }
+
+        if (spanEndIndex < spanStartIndex) {
+            spanEndIndex = spanStartIndex;
+        }
+
+        QStringList wordsOfThisName;
+        for (int wordIndex = spanStartIndex; wordIndex <= spanEndIndex; ++wordIndex) {
+            wordsOfThisName.append(words.at(wordIndex));
+        }
+        const QString institutionName = wordsOfThisName.join(QLatin1Char(' ')).trimmed();
+        if (!institutionName.isEmpty()) {
+            institutionNames.append(institutionName);
+        }
+
+        spanStartIndex = spanEndIndex + 1;
+    }
+
+    // Anything after the last institution is a date, a degree or a grade —
+    // it is not a school, and inventing a school out of it would be worse
+    // than leaving the run alone.
+
+    // If the split produced anything that no longer reads as a school, the
+    // guess was wrong. Hand back the original rather than a mess.
+    for (const QString &institutionName : institutionNames) {
+        if (!looksLikeSchoolName(institutionName)) {
+            return QStringList{text.trimmed()};
+        }
+    }
+    return institutionNames.isEmpty() ? QStringList{text.trimmed()} : institutionNames;
 }
 
 // The subject, when the line spells it out: "Bachelor of Science IN Computer
@@ -493,6 +629,12 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeT
             educationRecord.credentialText = credentialPhrase;
             educationRecord.fieldOfStudyText = fieldOfStudyIn(line, credentialPhrase);
 
+            // Schools this line names beyond the first. Transcripts list
+            // transfer credit right alongside the granting school, and each
+            // of those IS a place the user went — its own row, not a longer
+            // string crammed into one box.
+            QStringList additionalSchoolNames;
+
             for (const QString &piece : piecesOfEntryLine(line)) {
                 if (looksLikeSchoolName(piece) && educationRecord.schoolName.isEmpty()) {
                     QString schoolNamePiece = piece;
@@ -508,13 +650,24 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeT
                         }
                     }
 
-                    educationRecord.schoolName = withoutPunctuationDebris(schoolNamePiece);
+                    const QStringList schoolNamesInThisPiece =
+                        institutionNamesIn(withoutPunctuationDebris(schoolNamePiece));
+                    educationRecord.schoolName = schoolNamesInThisPiece.first();
+                    for (int extraIndex = 1; extraIndex < schoolNamesInThisPiece.count();
+                         ++extraIndex) {
+                        additionalSchoolNames.append(schoolNamesInThisPiece.at(extraIndex));
+                    }
                 }
             }
             // The credential and the school often sit on consecutive lines.
             if (educationRecord.schoolName.isEmpty() && !recentNonEmptyLines.isEmpty()
                     && looksLikeSchoolName(recentNonEmptyLines.last())) {
-                educationRecord.schoolName = recentNonEmptyLines.last().trimmed();
+                const QStringList schoolNamesAbove =
+                    institutionNamesIn(recentNonEmptyLines.last().trimmed());
+                educationRecord.schoolName = schoolNamesAbove.first();
+                for (int extraIndex = 1; extraIndex < schoolNamesAbove.count(); ++extraIndex) {
+                    additionalSchoolNames.append(schoolNamesAbove.at(extraIndex));
+                }
                 educationRecord.sourceLineText =
                     recentNonEmptyLines.last() + QStringLiteral("  /  ") + line;
             }
@@ -558,6 +711,22 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &resumeT
                 previousRecord.sourceLineText += QStringLiteral("  /  ") + line;
             } else {
                 parsedInsights.educationRecords.append(educationRecord);
+            }
+
+            // Each extra school named on that line gets its own row, carrying
+            // the school and nothing else. The degree and the dates belonged
+            // to the FIRST school; guessing that they belong to a transfer
+            // school too would be a confident lie on the user's own history.
+            // The row arrives unconfirmed, which is exactly right — this is a
+            // guess, and the user is the one who knows.
+            for (const QString &additionalSchoolName : additionalSchoolNames) {
+                if (additionalSchoolName.isEmpty()) {
+                    continue;
+                }
+                EducationRecord transferSchoolRecord;
+                transferSchoolRecord.schoolName = additionalSchoolName;
+                transferSchoolRecord.sourceLineText = line;
+                parsedInsights.educationRecords.append(transferSchoolRecord);
             }
         }
 

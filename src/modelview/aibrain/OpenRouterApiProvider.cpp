@@ -203,12 +203,24 @@ AiBrainReply *OpenRouterApiProvider::verifyCredentialConnection(
             return;
         }
         if (networkReply->error() == QNetworkReply::AuthenticationRequiredError) {
-            brainReply->markFailed(QStringLiteral(
-                "OpenRouter did not accept this key. Delete it in Settings and "
-                "add a fresh one from OpenRouter's key page."));
+            brainReply->markFailed(
+                QStringLiteral("OpenRouter would not accept that key."),
+                QStringLiteral(
+                    "Sign in at openrouter.ai, open Keys, and copy the key again "
+                    "— OpenRouter keys begin with \"sk-or-\". Delete the old one "
+                    "on the openrouter tab above and paste the new one in. Worth "
+                    "checking the same page for a spent balance: OpenRouter turns "
+                    "a key off when the credit runs out, and it reads exactly "
+                    "like a bad key from here."));
             return;
         }
-        brainReply->markFailed(networkReply->errorString());
+        brainReply->markFailed(
+            networkReply->errorString(),
+            QStringLiteral(
+                "That looks like the connection rather than the key. Check that "
+                "you are online and tick the box again. On a work laptop or a "
+                "VPN, openrouter.ai is sometimes blocked outright — trying it in "
+                "a browser will tell you in a few seconds."));
     });
 
     return brainReply;
