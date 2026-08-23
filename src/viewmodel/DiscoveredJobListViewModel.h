@@ -45,6 +45,20 @@ class DiscoveredJobListViewModel : public QAbstractListModel {
     // Prospects says so plainly rather than showing a meaningless order.
     Q_PROPERTY(bool canRankProspects READ canRankProspects NOTIFY discoveredJobsChanged)
 
+    // How many jobs the location filter is holding back, and whether it is
+    // filtering at all. The page states this out loud — a filter that quietly
+    // eats jobs and never admits it looks exactly like a broken sweep, and
+    // the user would go hunting for a bug that isn't there.
+    Q_PROPERTY(int jobCountOutsideSearchArea READ jobCountOutsideSearchArea
+                   NOTIFY discoveredJobsChanged)
+    Q_PROPERTY(bool searchAreaIsNarrowed READ searchAreaIsNarrowed
+                   NOTIFY discoveredJobsChanged)
+
+    // Which side of the filter this list is showing. False is the normal
+    // view; true is the "Outside your search area" look at what was held back.
+    Q_PROPERTY(bool showingOutsideSearchArea READ showingOutsideSearchArea
+                   WRITE setShowingOutsideSearchArea NOTIFY showingOutsideSearchAreaChanged)
+
 public:
     enum DiscoveredJobRole {
         PositionTitleRole = Qt::UserRole + 1,
@@ -74,6 +88,10 @@ public:
     QString lastSweepSummaryText() const;
     QString lastSweepTroubleText() const;
     bool canRankProspects() const;
+    int jobCountOutsideSearchArea() const;
+    bool searchAreaIsNarrowed() const;
+    bool showingOutsideSearchArea() const;
+    void setShowingOutsideSearchArea(bool showOutside);
 
     // The "scout now" action. Discovery is on demand by design — Job Crush
     // does not sit in the background hammering other people's free APIs.
@@ -85,6 +103,7 @@ public:
 
 signals:
     void activeTabSourceNameChanged();
+    void showingOutsideSearchAreaChanged();
     void discoveredJobsChanged();
     void sweepProgressChanged();
 
@@ -93,5 +112,6 @@ private:
 
     JobScout &discoveryJobScout;
     QString storedActiveTabSourceName;   // empty = Top Prospects
+    bool storedShowingOutsideSearchArea = false;
     QList<ScoredJobPosting> displayedJobPostings;
 };

@@ -40,6 +40,20 @@ public:
 
     ProspectMatchResult scoreJobPosting(const JobPosting &jobPosting) const;
 
+    // Which of the user's chosen places this posting sits in, or empty when
+    // none of them. Public because the SAME answer decides two things — how a
+    // posting scores and whether it is shown at all — and those two must
+    // never be able to disagree about it.
+    QString matchedWorkLocationFor(const JobPosting &jobPosting) const;
+
+    // Whether this posting belongs in the user's search area at all.
+    //
+    // Three ways to be inside, and the first two matter as much as the third:
+    //  - the user named no places, so nothing is being filtered
+    //  - the job is remote, which is nowhere and everywhere
+    //  - its location matches somewhere they named
+    bool jobPostingIsInsideSearchArea(const JobPosting &jobPosting) const;
+
 private:
     // --- The weights, all in one readable place ---------------------------
     //
@@ -58,8 +72,7 @@ private:
     int scoreSkillMatch(const QString &loweredSearchableText,
                         QStringList &matchReasons) const;
     int scoreRemoteFit(const JobPosting &jobPosting, QStringList &matchReasons) const;
-    int scoreLocationFit(const QString &loweredLocationText,
-                         QStringList &matchReasons) const;
+    int scoreLocationFit(const JobPosting &jobPosting, QStringList &matchReasons) const;
     int scoreSalaryFit(const QString &salaryText, QStringList &matchReasons) const;
     int scoreFreshness(const JobPosting &jobPosting, QStringList &matchReasons) const;
 

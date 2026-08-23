@@ -2,6 +2,11 @@
 
 #include <algorithm>
 
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
+
 #include "../../model/JobPostingRepository.h"
 #include "ArbeitnowJobSource.h"
 #include "JobScoutReply.h"
@@ -31,8 +36,10 @@ QString crossSourceIdentityOf(const JobPosting &jobPosting)
 JobScout::JobScout(JobPostingRepository &jobPostingRepository,
                    JobSourceRoster &sourceRoster,
                    JobSearchProfile &searchProfile,
+                   const QString &diagnosticsFolderPath,
                    QObject *parent)
     : QObject(parent)
+    , sweepLogFolderPath(diagnosticsFolderPath)
     , discoveredJobPostingRepository(jobPostingRepository)
     , registeredSourceRoster(sourceRoster)
     , userSearchProfile(searchProfile)
@@ -166,16 +173,41 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
         // a mystery.
         const bool sourceCameBackEmpty = foundJobPostings.isEmpty();
 
+        // Jobs arrived but Job Crush could not keep them. That is a bug in
+        // Job Crush, not a problem with the site, and it says so.
+        const bool everyJobWasRefused = !foundJobPostings.isEmpty()
+            && jobPostingsRefusedThisSource == foundJobPostings.count();
+
+        QString sourceOutcomeText;
+        if (sourceCameBackEmpty) {
+            sourceOutcomeText = QStringLiteral("%1: answered, but sent no jobs back")
+                                    .arg(sourceDisplayName);
+        } else if (everyJobWasRefused) {
+            sourceOutcomeText =
+                QStringLiteral("%1: %2 jobs arrived but Job Crush could not store any "
+                               "of them — %3")
+                    .arg(sourceDisplayName)
+                    .arg(foundJobPostings.count())
+                    .arg(firstRefusalReasonThisSource);
+        } else if (jobPostingsRefusedThisSource > 0) {
+            sourceOutcomeText =
+                QStringLiteral("%1: %2 found, %3 new, %4 could not be stored — %5")
+                    .arg(sourceDisplayName)
+                    .arg(foundJobPostings.count())
+                    .arg(newJobsFromThisSource)
+                    .arg(jobPostingsRefusedThisSource)
+                    .arg(firstRefusalReasonThisSource);
+        } else {
+            sourceOutcomeText = QStringLiteral("%1: %2 found, %3 new")
+                                    .arg(sourceDisplayName)
+                                    .arg(foundJobPostings.count())
+                                    .arg(newJobsFromThisSource);
+        }
+
         finishSourceAndReportProgress(
             sourceStorageName,
-            sourceCameBackEmpty
-                ? QStringLiteral("%1: answered, but sent no jobs back")
-                      .arg(sourceDisplayName)
-                : QStringLiteral("%1: %2 found, %3 new")
-                      .arg(sourceDisplayName)
-                      .arg(foundJobPostings.count())
-                      .arg(newJobsFromThisSource),
-            sourceCameBackEmpty);
+            sourceOutcomeText,
+            sourceCameBackEmpty || jobPostingsRefusedThisSource > 0);
 
         scoutReply->deleteLater();
     });
@@ -199,11 +231,21 @@ void JobScout::recordFindingsFromSource(const QString &sourceStorageName,
 {
     Q_UNUSED(sourceStorageName);
 
+    jobPostingsRefusedThisSource = 0;
+    firstRefusalReasonThisSource.clear();
+
     for (JobPosting foundJobPosting : foundJobPostings) {
         bool wasAlreadyKnown = false;
         if (!discoveredJobPostingRepository.insertDiscoveryIfNew(foundJobPosting,
                                                                  wasAlreadyKnown)) {
-            continue; // a database failure on one row should not sink the sweep
+            // One bad row must not sink the sweep — but it must not vanish
+            // either. A source whose every row is refused looks EXACTLY like
+            // a source that found nothing, and that mistake cost days.
+            ++jobPostingsRefusedThisSource;
+            if (firstRefusalReasonThisSource.isEmpty()) {
+                firstRefusalReasonThisSource = discoveredJobPostingRepository.lastErrorText();
+            }
+            continue;
         }
         ++totalJobsFoundThisSweep;
         if (!wasAlreadyKnown) {
@@ -236,6 +278,8 @@ void JobScout::finishSourceAndReportProgress(const QString &sourceStorageName,
         storedLastSweepTroubleText =
             sourcesThatHadTroubleThisSweep.join(QStringLiteral("   ·   "));
 
+        writeSweepLog();
+
         emit discoveriesChanged();
     }
 
@@ -243,7 +287,7 @@ void JobScout::finishSourceAndReportProgress(const QString &sourceStorageName,
 }
 
 QList<ScoredJobPosting> JobScout::scoredJobPostingsFromSource(
-    const QString &sourceStorageName) const
+    const QString &sourceStorageName, SearchAreaScope searchAreaScope) const
 {
     const ProspectScorer prospectScorer(userSearchProfile);
 
@@ -253,6 +297,11 @@ QList<ScoredJobPosting> JobScout::scoredJobPostingsFromSource(
 
     scoredJobPostings.reserve(storedJobPostings.count());
     for (const JobPosting &storedJobPosting : storedJobPostings) {
+        const bool jobIsInsideSearchArea =
+            prospectScorer.jobPostingIsInsideSearchArea(storedJobPosting);
+        if (jobIsInsideSearchArea != (searchAreaScope == SearchAreaScope::InsideSearchArea)) {
+            continue;
+        }
         // A site's own tab stays in the site's own order — newest first. The
         // score rides along so a row can still show it, but sorting by match
         // is what the Top Prospects tab is FOR.
@@ -262,12 +311,34 @@ QList<ScoredJobPosting> JobScout::scoredJobPostingsFromSource(
     return scoredJobPostings;
 }
 
+int JobScout::jobPostingCountOutsideSearchArea() const
+{
+    if (!searchAreaIsNarrowed()) {
+        return 0; // nothing is being filtered, so nothing is being held back
+    }
+
+    const ProspectScorer prospectScorer(userSearchProfile);
+    int heldBackCount = 0;
+    for (const JobPosting &discoveredJobPosting :
+             discoveredJobPostingRepository.loadAllDiscoveredJobPostings()) {
+        if (!prospectScorer.jobPostingIsInsideSearchArea(discoveredJobPosting)) {
+            ++heldBackCount;
+        }
+    }
+    return heldBackCount;
+}
+
+bool JobScout::searchAreaIsNarrowed() const
+{
+    return !userSearchProfile.preferredWorkLocations().isEmpty();
+}
+
 bool JobScout::searchProfileCanRank() const
 {
     return userSearchProfile.hasEnoughToRankBy();
 }
 
-QList<ScoredJobPosting> JobScout::rankedTopProspects() const
+QList<ScoredJobPosting> JobScout::rankedTopProspects(SearchAreaScope searchAreaScope) const
 {
     const ProspectScorer prospectScorer(userSearchProfile);
 
@@ -279,6 +350,11 @@ QList<ScoredJobPosting> JobScout::rankedTopProspects() const
         discoveredJobPostingRepository.loadAllDiscoveredJobPostings();
 
     for (const JobPosting &discoveredJobPosting : allDiscoveredJobPostings) {
+        const bool jobIsInsideSearchArea =
+            prospectScorer.jobPostingIsInsideSearchArea(discoveredJobPosting);
+        if (jobIsInsideSearchArea != (searchAreaScope == SearchAreaScope::InsideSearchArea)) {
+            continue;
+        }
         const ScoredJobPosting scoredJobPosting = {
             discoveredJobPosting, prospectScorer.scoreJobPosting(discoveredJobPosting)
         };
@@ -308,4 +384,27 @@ QList<ScoredJobPosting> JobScout::rankedTopProspects() const
     });
 
     return rankedJobPostings;
+}
+
+void JobScout::writeSweepLog() const
+{
+    if (sweepLogFolderPath.isEmpty()) {
+        return;
+    }
+    QDir().mkpath(sweepLogFolderPath);
+
+    QFile sweepLogFile(QDir(sweepLogFolderPath).filePath(QStringLiteral("lastSweep.log")));
+    if (!sweepLogFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        return; // a diagnostic that fails must never take the sweep down with it
+    }
+
+    QTextStream sweepLogStream(&sweepLogFile);
+    sweepLogStream << "Job Crush — JobScout sweep log\n";
+    sweepLogStream << "Finished: "
+                   << QDateTime::currentDateTime().toString(Qt::ISODate) << "\n";
+    sweepLogStream << "Summary:  " << storedLastSweepSummaryText << "\n";
+    sweepLogStream << "\nWhat each site said:\n";
+    for (const QString &sourceOutcomeLine : finishedSourceOutcomeLines) {
+        sweepLogStream << "  - " << sourceOutcomeLine << "\n";
+    }
 }

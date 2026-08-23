@@ -29,6 +29,20 @@ JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
     return jobPosting;
 }
 
+// A QString that was never assigned is NULL, not empty — and binding a null
+// to a NOT NULL column makes SQLite reject the whole row.
+//
+// This is not a hypothetical: Arbeitnow publishes no salary field, so every
+// posting from it arrived with an unassigned salaryText and every insert was
+// refused. 175 jobs a day silently hit the floor, and the only visible symptom
+// was an empty tab. Any field a source does not publish takes this path, so
+// the conversion belongs here, once, rather than at each call site where the
+// next missing field would be missed again.
+QString textOrEmpty(const QString &possiblyNullText)
+{
+    return possiblyNullText.isNull() ? QString::fromLatin1("") : possiblyNullText;
+}
+
 // Newest first, by the date the EMPLOYER posted — falling back to the date
 // Job Crush found it, because a source that omits a posting date should not
 // sink to the bottom of the list forever.
@@ -56,23 +70,32 @@ bool JobPostingRepository::insertJobPosting(JobPosting &jobPosting)
         "   :sourceUrl, :fullDescriptionText, :discoverySource, :discoveredTimestamp,"
         "   :externalSourceId, :postedTimestamp, :isRemoteRole)"));
 
-    insertQuery.bindValue(QStringLiteral(":companyName"),         jobPosting.companyName);
-    insertQuery.bindValue(QStringLiteral(":positionTitle"),       jobPosting.positionTitle);
-    insertQuery.bindValue(QStringLiteral(":locationText"),        jobPosting.locationText);
-    insertQuery.bindValue(QStringLiteral(":salaryText"),          jobPosting.salaryText);
-    insertQuery.bindValue(QStringLiteral(":sourceUrl"),           jobPosting.sourceUrl);
-    insertQuery.bindValue(QStringLiteral(":fullDescriptionText"), jobPosting.fullDescriptionText);
-    insertQuery.bindValue(QStringLiteral(":discoverySource"),     jobPosting.discoverySource);
+    insertQuery.bindValue(QStringLiteral(":companyName"),
+                          textOrEmpty(jobPosting.companyName));
+    insertQuery.bindValue(QStringLiteral(":positionTitle"),
+                          textOrEmpty(jobPosting.positionTitle));
+    insertQuery.bindValue(QStringLiteral(":locationText"),
+                          textOrEmpty(jobPosting.locationText));
+    insertQuery.bindValue(QStringLiteral(":salaryText"),
+                          textOrEmpty(jobPosting.salaryText));
+    insertQuery.bindValue(QStringLiteral(":sourceUrl"),
+                          textOrEmpty(jobPosting.sourceUrl));
+    insertQuery.bindValue(QStringLiteral(":fullDescriptionText"),
+                          textOrEmpty(jobPosting.fullDescriptionText));
+    insertQuery.bindValue(QStringLiteral(":discoverySource"),
+                          textOrEmpty(jobPosting.discoverySource));
     insertQuery.bindValue(QStringLiteral(":discoveredTimestamp"),
-                          jobPosting.discoveredTimestamp.toString(Qt::ISODate));
-    insertQuery.bindValue(QStringLiteral(":externalSourceId"),    jobPosting.externalSourceId);
+                          textOrEmpty(jobPosting.discoveredTimestamp.toString(Qt::ISODate)));
+    insertQuery.bindValue(QStringLiteral(":externalSourceId"),
+                          textOrEmpty(jobPosting.externalSourceId));
     insertQuery.bindValue(QStringLiteral(":postedTimestamp"),
                           jobPosting.postedTimestamp.isValid()
                               ? jobPosting.postedTimestamp.toString(Qt::ISODate)
-                              : QString());
+                              : QString::fromLatin1(""));
     insertQuery.bindValue(QStringLiteral(":isRemoteRole"), jobPosting.isRemoteRole ? 1 : 0);
 
     if (!insertQuery.exec()) {
+        lastErrorDescription = insertQuery.lastError().text();
         return false;
     }
 
@@ -96,6 +119,7 @@ bool JobPostingRepository::insertDiscoveryIfNew(JobPosting &jobPosting, bool &wa
                                      jobPosting.externalSourceId);
 
     if (!existingDiscoveryQuery.exec()) {
+        lastErrorDescription = existingDiscoveryQuery.lastError().text();
         wasAlreadyKnown = false;
         return false;
     }
@@ -171,4 +195,9 @@ JobPosting JobPostingRepository::loadJobPostingById(qint64 jobPostingId, bool &f
     }
     found = false;
     return JobPosting{};
+}
+
+QString JobPostingRepository::lastErrorText() const
+{
+    return lastErrorDescription;
 }

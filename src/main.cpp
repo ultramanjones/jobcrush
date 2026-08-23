@@ -84,7 +84,8 @@ int main(int argc, char *argv[])
     JobSourceRoster jobSourceRoster;
     jobSourceRoster.loadFromSettings();
 
-    JobScout jobScout(jobPostingRepository, jobSourceRoster, jobSearchProfile);
+    JobScout jobScout(jobPostingRepository, jobSourceRoster, jobSearchProfile,
+                      applicationDataFolderPath);
 
     AiBrain aiBrain(aiCredentialRoster, aiBrainSoul);
     aiBrain.loadFromSettings(); // which brain the user chose last time

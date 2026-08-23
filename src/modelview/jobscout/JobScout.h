@@ -26,6 +26,21 @@ struct ScoredJobPosting {
     ProspectMatchResult matchResult;
 };
 
+// SearchAreaScope
+//
+// Which side of the location filter a caller wants. Two lists, one set of
+// findings — the jobs that sit where the user said they will work, and the
+// ones held back because they don't.
+//
+// OutsideSearchArea exists so those jobs are never simply destroyed. Hiding
+// something the user might want, with no way to look at it, is the app making
+// the decision for them; keeping the other half addressable means a tab can
+// show it whenever they ask.
+enum class SearchAreaScope {
+    InsideSearchArea,
+    OutsideSearchArea
+};
+
 // JobScout
 //
 // The front door of job discovery — a ModelView resident, and AIBrain's
@@ -44,9 +59,13 @@ struct ScoredJobPosting {
 class JobScout : public QObject {
     Q_OBJECT
 public:
+    // diagnosticsFolderPath is where the sweep log is written — the app's own
+    // data folder, handed in by the composition root so this class never has
+    // to know where that is.
     JobScout(JobPostingRepository &jobPostingRepository,
              JobSourceRoster &sourceRoster,
              JobSearchProfile &searchProfile,
+             const QString &diagnosticsFolderPath,
              QObject *parent = nullptr);
     ~JobScout() override;
 
@@ -72,11 +91,23 @@ public:
     void startSweep();
 
     // Everything one site has delivered, newest first, each with its score.
-    QList<ScoredJobPosting> scoredJobPostingsFromSource(const QString &sourceStorageName) const;
+    QList<ScoredJobPosting> scoredJobPostingsFromSource(
+        const QString &sourceStorageName,
+        SearchAreaScope searchAreaScope = SearchAreaScope::InsideSearchArea) const;
 
     // Every discovery from every site, best match first, each job appearing
     // once even when two sites carry it.
-    QList<ScoredJobPosting> rankedTopProspects() const;
+    QList<ScoredJobPosting> rankedTopProspects(
+        SearchAreaScope searchAreaScope = SearchAreaScope::InsideSearchArea) const;
+
+    // How many stored discoveries the location filter is holding back right
+    // now. Shown to the user, always: a filter that quietly eats jobs and
+    // never admits it is indistinguishable from a broken sweep.
+    int jobPostingCountOutsideSearchArea() const;
+
+    // True when the user has named any place at all — that is, when the
+    // filter is doing anything.
+    bool searchAreaIsNarrowed() const;
 
     // True once the search profile says enough for a ranking to mean
     // something. Asked through JobScout so nothing above has to reach past it
@@ -106,6 +137,18 @@ private:
                                        const QString &sourceOutcomeText,
                                        bool sourceHadTrouble);
 
+    // Writes what every site said during the sweep that just ended to
+    // lastSweep.log, replacing the previous one.
+    //
+    // Because a status line on a screen is a terrible place to keep the one
+    // fact somebody needs later. When a site quietly stops working, the
+    // question is always "what did it actually say?", and the honest answer
+    // has to survive being scrolled past, alt-tabbed away from, or read at
+    // two in the morning by someone who is tired.
+    void writeSweepLog() const;
+
+    const QString sweepLogFolderPath;
+
     JobPostingRepository &discoveredJobPostingRepository;
     JobSourceRoster &registeredSourceRoster;
     JobSearchProfile &userSearchProfile;
@@ -122,6 +165,8 @@ private:
     QStringList finishedSourceOutcomeLines;
     QStringList sourcesThatHadTroubleThisSweep;
     QString storedLastSweepTroubleText;
+    int jobPostingsRefusedThisSource = 0;
+    QString firstRefusalReasonThisSource;
     int totalJobsFoundThisSweep = 0;
     int totalNewJobsThisSweep = 0;
     QString storedLastSweepSummaryText;

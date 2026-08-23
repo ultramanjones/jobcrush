@@ -204,19 +204,21 @@ int ProspectScorer::scoreRemoteFit(const JobPosting &jobPosting,
     return 0;
 }
 
-int ProspectScorer::scoreLocationFit(const QString &loweredLocationText,
-                                     QStringList &matchReasons) const
+QString ProspectScorer::matchedWorkLocationFor(const JobPosting &jobPosting) const
 {
     const QStringList preferredWorkLocations = profile.preferredWorkLocations();
-    if (preferredWorkLocations.isEmpty() || loweredLocationText.isEmpty()) {
-        return 0;
+    if (preferredWorkLocations.isEmpty() || jobPosting.locationText.isEmpty()) {
+        return QString();
     }
+
+    const QString loweredLocationText = jobPosting.locationText.toLower();
 
     // Any one of the places the user named is a hit — they are alternatives,
     // not requirements. Matching is loose on purpose: boards write locations
     // every possible way ("Pittsburgh, PA", "Pittsburgh PA, USA", "Greater
     // Pittsburgh Area"), and a strict comparison would reject far more real
-    // matches than it caught.
+    // matches than it caught. Since this answer now HIDES jobs rather than
+    // just ranking them, erring loose is the safer mistake by a mile.
     for (const QString &preferredLocation : preferredWorkLocations) {
         for (const QString &locationWord : significantWordsOf(preferredLocation)) {
             // Short tokens are state codes ("PA", "TX"). Those must match as
@@ -225,13 +227,40 @@ int ProspectScorer::scoreLocationFit(const QString &loweredLocationText,
                 ? textContainsWholeTerm(loweredLocationText, locationWord)
                 : loweredLocationText.contains(locationWord);
             if (wordMatched) {
-                matchReasons.append(QStringLiteral("Location matches %1")
-                                        .arg(preferredLocation));
-                return locationFitMaximumPoints;
+                return preferredLocation;
             }
         }
     }
-    return 0;
+    return QString();
+}
+
+bool ProspectScorer::jobPostingIsInsideSearchArea(const JobPosting &jobPosting) const
+{
+    // Nobody named a place, so nothing is being filtered.
+    if (profile.preferredWorkLocations().isEmpty()) {
+        return true;
+    }
+
+    // A remote job is not somewhere else — it is nowhere, which is inside
+    // everybody's search area. Filtering these out because the posting also
+    // happens to name a head office in Berlin would throw away exactly the
+    // jobs a location-constrained person most wants.
+    if (jobPosting.isRemoteRole) {
+        return true;
+    }
+
+    return !matchedWorkLocationFor(jobPosting).isEmpty();
+}
+
+int ProspectScorer::scoreLocationFit(const JobPosting &jobPosting,
+                                     QStringList &matchReasons) const
+{
+    const QString matchedLocation = matchedWorkLocationFor(jobPosting);
+    if (matchedLocation.isEmpty()) {
+        return 0;
+    }
+    matchReasons.append(QStringLiteral("Location matches %1").arg(matchedLocation));
+    return locationFitMaximumPoints;
 }
 
 int ProspectScorer::scoreSalaryFit(const QString &salaryText,
@@ -311,7 +340,6 @@ ProspectMatchResult ProspectScorer::scoreJobPosting(const JobPosting &jobPosting
     ProspectMatchResult matchResult;
 
     const QString loweredPositionTitle = jobPosting.positionTitle.toLower();
-    const QString loweredLocationText = jobPosting.locationText.toLower();
 
     // Skills are hunted in the title AND the description: a title says what
     // the job is called, the description says what it actually needs.
@@ -322,7 +350,7 @@ ProspectMatchResult ProspectScorer::scoreJobPosting(const JobPosting &jobPosting
     totalScore += scoreTitleMatch(loweredPositionTitle, matchResult.matchReasons);
     totalScore += scoreSkillMatch(loweredSearchableText, matchResult.matchReasons);
     totalScore += scoreRemoteFit(jobPosting, matchResult.matchReasons);
-    totalScore += scoreLocationFit(loweredLocationText, matchResult.matchReasons);
+    totalScore += scoreLocationFit(jobPosting, matchResult.matchReasons);
     totalScore += scoreSalaryFit(jobPosting.salaryText, matchResult.matchReasons);
     totalScore += scoreFreshness(jobPosting, matchResult.matchReasons);
 

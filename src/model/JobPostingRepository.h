@@ -42,6 +42,11 @@ public:
     // One posting by id. found is set accordingly.
     JobPosting loadJobPostingById(qint64 jobPostingId, bool &found);
 
+    // Why the last insert or query failed. A repository that returns false
+    // and keeps the reason to itself forces every caller to guess.
+    QString lastErrorText() const;
+
 private:
     JobCrushDatabase &jobCrushDatabase;
+    QString lastErrorDescription;
 };

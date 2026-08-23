@@ -249,13 +249,58 @@ Rectangle {
         }
     }
 
+    // What the location filter is holding back, and the way to go look at it.
+    // Stated out loud on purpose: a filter that quietly eats jobs and never
+    // says so is indistinguishable from a sweep that found nothing, and the
+    // user goes hunting for a bug that isn't there.
+    Text {
+        id: outsideSearchAreaNotice
+
+        anchors.top: discoveryTabRow.bottom
+        anchors.topMargin: 10
+        anchors.left: parent.left
+        anchors.leftMargin: 28
+        anchors.right: parent.right
+        anchors.rightMargin: 46
+
+        readonly property int heldBackCount:
+            discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea
+
+        visible: discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
+                 && (heldBackCount > 0
+                     || discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea)
+
+        text: discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+            ? "Showing jobs outside where you said you'd work.  "
+              + "<a href=\"toggle\">Back to your search area</a>"
+            : heldBackCount + (heldBackCount === 1 ? " job sits" : " jobs sit")
+              + " outside where you said you'd work.  "
+              + "<a href=\"toggle\">Take a look</a>"
+
+        textFormat: Text.RichText
+        linkColor: JobCrushTheme.accentColor
+        color: JobCrushTheme.mutedTextColor
+        font.pixelSize: JobCrushTheme.smallFontSize
+        wrapMode: Text.Wrap
+
+        onLinkActivated: discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+            = !discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.NoButton
+            cursorShape: parent.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
+        }
+    }
+
     // ------------------------------------------------------------------
     // The rows
     // ------------------------------------------------------------------
     ListView {
         id: discoveredJobListView
 
-        anchors.top: discoveryTabRow.bottom
+        anchors.top: outsideSearchAreaNotice.visible
+            ? outsideSearchAreaNotice.bottom : discoveryTabRow.bottom
         anchors.topMargin: 16
         anchors.bottom: parent.bottom
         anchors.left: parent.left
@@ -463,6 +508,13 @@ Rectangle {
             discoveriesPage.jobSourceRosterViewModel.enabledJobSourceTabs.length === 0
         readonly property bool noProfileYet:
             !discoveriesPage.discoveredJobListViewModel.canRankProspects
+        // Jobs were found — they are just all somewhere the user said they
+        // would not work. Saying "nothing found" here would be a lie.
+        readonly property bool everythingFilteredOut:
+            !noSitesTicked
+            && discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
+            && discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea > 0
+            && !discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
 
         Column {
             id: emptyStateColumn
@@ -474,9 +526,11 @@ Rectangle {
                 width: parent.width
                 text: discoveriesEmptyStateCard.noSitesTicked
                     ? "No job sites are switched on"
-                    : (discoveriesEmptyStateCard.noProfileYet
-                           ? "Tell Job Crush what you're after"
-                           : "Nothing found yet")
+                    : (discoveriesEmptyStateCard.everythingFilteredOut
+                           ? "Nothing where you said you'd work"
+                           : (discoveriesEmptyStateCard.noProfileYet
+                                  ? "Tell Job Crush what you're after"
+                                  : "Nothing found yet"))
                 color: JobCrushTheme.primaryTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize + 2
                 font.weight: Font.DemiBold
@@ -488,11 +542,15 @@ Rectangle {
                 text: discoveriesEmptyStateCard.noSitesTicked
                     ? "Pick the job sites you want Job Crush to watch in Settings. "
                       + "Every one of them is free."
-                    : (discoveriesEmptyStateCard.noProfileYet
-                           ? "Add the job titles you're going for and the skills you "
-                             + "bring, over in Settings. Top Prospects ranks against "
-                             + "those — no AI usage, no waiting."
-                           : "Hit Scout now and Job Crush will go look.")
+                    : (discoveriesEmptyStateCard.everythingFilteredOut
+                           ? "Job Crush did find jobs — every one of them is somewhere "
+                             + "other than the places you listed. Widen the list in "
+                             + "Settings, or use the link above to look at them anyway."
+                           : (discoveriesEmptyStateCard.noProfileYet
+                                  ? "Add the job titles you're going for and the skills "
+                                    + "you bring, over in Settings. Top Prospects ranks "
+                                    + "against those — no AI usage, no waiting."
+                                  : "Hit Scout now and Job Crush will go look."))
                 color: JobCrushTheme.secondaryTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize
                 wrapMode: Text.Wrap
@@ -501,7 +559,9 @@ Rectangle {
 
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
-                visible: discoveriesEmptyStateCard.noSitesTicked || discoveriesEmptyStateCard.noProfileYet
+                visible: discoveriesEmptyStateCard.noSitesTicked
+                         || discoveriesEmptyStateCard.noProfileYet
+                         || discoveriesEmptyStateCard.everythingFilteredOut
                 width: openSettingsFromDiscoveriesLabel.implicitWidth + 36
                 height: 36
                 radius: 8

@@ -965,10 +965,15 @@ Rectangle {
                             }
 
                             Text {
+                                width: parent.width
                                 text: "Start typing and pick from the list, or type "
-                                      + "anything and press Enter. Add as many as you like."
+                                      + "anything and press Enter. Add as many as you "
+                                      + "like.  This one FILTERS: jobs somewhere else "
+                                      + "are held back, though remote jobs always come "
+                                      + "through. Leave it empty and nothing is filtered."
                                 color: JobCrushTheme.mutedTextColor
                                 font.pixelSize: JobCrushTheme.smallFontSize
+                                wrapMode: Text.Wrap
                             }
 
                             TokenEntryField {

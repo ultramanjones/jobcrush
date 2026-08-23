@@ -22,6 +22,21 @@ const QString remotiveJobsEndpointUrl = QStringLiteral("https://remotive.com/api
 // polite to a free API that asks nothing of us in return.
 constexpr int remotiveMaximumResultsPerSweep = 100;
 
+// What a response actually was, when it turned out not to be job listings.
+// Enough to diagnose from — status, size, and the opening bytes — without
+// dumping a whole page into a message meant for a human to read.
+QString responseDiagnosticTail(int httpStatusCode, const QByteArray &responseBody)
+{
+    QString openingBytes = QString::fromUtf8(responseBody.left(180)).simplified();
+    if (openingBytes.isEmpty()) {
+        openingBytes = QStringLiteral("(empty)");
+    }
+    return QStringLiteral(" [HTTP %1, %2 bytes, starts: %3]")
+        .arg(httpStatusCode)
+        .arg(responseBody.size())
+        .arg(openingBytes);
+}
+
 } // namespace
 
 RemotiveJobSource::RemotiveJobSource() = default;
@@ -91,13 +106,22 @@ JobScoutReply *RemotiveJobSource::searchForJobs(const JobSearchProfile &searchPr
             // JSON was expected. Say so plainly instead of showing a parser
             // complaint nobody outside this file can act on.
             scoutReply->markFailed(
-                QStringLiteral("%1 answered with a web page instead of job data "
-                               "(HTTP %2)").arg(QStringLiteral("Remotive")).arg(httpStatusCode));
+                QStringLiteral("Remotive answered with a web page instead of job data")
+                + responseDiagnosticTail(httpStatusCode, responseBody));
             return;
         }
 
         const QJsonObject responseObject = responseDocument.object();
         const QJsonArray jobsArray = responseObject.value(QStringLiteral("jobs")).toArray();
+
+        // Valid JSON with no listings in it. Not a crash, not a success —
+        // and the only way to tell WHY is to describe what did arrive.
+        if (jobsArray.isEmpty()) {
+            scoutReply->markFailed(
+                QStringLiteral("Remotive sent valid data with no jobs in it")
+                + responseDiagnosticTail(httpStatusCode, responseBody));
+            return;
+        }
 
         const QDateTime sweepTimestamp = QDateTime::currentDateTime();
         QList<JobPosting> foundJobPostings;

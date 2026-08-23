@@ -63,10 +63,15 @@ void DiscoveredJobListViewModel::rebuildRowsFromJobScout()
     // The lists are small and rebuilt only when something genuinely changed
     // (a sweep finished, a tab switched, the profile was edited), so a full
     // reset keeps this translation layer honest and simple.
+    const SearchAreaScope searchAreaScope = storedShowingOutsideSearchArea
+        ? SearchAreaScope::OutsideSearchArea
+        : SearchAreaScope::InsideSearchArea;
+
     beginResetModel();
     displayedJobPostings = storedActiveTabSourceName.isEmpty()
-        ? discoveryJobScout.rankedTopProspects()
-        : discoveryJobScout.scoredJobPostingsFromSource(storedActiveTabSourceName);
+        ? discoveryJobScout.rankedTopProspects(searchAreaScope)
+        : discoveryJobScout.scoredJobPostingsFromSource(storedActiveTabSourceName,
+                                                        searchAreaScope);
     endResetModel();
 
     emit discoveredJobsChanged();
@@ -164,6 +169,31 @@ QString DiscoveredJobListViewModel::lastSweepTroubleText() const
 bool DiscoveredJobListViewModel::canRankProspects() const
 {
     return discoveryJobScout.searchProfileCanRank();
+}
+
+int DiscoveredJobListViewModel::jobCountOutsideSearchArea() const
+{
+    return discoveryJobScout.jobPostingCountOutsideSearchArea();
+}
+
+bool DiscoveredJobListViewModel::searchAreaIsNarrowed() const
+{
+    return discoveryJobScout.searchAreaIsNarrowed();
+}
+
+bool DiscoveredJobListViewModel::showingOutsideSearchArea() const
+{
+    return storedShowingOutsideSearchArea;
+}
+
+void DiscoveredJobListViewModel::setShowingOutsideSearchArea(bool showOutside)
+{
+    if (showOutside == storedShowingOutsideSearchArea) {
+        return;
+    }
+    storedShowingOutsideSearchArea = showOutside;
+    emit showingOutsideSearchAreaChanged();
+    rebuildRowsFromJobScout();
 }
 
 void DiscoveredJobListViewModel::startSweep()
