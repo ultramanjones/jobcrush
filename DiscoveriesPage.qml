@@ -79,12 +79,28 @@ Rectangle {
             anchors.leftMargin: 170
             anchors.right: scoutNowButton.left
             anchors.rightMargin: 20
-            text: discoveriesPage.discoveredJobListViewModel.sweepIsRunning
-                ? discoveriesPage.discoveredJobListViewModel.sweepProgressText
-                : discoveriesPage.discoveredJobListViewModel.lastSweepSummaryText
-            color: discoveriesPage.discoveredJobListViewModel.sweepIsRunning
-                ? JobCrushTheme.accentColor
-                : JobCrushTheme.mutedTextColor
+            // While sweeping: the running counts. Afterwards: whatever went
+            // WRONG takes priority over the tidy summary, because a source
+            // that failed silently is the one thing the user needs told.
+            text: {
+                const listViewModel = discoveriesPage.discoveredJobListViewModel
+                if (listViewModel.sweepIsRunning) {
+                    return listViewModel.sweepProgressText
+                }
+                if (listViewModel.lastSweepTroubleText.length > 0) {
+                    return listViewModel.lastSweepTroubleText
+                }
+                return listViewModel.lastSweepSummaryText
+            }
+            color: {
+                const listViewModel = discoveriesPage.discoveredJobListViewModel
+                if (listViewModel.sweepIsRunning) {
+                    return JobCrushTheme.accentColor
+                }
+                return listViewModel.lastSweepTroubleText.length > 0
+                    ? JobCrushTheme.noticeTextColor
+                    : JobCrushTheme.mutedTextColor
+            }
             font.pixelSize: JobCrushTheme.smallFontSize
             elide: Text.ElideRight
 
@@ -245,12 +261,38 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.leftMargin: 28
-        anchors.rightMargin: 28
+        // Room for the scroll bar, so a row never slides under it.
+        anchors.rightMargin: 46
         anchors.bottomMargin: 20
         spacing: 6
         clip: true
 
         model: discoveriesPage.discoveredJobListViewModel
+
+        // A mouse wheel notch moves twice what Qt's default would. The stock
+        // step is tuned for documents; a list of job rows wants to move.
+        WheelHandler {
+            id: discoveryWheelHandler
+
+            readonly property real pixelsPerNotch: 120
+            readonly property real speedMultiplier: 2.0
+
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+
+            onWheel: function(wheelEvent) {
+                const scrollableDistance = Math.max(
+                    0, discoveredJobListView.contentHeight - discoveredJobListView.height)
+                if (scrollableDistance <= 0) {
+                    return
+                }
+                const requestedContentY = discoveredJobListView.contentY
+                    - (wheelEvent.angleDelta.y / 120) * pixelsPerNotch * speedMultiplier
+                discoveredJobListView.contentY = Math.max(
+                    discoveredJobListView.originY,
+                    Math.min(discoveredJobListView.originY + scrollableDistance,
+                             requestedContentY))
+            }
+        }
 
         // Grouped by the day the job was posted, which is how a person
         // actually thinks about a job hunt: what showed up today?
@@ -390,6 +432,16 @@ Rectangle {
                     .openJobPostingInBrowser(discoveredJobRow.index)
             }
         }
+    }
+
+    // Always on screen while there is anything below the fold — both so it is
+    // findable and so its length says how much more there is.
+    VerticalScrollBar {
+        anchors.top: discoveredJobListView.top
+        anchors.bottom: discoveredJobListView.bottom
+        anchors.right: parent.right
+        anchors.rightMargin: 18
+        flickableTarget: discoveredJobListView
     }
 
     // ------------------------------------------------------------------

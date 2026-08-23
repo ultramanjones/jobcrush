@@ -27,10 +27,36 @@ Rectangle {
     }
 
     Flickable {
+        id: settingsFlickable
+
         anchors.fill: parent
+        anchors.rightMargin: 18
         contentWidth: width
         contentHeight: settingsColumn.implicitHeight + 64
         clip: true
+
+        // Same doubled wheel step as Discoveries, so scrolling feels the same
+        // everywhere in the app.
+        WheelHandler {
+            readonly property real pixelsPerNotch: 120
+            readonly property real speedMultiplier: 2.0
+
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+
+            onWheel: function(wheelEvent) {
+                const scrollableDistance = Math.max(
+                    0, settingsFlickable.contentHeight - settingsFlickable.height)
+                if (scrollableDistance <= 0) {
+                    return
+                }
+                const requestedContentY = settingsFlickable.contentY
+                    - (wheelEvent.angleDelta.y / 120) * pixelsPerNotch * speedMultiplier
+                settingsFlickable.contentY = Math.max(
+                    settingsFlickable.originY,
+                    Math.min(settingsFlickable.originY + scrollableDistance,
+                             requestedContentY))
+            }
+        }
 
         Column {
             id: settingsColumn
@@ -827,6 +853,12 @@ Rectangle {
                                 font.pixelSize: JobCrushTheme.smallFontSize
                             }
 
+                            Text {
+                                text: "Put a comma between each entry."
+                                color: JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
+
                             Rectangle {
                                 width: parent.width
                                 height: 40
@@ -874,6 +906,12 @@ Rectangle {
                                 font.pixelSize: JobCrushTheme.smallFontSize
                             }
 
+                            Text {
+                                text: "Put a comma between each entry."
+                                color: JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
+
                             Rectangle {
                                 width: parent.width
                                 height: 40
@@ -910,102 +948,93 @@ Rectangle {
                             }
                         }
 
-                        // Location and salary floor, side by side.
-                        Row {
+                        // Where they'd work — chips, not a comma-separated line.
+                        // "Pittsburgh, PA" has a comma IN it, so a separated
+                        // box could never hold it. Each place is its own chip.
+                        Column {
                             width: parent.width
-                            spacing: 12
+                            spacing: 5
+                            // Above whatever follows, so the suggestion
+                            // drop-down is not painted over by the next field.
+                            z: 10
 
-                            Column {
-                                width: (parent.width - 12) * 0.6
-                                spacing: 5
-
-                                Text {
-                                    text: "Where you'd work"
-                                    color: JobCrushTheme.secondaryTextColor
-                                    font.pixelSize: JobCrushTheme.smallFontSize
-                                }
-
-                                Rectangle {
-                                    width: parent.width
-                                    height: 40
-                                    radius: 8
-                                    color: JobCrushTheme.appBackgroundColor
-                                    border.color: preferredLocationInput.activeFocus
-                                        ? JobCrushTheme.accentColor
-                                        : JobCrushTheme.hairlineBorderColor
-                                    border.width: preferredLocationInput.activeFocus ? 2 : 1
-
-                                    TextInput {
-                                        id: preferredLocationInput
-                                        anchors.fill: parent
-                                        anchors.margins: 10
-                                        verticalAlignment: TextInput.AlignVCenter
-                                        color: JobCrushTheme.primaryTextColor
-                                        font.pixelSize: JobCrushTheme.bodyFontSize
-                                        clip: true
-                                        text: settingsPage.jobSearchProfileViewModel
-                                                  .preferredLocationText
-                                        onEditingFinished: settingsPage.jobSearchProfileViewModel
-                                            .preferredLocationText = text
-                                    }
-
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 10
-                                        visible: preferredLocationInput.text.length === 0
-                                                 && !preferredLocationInput.activeFocus
-                                        text: "Austin, Texas, USA"
-                                        color: JobCrushTheme.mutedTextColor
-                                        font.pixelSize: JobCrushTheme.bodyFontSize
-                                    }
-                                }
+                            Text {
+                                text: "Where you'd work"
+                                color: JobCrushTheme.secondaryTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
                             }
 
-                            Column {
-                                width: (parent.width - 12) * 0.4
-                                spacing: 5
+                            Text {
+                                text: "Start typing and pick from the list, or type "
+                                      + "anything and press Enter. Add as many as you like."
+                                color: JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
 
-                                Text {
-                                    text: "Lowest salary worth your time"
-                                    color: JobCrushTheme.secondaryTextColor
-                                    font.pixelSize: JobCrushTheme.smallFontSize
+                            TokenEntryField {
+                                width: parent.width
+                                tokens: settingsPage.jobSearchProfileViewModel
+                                            .preferredWorkLocations
+                                placeholderText: "Pittsburgh, PA   ·   Remote   ·   Ohio"
+                                suggestionProvider: function(typedPrefix) {
+                                    return settingsPage.jobSearchProfileViewModel
+                                        .workLocationSuggestions(typedPrefix)
+                                }
+                                onTokenAdded: function(tokenText) {
+                                    settingsPage.jobSearchProfileViewModel
+                                        .addWorkLocation(tokenText)
+                                }
+                                onTokenRemovedAt: function(tokenIndex) {
+                                    settingsPage.jobSearchProfileViewModel
+                                        .removeWorkLocationAt(tokenIndex)
+                                }
+                            }
+                        }
+
+                        // Salary floor.
+                        Column {
+                            width: parent.width * 0.45
+                            spacing: 5
+
+                            Text {
+                                text: "Lowest salary worth your time"
+                                color: JobCrushTheme.secondaryTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
+
+                            Rectangle {
+                                width: parent.width
+                                height: 40
+                                radius: 8
+                                color: JobCrushTheme.appBackgroundColor
+                                border.color: minimumSalaryInput.activeFocus
+                                    ? JobCrushTheme.accentColor
+                                    : JobCrushTheme.hairlineBorderColor
+                                border.width: minimumSalaryInput.activeFocus ? 2 : 1
+
+                                TextInput {
+                                    id: minimumSalaryInput
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    color: JobCrushTheme.primaryTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                    clip: true
+                                    text: settingsPage.jobSearchProfileViewModel
+                                              .minimumSalaryText
+                                    onEditingFinished: settingsPage.jobSearchProfileViewModel
+                                        .minimumSalaryText = text
                                 }
 
-                                Rectangle {
-                                    width: parent.width
-                                    height: 40
-                                    radius: 8
-                                    color: JobCrushTheme.appBackgroundColor
-                                    border.color: minimumSalaryInput.activeFocus
-                                        ? JobCrushTheme.accentColor
-                                        : JobCrushTheme.hairlineBorderColor
-                                    border.width: minimumSalaryInput.activeFocus ? 2 : 1
-
-                                    TextInput {
-                                        id: minimumSalaryInput
-                                        anchors.fill: parent
-                                        anchors.margins: 10
-                                        verticalAlignment: TextInput.AlignVCenter
-                                        color: JobCrushTheme.primaryTextColor
-                                        font.pixelSize: JobCrushTheme.bodyFontSize
-                                        clip: true
-                                        text: settingsPage.jobSearchProfileViewModel
-                                                  .minimumSalaryText
-                                        onEditingFinished: settingsPage.jobSearchProfileViewModel
-                                            .minimumSalaryText = text
-                                    }
-
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 10
-                                        visible: minimumSalaryInput.text.length === 0
-                                                 && !minimumSalaryInput.activeFocus
-                                        text: "leave blank if it's not a factor"
-                                        color: JobCrushTheme.mutedTextColor
-                                        font.pixelSize: JobCrushTheme.smallFontSize
-                                    }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 10
+                                    visible: minimumSalaryInput.text.length === 0
+                                             && !minimumSalaryInput.activeFocus
+                                    text: "leave blank if it's not a factor"
+                                    color: JobCrushTheme.mutedTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
                                 }
                             }
                         }
@@ -1123,6 +1152,16 @@ Rectangle {
                 }
             }
         }
+    }
+
+    VerticalScrollBar {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        anchors.topMargin: 12
+        anchors.bottomMargin: 12
+        anchors.rightMargin: 4
+        flickableTarget: settingsFlickable
     }
 
     // The provider chip selection for the key form (view-local UI state).

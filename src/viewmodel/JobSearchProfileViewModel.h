@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 class JobSearchProfile;
 
@@ -24,8 +25,10 @@ class JobSearchProfileViewModel : public QObject {
     Q_PROPERTY(QString skillKeywordsText READ skillKeywordsText
                    WRITE setSkillKeywordsText NOTIFY searchProfileChanged)
 
-    Q_PROPERTY(QString preferredLocationText READ preferredLocationText
-                   WRITE setPreferredLocationText NOTIFY searchProfileChanged)
+    // A list, not a line: chips let "Pittsburgh, PA" be one entry, comma and
+    // all, which a comma-separated box could never do.
+    Q_PROPERTY(QStringList preferredWorkLocations READ preferredWorkLocations
+                   NOTIFY searchProfileChanged)
 
     Q_PROPERTY(bool remoteRolesOnly READ remoteRolesOnly
                    WRITE setRemoteRolesOnly NOTIFY searchProfileChanged)
@@ -46,8 +49,18 @@ public:
     QString skillKeywordsText() const;
     void setSkillKeywordsText(const QString &keywordsText);
 
-    QString preferredLocationText() const;
-    void setPreferredLocationText(const QString &locationText);
+    QStringList preferredWorkLocations() const;
+
+    // The chip actions. Adding something not in the suggestion list is fine —
+    // suggestions are a convenience, never a gate, and an autocomplete that
+    // refuses unfamiliar input is a form telling someone they live in the
+    // wrong place.
+    Q_INVOKABLE void addWorkLocation(const QString &workLocation);
+    Q_INVOKABLE void removeWorkLocationAt(int locationIndex);
+
+    // What to offer while the user types. A built-in list, so it answers
+    // instantly, works offline, and sends nothing anywhere.
+    Q_INVOKABLE QStringList workLocationSuggestions(const QString &typedPrefix) const;
 
     bool remoteRolesOnly() const;
     void setRemoteRolesOnly(bool remoteOnly);

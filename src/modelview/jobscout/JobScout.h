@@ -61,6 +61,12 @@ public:
     // can see what a run actually produced.
     QString lastSweepSummaryText() const;
 
+    // Any site that could not answer, and what it said — kept AFTER the sweep
+    // ends rather than being replaced by the summary. A source that quietly
+    // fails and then erases its own explanation is worse than one that never
+    // ran: the user is left knowing something is wrong and unable to say what.
+    QString lastSweepTroubleText() const;
+
     // Sweeps every ticked site. Does nothing while a sweep is already running
     // — one at a time, so the numbers on screen always mean something.
     void startSweep();
@@ -97,7 +103,8 @@ private:
                                   const QList<JobPosting> &foundJobPostings);
 
     void finishSourceAndReportProgress(const QString &sourceStorageName,
-                                       const QString &sourceOutcomeText);
+                                       const QString &sourceOutcomeText,
+                                       bool sourceHadTrouble);
 
     JobPostingRepository &discoveredJobPostingRepository;
     JobSourceRoster &registeredSourceRoster;
@@ -113,6 +120,8 @@ private:
     // Live sweep bookkeeping. Cleared when a sweep ends.
     QStringList sourcesStillSweeping;
     QStringList finishedSourceOutcomeLines;
+    QStringList sourcesThatHadTroubleThisSweep;
+    QString storedLastSweepTroubleText;
     int totalJobsFoundThisSweep = 0;
     int totalNewJobsThisSweep = 0;
     QString storedLastSweepSummaryText;

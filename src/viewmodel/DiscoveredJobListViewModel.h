@@ -36,6 +36,11 @@ class DiscoveredJobListViewModel : public QAbstractListModel {
     Q_PROPERTY(QString lastSweepSummaryText READ lastSweepSummaryText
                    NOTIFY sweepProgressChanged)
 
+    // Any site that could not answer, and what it said. Outlives the sweep,
+    // so a failure is never erased by the summary that follows it.
+    Q_PROPERTY(QString lastSweepTroubleText READ lastSweepTroubleText
+                   NOTIFY sweepProgressChanged)
+
     // False until the user has told Job Crush what they are looking for. Top
     // Prospects says so plainly rather than showing a meaningless order.
     Q_PROPERTY(bool canRankProspects READ canRankProspects NOTIFY discoveredJobsChanged)
@@ -67,6 +72,7 @@ public:
     bool sweepIsRunning() const;
     QString sweepProgressText() const;
     QString lastSweepSummaryText() const;
+    QString lastSweepTroubleText() const;
     bool canRankProspects() const;
 
     // The "scout now" action. Discovery is on demand by design — Job Crush

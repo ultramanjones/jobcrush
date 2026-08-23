@@ -3,6 +3,7 @@
 #include <QRegularExpression>
 
 #include "../modelview/jobscout/JobSearchProfile.h"
+#include "../modelview/jobscout/KnownWorkLocations.h"
 
 namespace {
 
@@ -59,14 +60,25 @@ void JobSearchProfileViewModel::setSkillKeywordsText(const QString &keywordsText
     profile.setSkillKeywords(termListFromTypedLine(keywordsText));
 }
 
-QString JobSearchProfileViewModel::preferredLocationText() const
+QStringList JobSearchProfileViewModel::preferredWorkLocations() const
 {
-    return profile.preferredLocationText();
+    return profile.preferredWorkLocations();
 }
 
-void JobSearchProfileViewModel::setPreferredLocationText(const QString &locationText)
+void JobSearchProfileViewModel::addWorkLocation(const QString &workLocation)
 {
-    profile.setPreferredLocationText(locationText);
+    profile.addPreferredWorkLocation(workLocation);
+}
+
+void JobSearchProfileViewModel::removeWorkLocationAt(int locationIndex)
+{
+    profile.removePreferredWorkLocationAt(locationIndex);
+}
+
+QStringList JobSearchProfileViewModel::workLocationSuggestions(
+    const QString &typedPrefix) const
+{
+    return workLocationSuggestionsFor(typedPrefix, profile.preferredWorkLocations());
 }
 
 bool JobSearchProfileViewModel::remoteRolesOnly() const

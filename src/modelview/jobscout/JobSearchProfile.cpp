@@ -6,7 +6,13 @@
 namespace {
 const QString targetJobTitlesKey    = QStringLiteral("jobSearchProfile/targetJobTitles");
 const QString skillKeywordsKey      = QStringLiteral("jobSearchProfile/skillKeywords");
-const QString preferredLocationKey  = QStringLiteral("jobSearchProfile/preferredLocationText");
+const QString preferredWorkLocationsKey =
+    QStringLiteral("jobSearchProfile/preferredWorkLocations");
+
+// The single free-text location box this replaced. Read once, on the way to
+// the new list, so nobody who already typed a location loses it.
+const QString retiredSingleLocationKey =
+    QStringLiteral("jobSearchProfile/preferredLocationText");
 const QString remoteRolesOnlyKey    = QStringLiteral("jobSearchProfile/remoteRolesOnly");
 const QString minimumSalaryKey      = QStringLiteral("jobSearchProfile/minimumAcceptableSalary");
 
@@ -36,7 +42,20 @@ void JobSearchProfile::loadFromSettings()
     QSettings settings;
     storedTargetJobTitles = settings.value(targetJobTitlesKey).toStringList();
     storedSkillKeywords = settings.value(skillKeywordsKey).toStringList();
-    storedPreferredLocationText = settings.value(preferredLocationKey).toString();
+    storedPreferredWorkLocations = settings.value(preferredWorkLocationsKey).toStringList();
+
+    // Carry over whatever was in the old single-line box, once. Splitting on
+    // commas is exactly the thing that box got wrong, but it is still the
+    // best reading of what is already stored there, and anything odd is one
+    // click to remove now that entries are chips.
+    if (storedPreferredWorkLocations.isEmpty()) {
+        const QString retiredLocationText =
+            settings.value(retiredSingleLocationKey).toString().trimmed();
+        if (!retiredLocationText.isEmpty()) {
+            storedPreferredWorkLocations =
+                tidiedTermList(retiredLocationText.split(QLatin1Char(',')));
+        }
+    }
     storedRemoteRolesOnly = settings.value(remoteRolesOnlyKey, false).toBool();
     storedMinimumAcceptableSalary = settings.value(minimumSalaryKey, 0).toInt();
 
@@ -48,7 +67,7 @@ void JobSearchProfile::persistToSettings() const
     QSettings settings;
     settings.setValue(targetJobTitlesKey, storedTargetJobTitles);
     settings.setValue(skillKeywordsKey, storedSkillKeywords);
-    settings.setValue(preferredLocationKey, storedPreferredLocationText);
+    settings.setValue(preferredWorkLocationsKey, storedPreferredWorkLocations);
     settings.setValue(remoteRolesOnlyKey, storedRemoteRolesOnly);
     settings.setValue(minimumSalaryKey, storedMinimumAcceptableSalary);
 }
@@ -85,18 +104,40 @@ void JobSearchProfile::setSkillKeywords(const QStringList &keywords)
     emit searchProfileChanged();
 }
 
-QString JobSearchProfile::preferredLocationText() const
+QStringList JobSearchProfile::preferredWorkLocations() const
 {
-    return storedPreferredLocationText;
+    return storedPreferredWorkLocations;
 }
 
-void JobSearchProfile::setPreferredLocationText(const QString &locationText)
+void JobSearchProfile::setPreferredWorkLocations(const QStringList &workLocations)
 {
-    const QString tidiedLocationText = locationText.trimmed();
-    if (tidiedLocationText == storedPreferredLocationText) {
+    const QStringList tidiedWorkLocations = tidiedTermList(workLocations);
+    if (tidiedWorkLocations == storedPreferredWorkLocations) {
         return;
     }
-    storedPreferredLocationText = tidiedLocationText;
+    storedPreferredWorkLocations = tidiedWorkLocations;
+    persistToSettings();
+    emit searchProfileChanged();
+}
+
+void JobSearchProfile::addPreferredWorkLocation(const QString &workLocation)
+{
+    const QString tidiedWorkLocation = workLocation.trimmed();
+    if (tidiedWorkLocation.isEmpty()
+            || storedPreferredWorkLocations.contains(tidiedWorkLocation, Qt::CaseInsensitive)) {
+        return; // nothing typed, or already on the list — quietly no-op
+    }
+    storedPreferredWorkLocations.append(tidiedWorkLocation);
+    persistToSettings();
+    emit searchProfileChanged();
+}
+
+void JobSearchProfile::removePreferredWorkLocationAt(int locationIndex)
+{
+    if (locationIndex < 0 || locationIndex >= storedPreferredWorkLocations.count()) {
+        return;
+    }
+    storedPreferredWorkLocations.removeAt(locationIndex);
     persistToSettings();
     emit searchProfileChanged();
 }

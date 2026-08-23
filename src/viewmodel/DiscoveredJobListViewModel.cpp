@@ -156,6 +156,11 @@ QString DiscoveredJobListViewModel::lastSweepSummaryText() const
     return discoveryJobScout.lastSweepSummaryText();
 }
 
+QString DiscoveredJobListViewModel::lastSweepTroubleText() const
+{
+    return discoveryJobScout.lastSweepTroubleText();
+}
+
 bool DiscoveredJobListViewModel::canRankProspects() const
 {
     return discoveryJobScout.searchProfileCanRank();

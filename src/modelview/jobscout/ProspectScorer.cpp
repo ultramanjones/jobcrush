@@ -207,18 +207,28 @@ int ProspectScorer::scoreRemoteFit(const JobPosting &jobPosting,
 int ProspectScorer::scoreLocationFit(const QString &loweredLocationText,
                                      QStringList &matchReasons) const
 {
-    const QString preferredLocation = profile.preferredLocationText().toLower().trimmed();
-    if (preferredLocation.isEmpty() || loweredLocationText.isEmpty()) {
+    const QStringList preferredWorkLocations = profile.preferredWorkLocations();
+    if (preferredWorkLocations.isEmpty() || loweredLocationText.isEmpty()) {
         return 0;
     }
 
-    // Loose on purpose: boards write locations every possible way, and a
-    // strict comparison would reject far more real matches than it caught.
-    for (const QString &locationWord : significantWordsOf(preferredLocation)) {
-        if (loweredLocationText.contains(locationWord)) {
-            matchReasons.append(QStringLiteral("Location mentions %1")
-                                    .arg(profile.preferredLocationText()));
-            return locationFitMaximumPoints;
+    // Any one of the places the user named is a hit — they are alternatives,
+    // not requirements. Matching is loose on purpose: boards write locations
+    // every possible way ("Pittsburgh, PA", "Pittsburgh PA, USA", "Greater
+    // Pittsburgh Area"), and a strict comparison would reject far more real
+    // matches than it caught.
+    for (const QString &preferredLocation : preferredWorkLocations) {
+        for (const QString &locationWord : significantWordsOf(preferredLocation)) {
+            // Short tokens are state codes ("PA", "TX"). Those must match as
+            // whole words or "PA" starts matching "Palo Alto" and "Panama".
+            const bool wordMatched = locationWord.length() <= 3
+                ? textContainsWholeTerm(loweredLocationText, locationWord)
+                : loweredLocationText.contains(locationWord);
+            if (wordMatched) {
+                matchReasons.append(QStringLiteral("Location matches %1")
+                                        .arg(preferredLocation));
+                return locationFitMaximumPoints;
+            }
         }
     }
     return 0;

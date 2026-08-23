@@ -38,9 +38,14 @@ public:
     QStringList skillKeywords() const;
     void setSkillKeywords(const QStringList &keywords);
 
-    // Free text, matched loosely: "Austin", "Texas", "United States".
-    QString preferredLocationText() const;
-    void setPreferredLocationText(const QString &locationText);
+    // The places the user would work, held as a LIST rather than one line of
+    // text. That is not a detail: "Pittsburgh, PA" contains a comma, so a
+    // comma-separated box could never hold it without mangling it. Each entry
+    // is its own thing, matched loosely against a posting's location.
+    QStringList preferredWorkLocations() const;
+    void setPreferredWorkLocations(const QStringList &workLocations);
+    void addPreferredWorkLocation(const QString &workLocation);
+    void removePreferredWorkLocationAt(int locationIndex);
 
     // When true, a job that is not remote scores no location points at all.
     bool remoteRolesOnly() const;
@@ -68,7 +73,7 @@ private:
 
     QStringList storedTargetJobTitles;
     QStringList storedSkillKeywords;
-    QString storedPreferredLocationText;
+    QStringList storedPreferredWorkLocations;
     bool storedRemoteRolesOnly = false;
     int storedMinimumAcceptableSalary = 0;
 };

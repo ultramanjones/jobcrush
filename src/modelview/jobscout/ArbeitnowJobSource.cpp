@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QUrl>
@@ -40,21 +41,50 @@ JobScoutReply *ArbeitnowJobSource::searchForJobs(const JobSearchProfile &searchP
     networkRequest.setRawHeader(QByteArrayLiteral("Accept"),
                                 QByteArrayLiteral("application/json"));
     networkRequest.setRawHeader(QByteArrayLiteral("User-Agent"),
-                                QByteArrayLiteral("JobCrush/0.1 (+https://github.com/ultramanjones/jobcrush)"));
+                                QByteArrayLiteral("Mozilla/5.0 (compatible; JobCrush/0.1; "
+                                "+https://github.com/ultramanjones/jobcrush)"));
+
+    // Follow redirects: a site quietly moving its endpoint should not read to
+    // the user as the site being down.
+    networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                                QNetworkRequest::NoLessSafeRedirectPolicy);
 
     QNetworkReply *networkReply = networkAccessManager.get(networkRequest);
     networkReply->setParent(scoutReply); // dies with the scout reply
 
     QObject::connect(networkReply, &QNetworkReply::finished, scoutReply,
                      [networkReply, scoutReply]() {
+        // What actually came back, in enough detail to be fixable. A failure
+        // that only says "it didn't work" costs the user a support round trip
+        // they should never have had to make.
+        const int httpStatusCode = networkReply
+            ->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray responseBody = networkReply->readAll();
+
         if (networkReply->error() != QNetworkReply::NoError) {
-            scoutReply->markFailed(QStringLiteral("Arbeitnow didn't answer: %1")
-                                       .arg(networkReply->errorString()));
+            scoutReply->markFailed(
+                httpStatusCode > 0
+                    ? QStringLiteral("%1 refused the request (HTTP %2)")
+                          .arg(QStringLiteral("Arbeitnow")).arg(httpStatusCode)
+                    : QStringLiteral("couldn't reach %1 — %2")
+                          .arg(QStringLiteral("Arbeitnow"), networkReply->errorString()));
             return;
         }
 
-        const QJsonObject responseObject =
-            QJsonDocument::fromJson(networkReply->readAll()).object();
+        QJsonParseError jsonParseError;
+        const QJsonDocument responseDocument =
+            QJsonDocument::fromJson(responseBody, &jsonParseError);
+        if (jsonParseError.error != QJsonParseError::NoError || !responseDocument.isObject()) {
+            // Almost always a bot-check or maintenance page arriving where
+            // JSON was expected. Say so plainly instead of showing a parser
+            // complaint nobody outside this file can act on.
+            scoutReply->markFailed(
+                QStringLiteral("%1 answered with a web page instead of job data "
+                               "(HTTP %2)").arg(QStringLiteral("Arbeitnow")).arg(httpStatusCode));
+            return;
+        }
+
+        const QJsonObject responseObject = responseDocument.object();
         const QJsonArray jobsArray = responseObject.value(QStringLiteral("data")).toArray();
 
         const QDateTime sweepTimestamp = QDateTime::currentDateTime();

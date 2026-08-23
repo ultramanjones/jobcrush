@@ -1,0 +1,8 @@
+// Windows application icon.
+//
+// This is what Explorer and the taskbar show for jobcrush.exe itself, even
+// when the app is not running. The icon Windows shows for a RUNNING window
+// comes from QGuiApplication::setWindowIcon in main.cpp — Windows asks two
+// different questions and both have to be answered, or the app looks like a
+// blank page in half the places it appears.
+IDI_ICON1 ICON "jobcrush-icon.ico"

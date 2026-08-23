@@ -1,4 +1,6 @@
 #include <QGuiApplication>
+#include <QIcon>
+#include <QUrl>
 #include <QQmlApplicationEngine>
 #include <QStandardPaths>
 #include <QDir>
@@ -38,6 +40,10 @@ int main(int argc, char *argv[])
     QGuiApplication application(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("Ultra"));
     QGuiApplication::setApplicationName(QStringLiteral("Job Crush"));
+
+    // The taskbar / alt-tab / title-bar icon while the app is running. The
+    // executable's own icon is a separate thing set in assets/jobcrush.rc.
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/assets/jobcrush-icon.png")));
 
     // --- Model layer: the database, close to the metal --------------------
     const QString applicationDataFolderPath =

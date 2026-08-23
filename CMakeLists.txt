@@ -8,8 +8,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 6.5 REQUIRED COMPONENTS Quick Sql Network)
 qt_standard_project_setup(REQUIRES 6.5)
 
+# The Windows executable icon, compiled in as a resource. Guarded because a
+# .rc file means nothing to any other platform.
+if (WIN32)
+    set(jobCrushWindowsIconResource assets/jobcrush.rc)
+endif()
+
 qt_add_executable(jobcrush
     src/main.cpp
+    ${jobCrushWindowsIconResource}
 
     # Model layer — close to the metal
     src/model/PipelineStage.h
@@ -43,6 +50,7 @@ qt_add_executable(jobcrush
     src/modelview/brainchat/BrainChatSession.h
     src/modelview/brainchat/BrainChatSession.cpp
     src/modelview/jobscout/JobSourceDescriptor.h
+    src/modelview/jobscout/KnownWorkLocations.h
     src/modelview/jobscout/JobPostingTextCleanup.h
     src/modelview/jobscout/JobScoutReply.h
     src/modelview/jobscout/JobSourceProvider.h
@@ -78,6 +86,19 @@ qt_add_executable(jobcrush
 
 target_include_directories(jobcrush PRIVATE src)
 
+# MinGW/Windows only: Windows COFF object files cap at 32,768 sections, and a
+# debug build of mocs_compilation.cpp — every moc file in the project compiled
+# as one translation unit — walks straight into that ceiling once the class
+# count grows. The failure gives no source line, just "Error 1", so it reads
+# like a code bug when it is a file-format limit.
+#
+# -Wa,-mbig-obj tells the assembler to emit the extended COFF format that has
+# no such cap. Costs nothing, changes no behavior, and MSVC and every Unix
+# toolchain are unaffected because they never had the limit.
+if (MINGW)
+    target_compile_options(jobcrush PRIVATE -Wa,-mbig-obj)
+endif()
+
 # The theme singleton must be declared as such before qt_add_qml_module.
 set_source_files_properties(JobCrushTheme.qml PROPERTIES
     QT_QML_SINGLETON_TYPE TRUE
@@ -93,6 +114,16 @@ qt_add_qml_module(jobcrush
         BrainChatPage.qml
         DiscoveriesPage.qml
         SettingsPage.qml
+        TokenEntryField.qml
+        VerticalScrollBar.qml
+)
+
+# The icon the app carries at RUNTIME — the one Windows shows in the taskbar
+# and alt-tab while jobcrush is running, and the one every other desktop uses.
+qt_add_resources(jobcrush "applicationIcon"
+    PREFIX "/"
+    FILES
+        assets/jobcrush-icon.png
 )
 
 target_link_libraries(jobcrush PRIVATE Qt6::Quick Qt6::Sql Qt6::Network)

@@ -89,6 +89,11 @@ QString JobScout::lastSweepSummaryText() const
     return storedLastSweepSummaryText;
 }
 
+QString JobScout::lastSweepTroubleText() const
+{
+    return storedLastSweepTroubleText;
+}
+
 void JobScout::startSweep()
 {
     if (sweepIsRunning()) {
@@ -104,9 +109,11 @@ void JobScout::startSweep()
     }
 
     finishedSourceOutcomeLines.clear();
+    sourcesThatHadTroubleThisSweep.clear();
     totalJobsFoundThisSweep = 0;
     totalNewJobsThisSweep = 0;
     storedLastSweepSummaryText.clear();
+    storedLastSweepTroubleText.clear();
 
     // Fill the running list BEFORE firing anything: a site that answers from
     // cache could otherwise finish while the list still looked empty, and the
@@ -154,12 +161,21 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
         recordFindingsFromSource(sourceStorageName, foundJobPostings);
         const int newJobsFromThisSource = totalNewJobsThisSweep - newJobCountBefore;
 
+        // A source that answers politely with nothing at all is not an error,
+        // but it is not success either — say which, so an empty tab is never
+        // a mystery.
+        const bool sourceCameBackEmpty = foundJobPostings.isEmpty();
+
         finishSourceAndReportProgress(
             sourceStorageName,
-            QStringLiteral("%1: %2 found, %3 new")
-                .arg(sourceDisplayName)
-                .arg(foundJobPostings.count())
-                .arg(newJobsFromThisSource));
+            sourceCameBackEmpty
+                ? QStringLiteral("%1: answered, but sent no jobs back")
+                      .arg(sourceDisplayName)
+                : QStringLiteral("%1: %2 found, %3 new")
+                      .arg(sourceDisplayName)
+                      .arg(foundJobPostings.count())
+                      .arg(newJobsFromThisSource),
+            sourceCameBackEmpty);
 
         scoutReply->deleteLater();
     });
@@ -171,7 +187,8 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
         // keep the others running, and move on.
         finishSourceAndReportProgress(
             sourceStorageName,
-            QStringLiteral("%1: %2").arg(sourceDisplayName, humanReadableReason));
+            QStringLiteral("%1: %2").arg(sourceDisplayName, humanReadableReason),
+            true);
 
         scoutReply->deleteLater();
     });
@@ -196,19 +213,29 @@ void JobScout::recordFindingsFromSource(const QString &sourceStorageName,
 }
 
 void JobScout::finishSourceAndReportProgress(const QString &sourceStorageName,
-                                             const QString &sourceOutcomeText)
+                                             const QString &sourceOutcomeText,
+                                             bool sourceHadTrouble)
 {
     sourcesStillSweeping.removeAll(sourceStorageName);
     finishedSourceOutcomeLines.append(sourceOutcomeText);
+    if (sourceHadTrouble) {
+        sourcesThatHadTroubleThisSweep.append(sourceOutcomeText);
+    }
 
     if (sourcesStillSweeping.isEmpty()) {
+        const int sitesSwept = finishedSourceOutcomeLines.count();
         storedLastSweepSummaryText =
             QStringLiteral("%1 jobs checked · %2 new · %3 %4")
                 .arg(totalJobsFoundThisSweep)
                 .arg(totalNewJobsThisSweep)
-                .arg(finishedSourceOutcomeLines.count())
-                .arg(finishedSourceOutcomeLines.count() == 1
-                         ? QStringLiteral("site") : QStringLiteral("sites"));
+                .arg(sitesSwept)
+                .arg(sitesSwept == 1 ? QStringLiteral("site") : QStringLiteral("sites"));
+
+        // The whole reason this exists: whatever went wrong survives the end
+        // of the sweep instead of being overwritten by a tidy summary.
+        storedLastSweepTroubleText =
+            sourcesThatHadTroubleThisSweep.join(QStringLiteral("   ·   "));
+
         emit discoveriesChanged();
     }
 
