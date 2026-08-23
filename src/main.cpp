@@ -89,6 +89,12 @@ int main(int argc, char *argv[])
     ProDocsIntake proDocsIntake(professionalDocumentRepository, careerHistoryRepository,
                                 applicationDataFolderPath);
 
+    // Anything dropped before Job Crush knew how to read jobs and schooling
+    // out of documents gets read now, once, so the Experience tab is
+    // populated the first time the user opens it rather than sitting empty
+    // behind a button nobody knew to press.
+    proDocsIntake.readAnyDocumentsNotReadYet();
+
     JobSearchProfile jobSearchProfile;
     jobSearchProfile.loadFromSettings();
 

@@ -150,6 +150,7 @@ private:
 
     std::unique_ptr<AiBrainProvider> anthropicProvider;
     std::unique_ptr<AiBrainProvider> openRouterProvider;
+    std::unique_ptr<AiBrainProvider> geminiProvider;
 
     // The stored choice: empty means "never chosen" (adopt the default),
     // "none" means the user deliberately chose no brain, anything else is a

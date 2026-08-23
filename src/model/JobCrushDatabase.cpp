@@ -174,7 +174,10 @@ bool JobCrushDatabase::createSchemaIfMissing()
                                QStringLiteral("INTEGER NOT NULL DEFAULT 0"))
         || !addColumnIfMissing(QStringLiteral("professionalDocument"),
                                QStringLiteral("textExtractionNote"),
-                               QStringLiteral("TEXT NOT NULL DEFAULT ''"))) {
+                               QStringLiteral("TEXT NOT NULL DEFAULT ''"))
+        || !addColumnIfMissing(QStringLiteral("professionalDocument"),
+                               QStringLiteral("hasBeenReadForInsights"),
+                               QStringLiteral("INTEGER NOT NULL DEFAULT 0"))) {
         return false;
     }
 

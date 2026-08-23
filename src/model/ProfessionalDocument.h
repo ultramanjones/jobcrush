@@ -25,4 +25,11 @@ struct ProfessionalDocument {
     // picture of words, and saying so plainly is the difference between the
     // user knowing their experience did not load and quietly assuming it did.
     QString textExtractionNote;
+
+    // Whether jobs and schooling have already been read out of this one.
+    //
+    // Needed so a document is read automatically ONCE. Re-reading everything
+    // on every launch would resurrect entries the user had deliberately
+    // deleted, which is the app arguing with somebody about their own life.
+    bool hasBeenReadForInsights = false;
 };

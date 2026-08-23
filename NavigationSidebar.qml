@@ -39,7 +39,7 @@ Rectangle {
         // Wordmark corner.
         Text {
             text: "JOB CRUSH"
-            color: JobCrushTheme.callToActionColor
+            color: JobCrushTheme.sidebarWordmarkColor
             font.pixelSize: 18
             font.weight: Font.Bold
             font.letterSpacing: 2
@@ -60,7 +60,7 @@ Rectangle {
 
                 width: sidebar.width
                 height: 44
-                color: isCurrent ? JobCrushTheme.panelBackgroundColor : "transparent"
+                color: isCurrent ? JobCrushTheme.sidebarSelectedRowColor : "transparent"
 
                 // Current-page indicator: a thin accent bar, not a highlight
                 // shout.
@@ -78,9 +78,9 @@ Rectangle {
                     text: navigationRow.modelData.displayLabel
                     color: navigationRow.isEnabled
                         ? (navigationRow.isCurrent
-                               ? JobCrushTheme.primaryTextColor
-                               : JobCrushTheme.secondaryTextColor)
-                        : JobCrushTheme.mutedTextColor
+                               ? JobCrushTheme.sidebarPrimaryTextColor
+                               : JobCrushTheme.sidebarSecondaryTextColor)
+                        : JobCrushTheme.sidebarMutedTextColor
                     font.pixelSize: JobCrushTheme.bodyFontSize
                 }
 
@@ -90,7 +90,7 @@ Rectangle {
                     anchors.rightMargin: 16
                     text: navigationRow.modelData.phaseTag
                     visible: !navigationRow.isEnabled
-                    color: JobCrushTheme.mutedTextColor
+                    color: JobCrushTheme.sidebarMutedTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                 }
 

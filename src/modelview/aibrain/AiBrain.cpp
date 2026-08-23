@@ -7,6 +7,7 @@
 #include "AiBrainSoul.h"
 #include "AiCredentialRoster.h"
 #include "AnthropicApiProvider.h"
+#include "GeminiApiProvider.h"
 #include "OpenRouterApiProvider.h"
 
 namespace {
@@ -69,6 +70,7 @@ AiBrain::AiBrain(AiCredentialRoster &credentialRoster,
     , brainSoul(soul)
     , anthropicProvider(std::make_unique<AnthropicApiProvider>())
     , openRouterProvider(std::make_unique<OpenRouterApiProvider>())
+    , geminiProvider(std::make_unique<GeminiApiProvider>())
 {
     // Any roster edit in Settings changes what "connected and active" means,
     // instantly: a deleted key can unseat the running brain, and a freshly
@@ -107,8 +109,9 @@ AiBrainProvider *AiBrain::providerFor(AiProviderKind providerKind) const
         return anthropicProvider.get();
     case AiProviderKind::OpenRouter:
         return openRouterProvider.get();
-    case AiProviderKind::OpenAi:
     case AiProviderKind::Gemini:
+        return geminiProvider.get();
+    case AiProviderKind::OpenAi:
     case AiProviderKind::Ollama:
         return nullptr; // clients not written yet
     }

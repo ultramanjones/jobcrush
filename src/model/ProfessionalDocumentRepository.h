@@ -24,6 +24,10 @@ public:
     // Just one kind — the resume, the transcripts, and so on.
     QList<ProfessionalDocument> loadProfessionalDocumentsOfKind(const QString &documentKind);
 
+    // Records that jobs and schooling have been read out of this document,
+    // so it is never read a second time behind the user's back.
+    bool markDocumentAsRead(qint64 professionalDocumentId);
+
     // The user correcting a guess. Classification is a heuristic, so being
     // wrong is expected and putting it right must cost one click.
     bool updateDocumentKind(qint64 professionalDocumentId, const QString &documentKind);

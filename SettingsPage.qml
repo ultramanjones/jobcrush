@@ -170,8 +170,8 @@ Rectangle {
                     text: "Two separate things live here. The TABS pick whose key "
                           + "you're editing — a green ● means that slot already holds "
                           + "one. The CHECKBOX picks which brain actually answers you. "
-                          + "AIBrain speaks Anthropic and OpenRouter today; OpenAI, "
-                          + "Gemini, and Ollama are on the way."
+                          + "AIBrain speaks Anthropic, OpenRouter and Gemini today; "
+                          + "OpenAI and Ollama are on the way."
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     wrapMode: Text.Wrap

@@ -102,6 +102,7 @@ QString ProDocsIntake::acceptDroppedFiles(const QStringList &droppedFilePaths)
 
         const int entriesRead = recordInsightsFromDocument(
             professionalDocument.professionalDocumentId, extraction.extractedText);
+        repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
         if (entriesRead > 0) {
             emit careerHistoryChanged();
         }
@@ -165,6 +166,26 @@ int ProDocsIntake::recordInsightsFromDocument(qint64 professionalDocumentId,
     return storedEntryCount;
 }
 
+int ProDocsIntake::readAnyDocumentsNotReadYet()
+{
+    int entriesFound = 0;
+    for (const ProfessionalDocument &professionalDocument :
+             repository.loadAllProfessionalDocuments()) {
+        if (professionalDocument.hasBeenReadForInsights
+                || professionalDocument.extractedText.trimmed().isEmpty()) {
+            continue;
+        }
+        entriesFound += recordInsightsFromDocument(
+            professionalDocument.professionalDocumentId, professionalDocument.extractedText);
+        repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
+    }
+
+    if (entriesFound > 0) {
+        emit careerHistoryChanged();
+    }
+    return entriesFound;
+}
+
 QString ProDocsIntake::rereadEveryDocument()
 {
     // Throw away only what Job Crush guessed. Confirmed and hand-typed entries
@@ -184,6 +205,7 @@ QString ProDocsIntake::rereadEveryDocument()
         ++documentsRead;
         entriesFound += recordInsightsFromDocument(
             professionalDocument.professionalDocumentId, professionalDocument.extractedText);
+        repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
     }
 
     emit careerHistoryChanged();

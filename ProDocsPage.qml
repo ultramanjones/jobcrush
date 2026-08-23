@@ -422,6 +422,17 @@ Rectangle {
                         font.pixelSize: JobCrushTheme.smallFontSize
                         wrapMode: Text.Wrap
                     }
+
+                    Text {
+                        width: parent.width
+                        text: "Documents you drop in are read straight away — you "
+                              + "shouldn't need the button. It's there for when you want "
+                              + "Job Crush to take another run at everything, and it only "
+                              + "replaces the entries it guessed."
+                        color: JobCrushTheme.mutedTextColor
+                        font.pixelSize: JobCrushTheme.smallFontSize
+                        wrapMode: Text.Wrap
+                    }
                 }
 
                 Rectangle {

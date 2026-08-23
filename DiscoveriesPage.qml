@@ -250,14 +250,15 @@ Rectangle {
     }
 
     // What the location filter is holding back, and the way to go look at it.
-    // Stated out loud on purpose: a filter that quietly eats jobs and never
-    // says so is indistinguishable from a sweep that found nothing, and the
-    // user goes hunting for a bug that isn't there.
-    Text {
-        id: outsideSearchAreaNotice
+    //
+    // A whole BAR rather than a line of small print, because this is the app
+    // admitting it is hiding things. Buried, it reads as a sweep that found
+    // nothing and sends someone hunting for a bug that isn't there.
+    Rectangle {
+        id: outsideSearchAreaBar
 
         anchors.top: discoveryTabRow.bottom
-        anchors.topMargin: 10
+        anchors.topMargin: 12
         anchors.left: parent.left
         anchors.leftMargin: 28
         anchors.right: parent.right
@@ -265,31 +266,85 @@ Rectangle {
 
         readonly property int heldBackCount:
             discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea
+        readonly property bool showingOutside:
+            discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
 
         visible: discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
-                 && (heldBackCount > 0
-                     || discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea)
+                 && (heldBackCount > 0 || showingOutside)
 
-        text: discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
-            ? "Showing jobs outside where you said you'd work.  "
-              + "<a href=\"toggle\">Back to your search area</a>"
-            : heldBackCount + (heldBackCount === 1 ? " job sits" : " jobs sit")
-              + " outside where you said you'd work.  "
-              + "<a href=\"toggle\">Take a look</a>"
+        height: visible ? 46 : 0
+        radius: 8
+        color: showingOutside
+            ? JobCrushTheme.cardBackgroundColor : JobCrushTheme.panelBackgroundColor
+        border.width: 2
+        border.color: showingOutside
+            ? JobCrushTheme.callToActionColor : JobCrushTheme.noticeTextColor
 
-        textFormat: Text.RichText
-        linkColor: JobCrushTheme.accentColor
-        color: JobCrushTheme.mutedTextColor
-        font.pixelSize: JobCrushTheme.smallFontSize
-        wrapMode: Text.Wrap
+        // A bar of colour down the left edge, so it registers as a state the
+        // app is IN before a single word is read.
+        Rectangle {
+            width: 5
+            height: parent.height - 16
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: 8
+            radius: 2
+            color: outsideSearchAreaBar.showingOutside
+                ? JobCrushTheme.callToActionColor : JobCrushTheme.noticeTextColor
+        }
 
-        onLinkActivated: discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
-            = !discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: 26
+            anchors.right: outsideSearchAreaButton.left
+            anchors.rightMargin: 16
+            text: outsideSearchAreaBar.showingOutside
+                ? "These jobs are OUTSIDE where you said you'd work"
+                : outsideSearchAreaBar.heldBackCount
+                  + (outsideSearchAreaBar.heldBackCount === 1
+                         ? " job is hidden" : " jobs are hidden")
+                  + " — they're outside where you said you'd work"
+            color: outsideSearchAreaBar.showingOutside
+                ? JobCrushTheme.callToActionColor : JobCrushTheme.noticeTextColor
+            font.pixelSize: JobCrushTheme.bodyFontSize
+            font.weight: Font.DemiBold
+            elide: Text.ElideRight
+        }
 
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.NoButton
-            cursorShape: parent.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
+        Rectangle {
+            id: outsideSearchAreaButton
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: parent.right
+            anchors.rightMargin: 10
+            width: outsideSearchAreaButtonLabel.implicitWidth + 28
+            height: 30
+            radius: 8
+            color: outsideSearchAreaButtonMouseArea.containsMouse
+                ? Qt.lighter(outsideSearchAreaBar.showingOutside
+                                 ? JobCrushTheme.callToActionColor
+                                 : JobCrushTheme.noticeTextColor, 1.12)
+                : (outsideSearchAreaBar.showingOutside
+                       ? JobCrushTheme.callToActionColor : JobCrushTheme.noticeTextColor)
+
+            Text {
+                id: outsideSearchAreaButtonLabel
+                anchors.centerIn: parent
+                text: outsideSearchAreaBar.showingOutside
+                    ? "Back to my area" : "Show me"
+                color: JobCrushTheme.onAccentTextColor
+                font.pixelSize: JobCrushTheme.smallFontSize
+                font.weight: Font.DemiBold
+            }
+
+            MouseArea {
+                id: outsideSearchAreaButtonMouseArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+                    = !discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+            }
         }
     }
 
@@ -299,8 +354,8 @@ Rectangle {
     ListView {
         id: discoveredJobListView
 
-        anchors.top: outsideSearchAreaNotice.visible
-            ? outsideSearchAreaNotice.bottom : discoveryTabRow.bottom
+        anchors.top: outsideSearchAreaBar.visible
+            ? outsideSearchAreaBar.bottom : discoveryTabRow.bottom
         anchors.topMargin: 16
         anchors.bottom: parent.bottom
         anchors.left: parent.left

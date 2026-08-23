@@ -44,6 +44,16 @@ public:
     // from this, which is how documents make job matching sharper.
     QString allDocumentTextJoined() const;
 
+    // Reads any document that has never been read, and nothing else.
+    //
+    // Called once at startup so documents dropped before this feature existed
+    // — or dropped while the page was closed — turn up without the user
+    // having to know a button exists. Documents already read are left alone,
+    // so entries somebody deleted on purpose stay deleted.
+    //
+    // Returns how many entries it found.
+    int readAnyDocumentsNotReadYet();
+
     // Reads every stored document again from scratch.
     //
     // Anything the user confirmed or typed themselves SURVIVES this. Re-reading

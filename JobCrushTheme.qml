@@ -46,7 +46,10 @@ QtObject {
     }
     readonly property color sidebarBackgroundColor: {
         if (isFruitLoops) return "#170D20"
-        if (isAmish)      return "#DFCFA8"   // Morning Straw, full-strength wall
+        // Amish Sunday Blue, a full wall of it, the way a quilt uses a block.
+        // If this reads as too much, the previous version was Morning Straw
+        // at "#DFCFA8" — swapping the line back is the whole revert.
+        if (isAmish)      return "#3B5973"
         if (isTraceOn)    return "#080A0C"
         return "#101319"
     }
@@ -62,6 +65,12 @@ QtObject {
         if (isTraceOn)    return "#101619"
         return "#1B202C"
     }
+    // The panel behind the current sidebar row. On Amish it sits ON the blue,
+    // so it lifts rather than lightening to muslin, which would look like a
+    // hole cut in the wall.
+    readonly property color sidebarSelectedRowColor:
+        isAmish ? "#4B6E8C" : panelBackgroundColor
+
     readonly property color hairlineBorderColor: {
         if (isFruitLoops) return "#3A2350"
         if (isAmish)      return "#2B2B2B"   // Buggy Black — quilt binding, not a
@@ -69,6 +78,21 @@ QtObject {
         if (isTraceOn)    return "#3A4A5A"   // inactive wireframe gray
         return "#262C3A"
     }
+
+    // --- Sidebar text ------------------------------------------------------
+    //
+    // Its own tokens because the sidebar is the one surface that can carry a
+    // bold block of color while the rest of the page stays pale. Without
+    // these, dark ink on Amish's Sunday Blue wall would be unreadable, and
+    // the whole idea would be off the table.
+    readonly property color sidebarPrimaryTextColor:
+        isAmish ? "#F6F3EC" : primaryTextColor
+    readonly property color sidebarSecondaryTextColor:
+        isAmish ? "#CBD8E4" : secondaryTextColor
+    readonly property color sidebarMutedTextColor:
+        isAmish ? "#93A9BC" : mutedTextColor
+    readonly property color sidebarWordmarkColor:
+        isAmish ? "#FFCF6B" : callToActionColor
 
     // --- Text -------------------------------------------------------------
     readonly property color primaryTextColor: {

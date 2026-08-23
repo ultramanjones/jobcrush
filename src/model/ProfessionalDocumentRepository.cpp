@@ -34,6 +34,8 @@ ProfessionalDocument professionalDocumentFromQueryRow(const QSqlQuery &row)
         row.value(QStringLiteral("fileSizeBytes")).toLongLong();
     professionalDocument.textExtractionNote =
         row.value(QStringLiteral("textExtractionNote")).toString();
+    professionalDocument.hasBeenReadForInsights =
+        row.value(QStringLiteral("hasBeenReadForInsights")).toInt() != 0;
     return professionalDocument;
 }
 
@@ -162,4 +164,19 @@ QString ProfessionalDocumentRepository::allExtractedTextJoined()
 QString ProfessionalDocumentRepository::lastErrorText() const
 {
     return lastErrorDescription;
+}
+
+bool ProfessionalDocumentRepository::markDocumentAsRead(qint64 professionalDocumentId)
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE professionalDocument SET hasBeenReadForInsights = 1 "
+        "WHERE professionalDocumentId = :professionalDocumentId"));
+    updateQuery.bindValue(QStringLiteral(":professionalDocumentId"), professionalDocumentId);
+
+    if (!updateQuery.exec()) {
+        lastErrorDescription = updateQuery.lastError().text();
+        return false;
+    }
+    return true;
 }
