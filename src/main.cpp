@@ -9,6 +9,8 @@
 #include "model/JobCrushDatabase.h"
 #include "model/JobPostingRepository.h"
 #include "model/JobApplicationRepository.h"
+#include "model/ProfessionalDocumentRepository.h"
+#include "model/CareerHistoryRepository.h"
 
 #include "modelview/AppPreferences.h"
 #include "modelview/aibrain/AiBrain.h"
@@ -18,6 +20,7 @@
 #include "modelview/jobscout/JobScout.h"
 #include "modelview/jobscout/JobSearchProfile.h"
 #include "modelview/jobscout/JobSourceRoster.h"
+#include "modelview/prodocs/ProDocsIntake.h"
 
 #include "viewmodel/AiCredentialRosterViewModel.h"
 #include "viewmodel/AppPreferencesViewModel.h"
@@ -26,6 +29,9 @@
 #include "viewmodel/DiscoveredJobListViewModel.h"
 #include "viewmodel/JobSearchProfileViewModel.h"
 #include "viewmodel/JobSourceRosterViewModel.h"
+#include "viewmodel/ProfessionalDocumentListViewModel.h"
+#include "viewmodel/WorkExperienceListViewModel.h"
+#include "viewmodel/EducationListViewModel.h"
 
 // main — the composition root.
 //
@@ -62,6 +68,8 @@ int main(int argc, char *argv[])
     // --- Model layer: repositories ----------------------------------------
     JobPostingRepository jobPostingRepository(jobCrushDatabase);
     JobApplicationRepository jobApplicationRepository(jobCrushDatabase);
+    ProfessionalDocumentRepository professionalDocumentRepository(jobCrushDatabase);
+    CareerHistoryRepository careerHistoryRepository(jobCrushDatabase);
 
     // (The Job Pipelines board arrives in Phase 4; its repository stays wired
     //  so the startup path is proven end to end.)
@@ -77,6 +85,9 @@ int main(int argc, char *argv[])
     AiBrainSoul aiBrainSoul(
         QDir(applicationDataFolderPath).filePath(QStringLiteral("soul")));
     aiBrainSoul.loadCreatingDefaultsIfMissing();
+
+    ProDocsIntake proDocsIntake(professionalDocumentRepository, careerHistoryRepository,
+                                applicationDataFolderPath);
 
     JobSearchProfile jobSearchProfile;
     jobSearchProfile.loadFromSettings();
@@ -101,6 +112,11 @@ int main(int argc, char *argv[])
     DiscoveredJobListViewModel discoveredJobListViewModel(jobScout);
     JobSourceRosterViewModel jobSourceRosterViewModel(jobSourceRoster);
     JobSearchProfileViewModel jobSearchProfileViewModel(jobSearchProfile);
+    ProfessionalDocumentListViewModel professionalDocumentListViewModel(
+        professionalDocumentRepository, proDocsIntake);
+    WorkExperienceListViewModel workExperienceListViewModel(
+        careerHistoryRepository, proDocsIntake);
+    EducationListViewModel educationListViewModel(careerHistoryRepository, proDocsIntake);
 
     // --- View layer: the QML engine ----------------------------------------
     QQmlApplicationEngine qmlEngine;
@@ -124,6 +140,12 @@ int main(int argc, char *argv[])
           QVariant::fromValue(&jobSourceRosterViewModel) },
         { QStringLiteral("jobSearchProfileViewModel"),
           QVariant::fromValue(&jobSearchProfileViewModel) },
+        { QStringLiteral("professionalDocumentListViewModel"),
+          QVariant::fromValue(&professionalDocumentListViewModel) },
+        { QStringLiteral("workExperienceListViewModel"),
+          QVariant::fromValue(&workExperienceListViewModel) },
+        { QStringLiteral("educationListViewModel"),
+          QVariant::fromValue(&educationListViewModel) },
     });
 
     qmlEngine.loadFromModule("JobCrush", "Main");

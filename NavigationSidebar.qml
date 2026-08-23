@@ -23,7 +23,7 @@ Rectangle {
     readonly property var navigationEntries: [
         { pageName: "pipelines",   displayLabel: "Job Pipelines", phaseTag: "Phase 4" },
         { pageName: "discoveries", displayLabel: "Discoveries", phaseTag: "" },
-        { pageName: "proDocs",     displayLabel: "ProDocs",     phaseTag: "Phase 5" },
+        { pageName: "proDocs",     displayLabel: "ProDocs",     phaseTag: "" },
         { pageName: "staging",     displayLabel: "Staging",     phaseTag: "Phase 5" },
         { pageName: "stats",       displayLabel: "Stats",       phaseTag: "Phase 7" },
         { pageName: "brainChat",   displayLabel: "Brain Chat",  phaseTag: "" },

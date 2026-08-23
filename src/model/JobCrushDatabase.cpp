@@ -99,6 +99,35 @@ bool JobCrushDatabase::createSchemaIfMissing()
             "  notesText         TEXT NOT NULL DEFAULT ''"
             ")"),
 
+        // One job the user has held (see WorkExperience.h). Dates are text
+        // because that is how resumes write them.
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS workExperience ("
+            "  workExperienceId  INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  employerName      TEXT NOT NULL DEFAULT '',"
+            "  roleTitle         TEXT NOT NULL DEFAULT '',"
+            "  startDateText     TEXT NOT NULL DEFAULT '',"
+            "  endDateText       TEXT NOT NULL DEFAULT '',"
+            "  summaryText       TEXT NOT NULL DEFAULT '',"
+            "  sourceDocumentId  INTEGER NOT NULL DEFAULT 0,"
+            "  sourceLineText    TEXT NOT NULL DEFAULT '',"
+            "  isConfirmedByUser INTEGER NOT NULL DEFAULT 0"
+            ")"),
+
+        // One school or credential (see EducationRecord.h).
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS educationRecord ("
+            "  educationRecordId INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  schoolName        TEXT NOT NULL DEFAULT '',"
+            "  credentialText    TEXT NOT NULL DEFAULT '',"
+            "  fieldOfStudyText  TEXT NOT NULL DEFAULT '',"
+            "  startDateText     TEXT NOT NULL DEFAULT '',"
+            "  endDateText       TEXT NOT NULL DEFAULT '',"
+            "  sourceDocumentId  INTEGER NOT NULL DEFAULT 0,"
+            "  sourceLineText    TEXT NOT NULL DEFAULT '',"
+            "  isConfirmedByUser INTEGER NOT NULL DEFAULT 0"
+            ")"),
+
         // One ProDocs item (see ProfessionalDocument.h).
         QStringLiteral(
             "CREATE TABLE IF NOT EXISTS professionalDocument ("
@@ -133,6 +162,19 @@ bool JobCrushDatabase::createSchemaIfMissing()
         || !addColumnIfMissing(QStringLiteral("jobPosting"),
                                QStringLiteral("isRemoteRole"),
                                QStringLiteral("INTEGER NOT NULL DEFAULT 0"))) {
+        return false;
+    }
+
+    // --- Schema growth: the columns ProDocs added ------------------------
+    if (!addColumnIfMissing(QStringLiteral("professionalDocument"),
+                            QStringLiteral("storedFilePath"),
+                            QStringLiteral("TEXT NOT NULL DEFAULT ''"))
+        || !addColumnIfMissing(QStringLiteral("professionalDocument"),
+                               QStringLiteral("fileSizeBytes"),
+                               QStringLiteral("INTEGER NOT NULL DEFAULT 0"))
+        || !addColumnIfMissing(QStringLiteral("professionalDocument"),
+                               QStringLiteral("textExtractionNote"),
+                               QStringLiteral("TEXT NOT NULL DEFAULT ''"))) {
         return false;
     }
 

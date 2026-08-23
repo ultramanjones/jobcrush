@@ -5,7 +5,7 @@ project(jobcrush VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Quick Sql Network)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Quick Sql Network Pdf)
 qt_standard_project_setup(REQUIRES 6.5)
 
 # The Windows executable icon, compiled in as a resource. Guarded because a
@@ -29,6 +29,12 @@ qt_add_executable(jobcrush
     src/model/JobPostingRepository.cpp
     src/model/JobApplicationRepository.h
     src/model/JobApplicationRepository.cpp
+    src/model/ProfessionalDocumentRepository.h
+    src/model/ProfessionalDocumentRepository.cpp
+    src/model/WorkExperience.h
+    src/model/EducationRecord.h
+    src/model/CareerHistoryRepository.h
+    src/model/CareerHistoryRepository.cpp
 
     # ModelView layer — the whole back end
     src/modelview/AppPreferences.h
@@ -66,6 +72,22 @@ qt_add_executable(jobcrush
     src/modelview/jobscout/ProspectScorer.cpp
     src/modelview/jobscout/JobScout.h
     src/modelview/jobscout/JobScout.cpp
+    src/modelview/prodocs/DocumentKind.h
+    src/modelview/prodocs/DroppedFileTypes.h
+    src/modelview/prodocs/DocumentTextExtractor.h
+    src/modelview/prodocs/DocumentTextExtractor.cpp
+    src/modelview/prodocs/DroppedFileClassifier.h
+    src/modelview/prodocs/DroppedFileClassifier.cpp
+    src/modelview/prodocs/DeflateDecompressor.h
+    src/modelview/prodocs/DeflateDecompressor.cpp
+    src/modelview/prodocs/ZipArchiveReader.h
+    src/modelview/prodocs/ZipArchiveReader.cpp
+    src/modelview/prodocs/WordDocumentReader.h
+    src/modelview/prodocs/WordDocumentReader.cpp
+    src/modelview/prodocs/ResumeInsightParser.h
+    src/modelview/prodocs/ResumeInsightParser.cpp
+    src/modelview/prodocs/ProDocsIntake.h
+    src/modelview/prodocs/ProDocsIntake.cpp
 
     # ViewModel layer — translation and organization only
     src/viewmodel/BrainChatConversationViewModel.h
@@ -82,6 +104,12 @@ qt_add_executable(jobcrush
     src/viewmodel/JobSourceRosterViewModel.cpp
     src/viewmodel/JobSearchProfileViewModel.h
     src/viewmodel/JobSearchProfileViewModel.cpp
+    src/viewmodel/ProfessionalDocumentListViewModel.h
+    src/viewmodel/ProfessionalDocumentListViewModel.cpp
+    src/viewmodel/WorkExperienceListViewModel.h
+    src/viewmodel/WorkExperienceListViewModel.cpp
+    src/viewmodel/EducationListViewModel.h
+    src/viewmodel/EducationListViewModel.cpp
 )
 
 target_include_directories(jobcrush PRIVATE src)
@@ -113,7 +141,9 @@ qt_add_qml_module(jobcrush
         NavigationSidebar.qml
         BrainChatPage.qml
         DiscoveriesPage.qml
+        ProDocsPage.qml
         SettingsPage.qml
+        InlineEditField.qml
         TokenEntryField.qml
         VerticalScrollBar.qml
 )
@@ -126,4 +156,4 @@ qt_add_resources(jobcrush "applicationIcon"
         assets/jobcrush-icon.png
 )
 
-target_link_libraries(jobcrush PRIVATE Qt6::Quick Qt6::Sql Qt6::Network)
+target_link_libraries(jobcrush PRIVATE Qt6::Quick Qt6::Sql Qt6::Network Qt6::Pdf)
