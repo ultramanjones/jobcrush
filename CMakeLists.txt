@@ -42,6 +42,22 @@ qt_add_executable(jobcrush
     src/modelview/brainchat/BrainChatMessage.h
     src/modelview/brainchat/BrainChatSession.h
     src/modelview/brainchat/BrainChatSession.cpp
+    src/modelview/jobscout/JobSourceDescriptor.h
+    src/modelview/jobscout/JobPostingTextCleanup.h
+    src/modelview/jobscout/JobScoutReply.h
+    src/modelview/jobscout/JobSourceProvider.h
+    src/modelview/jobscout/RemotiveJobSource.h
+    src/modelview/jobscout/RemotiveJobSource.cpp
+    src/modelview/jobscout/ArbeitnowJobSource.h
+    src/modelview/jobscout/ArbeitnowJobSource.cpp
+    src/modelview/jobscout/JobSearchProfile.h
+    src/modelview/jobscout/JobSearchProfile.cpp
+    src/modelview/jobscout/JobSourceRoster.h
+    src/modelview/jobscout/JobSourceRoster.cpp
+    src/modelview/jobscout/ProspectScorer.h
+    src/modelview/jobscout/ProspectScorer.cpp
+    src/modelview/jobscout/JobScout.h
+    src/modelview/jobscout/JobScout.cpp
 
     # ViewModel layer — translation and organization only
     src/viewmodel/BrainChatConversationViewModel.h
@@ -52,6 +68,12 @@ qt_add_executable(jobcrush
     src/viewmodel/AppPreferencesViewModel.cpp
     src/viewmodel/SelectedBrainConnectionViewModel.h
     src/viewmodel/SelectedBrainConnectionViewModel.cpp
+    src/viewmodel/DiscoveredJobListViewModel.h
+    src/viewmodel/DiscoveredJobListViewModel.cpp
+    src/viewmodel/JobSourceRosterViewModel.h
+    src/viewmodel/JobSourceRosterViewModel.cpp
+    src/viewmodel/JobSearchProfileViewModel.h
+    src/viewmodel/JobSearchProfileViewModel.cpp
 )
 
 target_include_directories(jobcrush PRIVATE src)
@@ -69,6 +91,7 @@ qt_add_qml_module(jobcrush
         JobCrushTheme.qml
         NavigationSidebar.qml
         BrainChatPage.qml
+        DiscoveriesPage.qml
         SettingsPage.qml
 )
 

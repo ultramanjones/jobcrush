@@ -16,6 +16,9 @@ Window {
     required property var aiCredentialRosterViewModel
     required property var appPreferencesViewModel
     required property var selectedBrainConnectionViewModel
+    required property var discoveredJobListViewModel
+    required property var jobSourceRosterViewModel
+    required property var jobSearchProfileViewModel
 
     width: 1280
     height: 800
@@ -65,6 +68,18 @@ Window {
         onSettingsRequested: applicationWindow.currentPageName = "settings"
     }
 
+    DiscoveriesPage {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: navigationSidebar.right
+        anchors.leftMargin: 1
+        anchors.right: parent.right
+        visible: applicationWindow.currentPageName === "discoveries"
+        discoveredJobListViewModel: applicationWindow.discoveredJobListViewModel
+        jobSourceRosterViewModel: applicationWindow.jobSourceRosterViewModel
+        onSettingsRequested: applicationWindow.currentPageName = "settings"
+    }
+
     SettingsPage {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -75,5 +90,7 @@ Window {
         credentialRosterViewModel: applicationWindow.aiCredentialRosterViewModel
         preferencesViewModel: applicationWindow.appPreferencesViewModel
         brainConnectionViewModel: applicationWindow.selectedBrainConnectionViewModel
+        jobSourceRosterViewModel: applicationWindow.jobSourceRosterViewModel
+        jobSearchProfileViewModel: applicationWindow.jobSearchProfileViewModel
     }
 }

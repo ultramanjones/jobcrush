@@ -13,11 +13,17 @@
 #include "modelview/aibrain/AiBrainSoul.h"
 #include "modelview/aibrain/AiCredentialRoster.h"
 #include "modelview/brainchat/BrainChatSession.h"
+#include "modelview/jobscout/JobScout.h"
+#include "modelview/jobscout/JobSearchProfile.h"
+#include "modelview/jobscout/JobSourceRoster.h"
 
 #include "viewmodel/AiCredentialRosterViewModel.h"
 #include "viewmodel/AppPreferencesViewModel.h"
 #include "viewmodel/BrainChatConversationViewModel.h"
 #include "viewmodel/SelectedBrainConnectionViewModel.h"
+#include "viewmodel/DiscoveredJobListViewModel.h"
+#include "viewmodel/JobSearchProfileViewModel.h"
+#include "viewmodel/JobSourceRosterViewModel.h"
 
 // main — the composition root.
 //
@@ -51,9 +57,8 @@ int main(int argc, char *argv[])
     JobPostingRepository jobPostingRepository(jobCrushDatabase);
     JobApplicationRepository jobApplicationRepository(jobCrushDatabase);
 
-    // (The board arrives in Phase 4; the repositories stay wired so the
-    //  startup path is proven end to end.)
-    Q_UNUSED(jobPostingRepository);
+    // (The Job Pipelines board arrives in Phase 4; its repository stays wired
+    //  so the startup path is proven end to end.)
     Q_UNUSED(jobApplicationRepository);
 
     // --- ModelView layer: preferences, AIBrain, Brain Chat -----------------
@@ -67,6 +72,14 @@ int main(int argc, char *argv[])
         QDir(applicationDataFolderPath).filePath(QStringLiteral("soul")));
     aiBrainSoul.loadCreatingDefaultsIfMissing();
 
+    JobSearchProfile jobSearchProfile;
+    jobSearchProfile.loadFromSettings();
+
+    JobSourceRoster jobSourceRoster;
+    jobSourceRoster.loadFromSettings();
+
+    JobScout jobScout(jobPostingRepository, jobSourceRoster, jobSearchProfile);
+
     AiBrain aiBrain(aiCredentialRoster, aiBrainSoul);
     aiBrain.loadFromSettings(); // which brain the user chose last time
 
@@ -78,6 +91,9 @@ int main(int argc, char *argv[])
     AiCredentialRosterViewModel aiCredentialRosterViewModel(aiCredentialRoster);
     AppPreferencesViewModel appPreferencesViewModel(appPreferences, aiBrainSoul);
     SelectedBrainConnectionViewModel selectedBrainConnectionViewModel(aiBrain);
+    DiscoveredJobListViewModel discoveredJobListViewModel(jobScout);
+    JobSourceRosterViewModel jobSourceRosterViewModel(jobSourceRoster);
+    JobSearchProfileViewModel jobSearchProfileViewModel(jobSearchProfile);
 
     // --- View layer: the QML engine ----------------------------------------
     QQmlApplicationEngine qmlEngine;
@@ -95,6 +111,12 @@ int main(int argc, char *argv[])
           QVariant::fromValue(&appPreferencesViewModel) },
         { QStringLiteral("selectedBrainConnectionViewModel"),
           QVariant::fromValue(&selectedBrainConnectionViewModel) },
+        { QStringLiteral("discoveredJobListViewModel"),
+          QVariant::fromValue(&discoveredJobListViewModel) },
+        { QStringLiteral("jobSourceRosterViewModel"),
+          QVariant::fromValue(&jobSourceRosterViewModel) },
+        { QStringLiteral("jobSearchProfileViewModel"),
+          QVariant::fromValue(&jobSearchProfileViewModel) },
     });
 
     qmlEngine.loadFromModule("JobCrush", "Main");

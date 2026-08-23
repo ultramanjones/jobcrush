@@ -12,6 +12,8 @@ Rectangle {
     property var credentialRosterViewModel
     property var preferencesViewModel
     property var brainConnectionViewModel
+    property var jobSourceRosterViewModel
+    property var jobSearchProfileViewModel
 
     color: JobCrushTheme.appBackgroundColor
 
@@ -646,6 +648,414 @@ Rectangle {
             }
 
             // ==========================================================
+            // JobScout — job listings
+            // ==========================================================
+            Column {
+                width: parent.width
+                spacing: 12
+
+                Text {
+                    text: "JobScout — job listings"
+                    color: JobCrushTheme.accentColor
+                    font.pixelSize: JobCrushTheme.bodyFontSize
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Tick the job sites you want watched. Every one of these is "
+                          + "free to use, and a ticked site gets its own tab over on "
+                          + "Discoveries. Untick it and the tab goes away with it."
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                // ---- The sites ---------------------------------------
+                Rectangle {
+                    width: parent.width
+                    height: jobSourceListColumn.implicitHeight + 28
+                    radius: 8
+                    color: JobCrushTheme.panelBackgroundColor
+                    border.color: JobCrushTheme.hairlineBorderColor
+                    border.width: 1
+
+                    Column {
+                        id: jobSourceListColumn
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.margins: 14
+                        spacing: 10
+
+                        Repeater {
+                            model: settingsPage.jobSourceRosterViewModel.allJobSources
+
+                            delegate: Row {
+                                id: jobSourceRow
+
+                                required property var modelData
+
+                                width: jobSourceListColumn.width
+                                spacing: 10
+
+                                readonly property bool canBeUsed: modelData.clientIsBuilt
+
+                                // ---- The tick: watch this site or don't ----
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 22
+                                    height: 22
+                                    radius: 5
+                                    color: jobSourceRow.modelData.isEnabled
+                                        ? JobCrushTheme.positiveColor : "transparent"
+                                    border.width: 2
+                                    border.color: jobSourceRow.canBeUsed
+                                        ? (jobSourceRow.modelData.isEnabled
+                                               ? JobCrushTheme.positiveColor
+                                               : JobCrushTheme.secondaryTextColor)
+                                        : JobCrushTheme.hairlineBorderColor
+                                    opacity: jobSourceRow.canBeUsed ? 1.0 : 0.45
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: jobSourceRow.modelData.isEnabled
+                                        text: "\u2713"
+                                        color: "#0D0F14"
+                                        font.pixelSize: 15
+                                        font.weight: Font.Bold
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        enabled: jobSourceRow.canBeUsed
+                                        cursorShape: enabled
+                                            ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                        onClicked: settingsPage.jobSourceRosterViewModel
+                                            .setSourceEnabled(jobSourceRow.modelData.storageName,
+                                                              !jobSourceRow.modelData.isEnabled)
+                                    }
+                                }
+
+                                Column {
+                                    width: jobSourceRow.width - 32
+                                    spacing: 2
+
+                                    Text {
+                                        width: parent.width
+                                        text: jobSourceRow.modelData.displayName
+                                              + (jobSourceRow.modelData.requiresAccessKey
+                                                     ? "   (free sign-up)" : "")
+                                        color: jobSourceRow.canBeUsed
+                                            ? JobCrushTheme.primaryTextColor
+                                            : JobCrushTheme.mutedTextColor
+                                        font.pixelSize: JobCrushTheme.bodyFontSize
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: jobSourceRow.canBeUsed
+                                            ? jobSourceRow.modelData.coverageBlurb
+                                            : settingsPage.jobSourceRosterViewModel
+                                                  .reasonSourceCannotBeUsed(
+                                                      jobSourceRow.modelData.storageName)
+                                        color: JobCrushTheme.secondaryTextColor
+                                        font.pixelSize: JobCrushTheme.smallFontSize
+                                        wrapMode: Text.Wrap
+                                    }
+
+                                    Text {
+                                        text: "<a href=\"open\">Visit "
+                                              + jobSourceRow.modelData.displayName + "</a>"
+                                        textFormat: Text.RichText
+                                        linkColor: JobCrushTheme.accentColor
+                                        color: JobCrushTheme.mutedTextColor
+                                        font.pixelSize: JobCrushTheme.smallFontSize
+                                        onLinkActivated: settingsPage.jobSourceRosterViewModel
+                                            .openSourceWebsite(jobSourceRow.modelData.storageName)
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            cursorShape: parent.hoveredLink !== ""
+                                                ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ---- What the user is looking for --------------------
+                Text {
+                    width: parent.width
+                    text: "What are you after? Top Prospects ranks everything JobScout "
+                          + "finds against this — with plain arithmetic, not your AI "
+                          + "credits. Nothing here is sent anywhere."
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: searchProfileColumn.implicitHeight + 32
+                    radius: 8
+                    color: JobCrushTheme.panelBackgroundColor
+                    border.color: JobCrushTheme.hairlineBorderColor
+                    border.width: 1
+
+                    Column {
+                        id: searchProfileColumn
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.margins: 16
+                        spacing: 12
+
+                        // Job titles.
+                        Column {
+                            width: parent.width
+                            spacing: 5
+
+                            Text {
+                                text: "Job titles you're going for"
+                                color: JobCrushTheme.secondaryTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
+
+                            Rectangle {
+                                width: parent.width
+                                height: 40
+                                radius: 8
+                                color: JobCrushTheme.appBackgroundColor
+                                border.color: targetJobTitlesInput.activeFocus
+                                    ? JobCrushTheme.accentColor
+                                    : JobCrushTheme.hairlineBorderColor
+                                border.width: targetJobTitlesInput.activeFocus ? 2 : 1
+
+                                TextInput {
+                                    id: targetJobTitlesInput
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    color: JobCrushTheme.primaryTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                    clip: true
+                                    text: settingsPage.jobSearchProfileViewModel.targetJobTitlesText
+                                    onEditingFinished: settingsPage.jobSearchProfileViewModel
+                                        .targetJobTitlesText = text
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 10
+                                    visible: targetJobTitlesInput.text.length === 0
+                                             && !targetJobTitlesInput.activeFocus
+                                    text: "Qt Developer, C++ Engineer  (separate with commas)"
+                                    color: JobCrushTheme.mutedTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                }
+                            }
+                        }
+
+                        // Skills.
+                        Column {
+                            width: parent.width
+                            spacing: 5
+
+                            Text {
+                                text: "Skills you bring"
+                                color: JobCrushTheme.secondaryTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
+
+                            Rectangle {
+                                width: parent.width
+                                height: 40
+                                radius: 8
+                                color: JobCrushTheme.appBackgroundColor
+                                border.color: skillKeywordsInput.activeFocus
+                                    ? JobCrushTheme.accentColor
+                                    : JobCrushTheme.hairlineBorderColor
+                                border.width: skillKeywordsInput.activeFocus ? 2 : 1
+
+                                TextInput {
+                                    id: skillKeywordsInput
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    color: JobCrushTheme.primaryTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                    clip: true
+                                    text: settingsPage.jobSearchProfileViewModel.skillKeywordsText
+                                    onEditingFinished: settingsPage.jobSearchProfileViewModel
+                                        .skillKeywordsText = text
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 10
+                                    visible: skillKeywordsInput.text.length === 0
+                                             && !skillKeywordsInput.activeFocus
+                                    text: "Qt, QML, C++, MVVM, OpenGL"
+                                    color: JobCrushTheme.mutedTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                }
+                            }
+                        }
+
+                        // Location and salary floor, side by side.
+                        Row {
+                            width: parent.width
+                            spacing: 12
+
+                            Column {
+                                width: (parent.width - 12) * 0.6
+                                spacing: 5
+
+                                Text {
+                                    text: "Where you'd work"
+                                    color: JobCrushTheme.secondaryTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
+                                }
+
+                                Rectangle {
+                                    width: parent.width
+                                    height: 40
+                                    radius: 8
+                                    color: JobCrushTheme.appBackgroundColor
+                                    border.color: preferredLocationInput.activeFocus
+                                        ? JobCrushTheme.accentColor
+                                        : JobCrushTheme.hairlineBorderColor
+                                    border.width: preferredLocationInput.activeFocus ? 2 : 1
+
+                                    TextInput {
+                                        id: preferredLocationInput
+                                        anchors.fill: parent
+                                        anchors.margins: 10
+                                        verticalAlignment: TextInput.AlignVCenter
+                                        color: JobCrushTheme.primaryTextColor
+                                        font.pixelSize: JobCrushTheme.bodyFontSize
+                                        clip: true
+                                        text: settingsPage.jobSearchProfileViewModel
+                                                  .preferredLocationText
+                                        onEditingFinished: settingsPage.jobSearchProfileViewModel
+                                            .preferredLocationText = text
+                                    }
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 10
+                                        visible: preferredLocationInput.text.length === 0
+                                                 && !preferredLocationInput.activeFocus
+                                        text: "Austin, Texas, USA"
+                                        color: JobCrushTheme.mutedTextColor
+                                        font.pixelSize: JobCrushTheme.bodyFontSize
+                                    }
+                                }
+                            }
+
+                            Column {
+                                width: (parent.width - 12) * 0.4
+                                spacing: 5
+
+                                Text {
+                                    text: "Lowest salary worth your time"
+                                    color: JobCrushTheme.secondaryTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
+                                }
+
+                                Rectangle {
+                                    width: parent.width
+                                    height: 40
+                                    radius: 8
+                                    color: JobCrushTheme.appBackgroundColor
+                                    border.color: minimumSalaryInput.activeFocus
+                                        ? JobCrushTheme.accentColor
+                                        : JobCrushTheme.hairlineBorderColor
+                                    border.width: minimumSalaryInput.activeFocus ? 2 : 1
+
+                                    TextInput {
+                                        id: minimumSalaryInput
+                                        anchors.fill: parent
+                                        anchors.margins: 10
+                                        verticalAlignment: TextInput.AlignVCenter
+                                        color: JobCrushTheme.primaryTextColor
+                                        font.pixelSize: JobCrushTheme.bodyFontSize
+                                        clip: true
+                                        text: settingsPage.jobSearchProfileViewModel
+                                                  .minimumSalaryText
+                                        onEditingFinished: settingsPage.jobSearchProfileViewModel
+                                            .minimumSalaryText = text
+                                    }
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 10
+                                        visible: minimumSalaryInput.text.length === 0
+                                                 && !minimumSalaryInput.activeFocus
+                                        text: "leave blank if it's not a factor"
+                                        color: JobCrushTheme.mutedTextColor
+                                        font.pixelSize: JobCrushTheme.smallFontSize
+                                    }
+                                }
+                            }
+                        }
+
+                        // Remote only.
+                        Row {
+                            spacing: 10
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 22
+                                height: 22
+                                radius: 5
+                                color: settingsPage.jobSearchProfileViewModel.remoteRolesOnly
+                                    ? JobCrushTheme.positiveColor : "transparent"
+                                border.width: 2
+                                border.color: settingsPage.jobSearchProfileViewModel.remoteRolesOnly
+                                    ? JobCrushTheme.positiveColor
+                                    : JobCrushTheme.secondaryTextColor
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: settingsPage.jobSearchProfileViewModel.remoteRolesOnly
+                                    text: "\u2713"
+                                    color: "#0D0F14"
+                                    font.pixelSize: 15
+                                    font.weight: Font.Bold
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: settingsPage.jobSearchProfileViewModel
+                                        .remoteRolesOnly = !settingsPage.jobSearchProfileViewModel
+                                            .remoteRolesOnly
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Remote roles only"
+                                color: JobCrushTheme.primaryTextColor
+                                font.pixelSize: JobCrushTheme.bodyFontSize
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ==========================================================
             // Appearance
             // ==========================================================
             Column {
@@ -665,8 +1075,9 @@ Rectangle {
 
                     Repeater {
                         model: [
-                            { themeName: "classic",   displayLabel: "Classic Job Crush" },
-                            { themeName: "grayscale", displayLabel: "Grayscale" }
+                            { themeName: "classic",    displayLabel: "Classic Job Crush" },
+                            { themeName: "grayscale",  displayLabel: "Grayscale" },
+                            { themeName: "fruitloops", displayLabel: "Fruit Loops" }
                         ]
 
                         delegate: Rectangle {
@@ -685,7 +1096,10 @@ Rectangle {
                             border.color: isSelected
                                 ? JobCrushTheme.accentColor
                                 : JobCrushTheme.hairlineBorderColor
-                            border.width: 1
+                            // Doubled on the selected chip for the same reason
+                            // the provider tabs do it: Grayscale has no accent
+                            // hue, so weight has to carry the selection too.
+                            border.width: isSelected ? 2 : 1
 
                             Text {
                                 id: themeChipLabel

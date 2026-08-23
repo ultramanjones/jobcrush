@@ -119,6 +119,38 @@ bool JobCrushDatabase::createSchemaIfMissing()
         }
     }
 
+    // --- Schema growth: the columns JobScout added to jobPosting ----------
+    //
+    // A database created before JobScout existed is missing these. Adding
+    // them here, one at a time and only when absent, means an existing user
+    // keeps every row they had instead of starting over.
+    if (!addColumnIfMissing(QStringLiteral("jobPosting"),
+                            QStringLiteral("externalSourceId"),
+                            QStringLiteral("TEXT NOT NULL DEFAULT ''"))
+        || !addColumnIfMissing(QStringLiteral("jobPosting"),
+                               QStringLiteral("postedTimestamp"),
+                               QStringLiteral("TEXT NOT NULL DEFAULT ''"))
+        || !addColumnIfMissing(QStringLiteral("jobPosting"),
+                               QStringLiteral("isRemoteRole"),
+                               QStringLiteral("INTEGER NOT NULL DEFAULT 0"))) {
+        return false;
+    }
+
+    // The same job must never land twice. A source's own id, paired with the
+    // source name, is the only identity Job Crush trusts — titles and company
+    // names are written by humans and vary between boards.
+    //
+    // Partial index: rows with no external id (hand-entered postings) are
+    // exempt, because they have no source identity to collide on.
+    QSqlQuery uniqueDiscoveryIndexQuery(databaseConnection);
+    if (!uniqueDiscoveryIndexQuery.exec(QStringLiteral(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uniqueDiscoveryPerSource "
+            "ON jobPosting (discoverySource, externalSourceId) "
+            "WHERE externalSourceId <> ''"))) {
+        lastErrorDescription = uniqueDiscoveryIndexQuery.lastError().text();
+        return false;
+    }
+
     // Record version 1 exactly once.
     QSqlQuery versionQuery(databaseConnection);
     versionQuery.exec(QStringLiteral("SELECT COUNT(*) FROM schemaVersion"));
@@ -127,5 +159,34 @@ bool JobCrushDatabase::createSchemaIfMissing()
         insertVersionQuery.exec(QStringLiteral("INSERT INTO schemaVersion (versionNumber) VALUES (1)"));
     }
 
+    return true;
+}
+
+bool JobCrushDatabase::addColumnIfMissing(const QString &tableName,
+                                          const QString &columnName,
+                                          const QString &columnDefinition)
+{
+    // PRAGMA table_info is SQLite's own answer to "what columns does this
+    // table have?" — cheaper and more honest than parsing CREATE statements.
+    QSqlQuery existingColumnsQuery(databaseConnection);
+    if (!existingColumnsQuery.exec(
+            QStringLiteral("PRAGMA table_info(%1)").arg(tableName))) {
+        lastErrorDescription = existingColumnsQuery.lastError().text();
+        return false;
+    }
+
+    while (existingColumnsQuery.next()) {
+        // Column 1 of table_info is the column's name.
+        if (existingColumnsQuery.value(1).toString() == columnName) {
+            return true; // already there; nothing to do
+        }
+    }
+
+    QSqlQuery addColumnQuery(databaseConnection);
+    if (!addColumnQuery.exec(QStringLiteral("ALTER TABLE %1 ADD COLUMN %2 %3")
+                                 .arg(tableName, columnName, columnDefinition))) {
+        lastErrorDescription = addColumnQuery.lastError().text();
+        return false;
+    }
     return true;
 }

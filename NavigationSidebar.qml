@@ -22,7 +22,7 @@ Rectangle {
     // not-yet-built pages ("" = live now).
     readonly property var navigationEntries: [
         { pageName: "pipelines",   displayLabel: "Job Pipelines", phaseTag: "Phase 4" },
-        { pageName: "discoveries", displayLabel: "Discoveries", phaseTag: "Phase 6" },
+        { pageName: "discoveries", displayLabel: "Discoveries", phaseTag: "" },
         { pageName: "proDocs",     displayLabel: "ProDocs",     phaseTag: "Phase 5" },
         { pageName: "staging",     displayLabel: "Staging",     phaseTag: "Phase 5" },
         { pageName: "stats",       displayLabel: "Stats",       phaseTag: "Phase 7" },

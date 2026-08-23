@@ -39,6 +39,14 @@ public:
 private:
     bool createSchemaIfMissing();
 
+    // Adds a column to an existing table only if it is not already there.
+    // This is how the schema grows without throwing away anyone's data: a
+    // database created before JobScout existed gains the new columns on the
+    // next launch and keeps every row it had.
+    bool addColumnIfMissing(const QString &tableName,
+                            const QString &columnName,
+                            const QString &columnDefinition);
+
     QSqlDatabase databaseConnection;
     QString lastErrorDescription;
 };
