@@ -50,6 +50,8 @@ qt_add_executable(jobcrush
     src/viewmodel/AiCredentialRosterViewModel.cpp
     src/viewmodel/AppPreferencesViewModel.h
     src/viewmodel/AppPreferencesViewModel.cpp
+    src/viewmodel/SelectedBrainConnectionViewModel.h
+    src/viewmodel/SelectedBrainConnectionViewModel.cpp
 )
 
 target_include_directories(jobcrush PRIVATE src)

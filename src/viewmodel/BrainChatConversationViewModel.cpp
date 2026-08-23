@@ -92,7 +92,7 @@ bool BrainChatConversationViewModel::brainIsConfigured() const
 
 QString BrainChatConversationViewModel::activeProviderName() const
 {
-    return brain.activeProviderDisplayName();
+    return brain.selectedProviderDisplayName();
 }
 
 void BrainChatConversationViewModel::sendHumanMessage(const QString &messageText)

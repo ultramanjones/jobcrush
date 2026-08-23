@@ -47,4 +47,17 @@ public:
                                              const QList<AiBrainConversationMessage> &conversation,
                                              const AiCredential &credential,
                                              QObject *replyParent) = 0;
+
+    // Asks the vendor, as cheaply as possible, whether this credential
+    // actually works right now — the plumbing behind "connected and active".
+    // Each provider picks the smallest authenticated request its API offers
+    // (a key-info or model-list read, never a paid completion), so checking
+    // costs the user nothing.
+    //
+    // Reuses AiBrainReply for its shape and nothing else: finished() means
+    // the vendor accepted the credential, failed() carries a plain-speech
+    // reason. No text fragments arrive. Verification runs ONLY at key
+    // moments (chat opened, brain switched, key added) — never on a timer.
+    virtual AiBrainReply *verifyCredentialConnection(const AiCredential &credential,
+                                                     QObject *replyParent) = 0;
 };

@@ -15,6 +15,10 @@ namespace {
 
 // The Anthropic Messages API endpoint and protocol version.
 const QString anthropicMessagesEndpointUrl = QStringLiteral("https://api.anthropic.com/v1/messages");
+
+// The connection check reads this instead: listing models is authenticated,
+// free, and small — the cheapest honest way to ask "does this key work?".
+const QString anthropicModelsEndpointUrl = QStringLiteral("https://api.anthropic.com/v1/models");
 const QByteArray anthropicApiVersionHeaderValue = QByteArrayLiteral("2023-06-01");
 
 // The model Brain Chat speaks to. One named place to change it; a Settings
@@ -168,6 +172,41 @@ AiBrainReply *AnthropicApiProvider::streamConversation(
         }
 
         brainReply->markFinished();
+    });
+
+    return brainReply;
+}
+
+AiBrainReply *AnthropicApiProvider::verifyCredentialConnection(
+    const AiCredential &credential, QObject *replyParent)
+{
+    // The cheapest authenticated read Anthropic offers: list the models.
+    // It costs no tokens, returns a small body, and fails loudly on a bad
+    // key — exactly what "is this brain actually connected?" needs.
+    AiBrainReply *brainReply = new AiBrainReply(replyParent);
+
+    QNetworkRequest networkRequest{QUrl(anthropicModelsEndpointUrl)};
+    networkRequest.setRawHeader(QByteArrayLiteral("x-api-key"),
+                                credential.secretKey.toUtf8());
+    networkRequest.setRawHeader(QByteArrayLiteral("anthropic-version"),
+                                anthropicApiVersionHeaderValue);
+
+    QNetworkReply *networkReply = networkAccessManager.get(networkRequest);
+    networkReply->setParent(brainReply); // dies with the brain reply
+
+    QObject::connect(networkReply, &QNetworkReply::finished, brainReply,
+                     [networkReply, brainReply]() {
+        if (networkReply->error() == QNetworkReply::NoError) {
+            brainReply->markFinished();
+            return;
+        }
+        if (networkReply->error() == QNetworkReply::AuthenticationRequiredError) {
+            brainReply->markFailed(QStringLiteral(
+                "Anthropic did not accept this key. Delete it in Settings and "
+                "add a fresh one from Anthropic's key page."));
+            return;
+        }
+        brainReply->markFailed(networkReply->errorString());
     });
 
     return brainReply;

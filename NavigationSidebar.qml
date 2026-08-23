@@ -21,7 +21,7 @@ Rectangle {
     // Destination list: name is the internal page id; phaseTag marks
     // not-yet-built pages ("" = live now).
     readonly property var navigationEntries: [
-        { pageName: "pipeline",    displayLabel: "Pipeline",    phaseTag: "Phase 4" },
+        { pageName: "pipelines",   displayLabel: "Job Pipelines", phaseTag: "Phase 4" },
         { pageName: "discoveries", displayLabel: "Discoveries", phaseTag: "Phase 6" },
         { pageName: "proDocs",     displayLabel: "ProDocs",     phaseTag: "Phase 5" },
         { pageName: "staging",     displayLabel: "Staging",     phaseTag: "Phase 5" },

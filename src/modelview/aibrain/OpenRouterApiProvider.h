@@ -26,6 +26,9 @@ public:
                                      const AiCredential &credential,
                                      QObject *replyParent) override;
 
+    AiBrainReply *verifyCredentialConnection(const AiCredential &credential,
+                                             QObject *replyParent) override;
+
 private:
     // Builds the OpenAI-style JSON request body (system message first).
     QByteArray buildRequestBody(const QString &soulText,

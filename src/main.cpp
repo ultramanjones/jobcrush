@@ -17,6 +17,7 @@
 #include "viewmodel/AiCredentialRosterViewModel.h"
 #include "viewmodel/AppPreferencesViewModel.h"
 #include "viewmodel/BrainChatConversationViewModel.h"
+#include "viewmodel/SelectedBrainConnectionViewModel.h"
 
 // main — the composition root.
 //
@@ -67,6 +68,8 @@ int main(int argc, char *argv[])
     aiBrainSoul.loadCreatingDefaultsIfMissing();
 
     AiBrain aiBrain(aiCredentialRoster, aiBrainSoul);
+    aiBrain.loadFromSettings(); // which brain the user chose last time
+
     BrainChatSession brainChatSession(aiBrain);
 
     // --- ViewModel layer ----------------------------------------------------
@@ -74,6 +77,7 @@ int main(int argc, char *argv[])
         brainChatSession, aiBrain);
     AiCredentialRosterViewModel aiCredentialRosterViewModel(aiCredentialRoster);
     AppPreferencesViewModel appPreferencesViewModel(appPreferences, aiBrainSoul);
+    SelectedBrainConnectionViewModel selectedBrainConnectionViewModel(aiBrain);
 
     // --- View layer: the QML engine ----------------------------------------
     QQmlApplicationEngine qmlEngine;
@@ -89,6 +93,8 @@ int main(int argc, char *argv[])
           QVariant::fromValue(&aiCredentialRosterViewModel) },
         { QStringLiteral("appPreferencesViewModel"),
           QVariant::fromValue(&appPreferencesViewModel) },
+        { QStringLiteral("selectedBrainConnectionViewModel"),
+          QVariant::fromValue(&selectedBrainConnectionViewModel) },
     });
 
     qmlEngine.loadFromModule("JobCrush", "Main");

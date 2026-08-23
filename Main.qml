@@ -15,6 +15,7 @@ Window {
     required property var brainChatConversationViewModel
     required property var aiCredentialRosterViewModel
     required property var appPreferencesViewModel
+    required property var selectedBrainConnectionViewModel
 
     width: 1280
     height: 800
@@ -60,6 +61,7 @@ Window {
         anchors.right: parent.right
         visible: applicationWindow.currentPageName === "brainChat"
         conversationViewModel: applicationWindow.brainChatConversationViewModel
+        brainConnectionViewModel: applicationWindow.selectedBrainConnectionViewModel
         onSettingsRequested: applicationWindow.currentPageName = "settings"
     }
 
@@ -72,5 +74,6 @@ Window {
         visible: applicationWindow.currentPageName === "settings"
         credentialRosterViewModel: applicationWindow.aiCredentialRosterViewModel
         preferencesViewModel: applicationWindow.appPreferencesViewModel
+        brainConnectionViewModel: applicationWindow.selectedBrainConnectionViewModel
     }
 }

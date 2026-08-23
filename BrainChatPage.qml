@@ -15,10 +15,24 @@ Rectangle {
     // Injected from Main: the BrainChatConversationViewModel.
     property var conversationViewModel
 
+    // Injected from Main: the same connection truth Settings shows, so the
+    // two screens can never disagree about which brain is live.
+    property var brainConnectionViewModel
+
     // Asks Main to navigate (degraded mode points the user at Settings).
     signal settingsRequested
 
     color: JobCrushTheme.appBackgroundColor
+
+    // Opening the chat is one of the KEY MOMENTS a connection check exists
+    // for — you should never discover a dead brain by typing a paragraph at
+    // it first. A cached result answers instantly.
+    onVisibleChanged: {
+        if (visible) {
+            brainConnectionViewModel.checkConnectionNow()
+        }
+    }
+    Component.onCompleted: brainConnectionViewModel.checkConnectionNow()
 
     // ------------------------------------------------------------------
     // Header
@@ -40,14 +54,33 @@ Rectangle {
             font.weight: Font.DemiBold
         }
 
+        // The connection truth, echoed from Settings word for word.
         Text {
+            id: chatConnectionStatusLabel
             anchors.verticalCenter: parent.verticalCenter
             anchors.right: clearConversationButton.left
             anchors.rightMargin: 20
-            visible: brainChatPage.conversationViewModel.brainIsConfigured
-            text: "speaking via " + brainChatPage.conversationViewModel.activeProviderName
-            color: JobCrushTheme.mutedTextColor
+            text: brainChatPage.brainConnectionViewModel.bannerText
+            color: brainChatPage.brainConnectionViewModel.brainIsConnectedAndActive
+                ? JobCrushTheme.positiveColor
+                : JobCrushTheme.noticeTextColor
             font.pixelSize: JobCrushTheme.smallFontSize
+            font.weight: Font.DemiBold
+            font.letterSpacing: 0.8
+
+            // Breathing text while a check is in flight — the honest wait
+            // state, and never a spinner.
+            SequentialAnimation on opacity {
+                running: brainChatPage.brainConnectionViewModel.connectionIsBeingChecked
+                loops: Animation.Infinite
+                NumberAnimation { from: 1.0; to: 0.4; duration: 700 }
+                NumberAnimation { from: 0.4; to: 1.0; duration: 700 }
+                onRunningChanged: {
+                    if (!running) {
+                        chatConnectionStatusLabel.opacity = 1.0
+                    }
+                }
+            }
         }
 
         // "New conversation" — quiet text button.

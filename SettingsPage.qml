@@ -11,8 +11,18 @@ Rectangle {
     // Injected from Main.
     property var credentialRosterViewModel
     property var preferencesViewModel
+    property var brainConnectionViewModel
 
     color: JobCrushTheme.appBackgroundColor
+
+    // Opening Settings is one of the KEY MOMENTS a connection check exists
+    // for. A cached result answers instantly; only a genuine change (new key,
+    // different brain) costs a request. Job Crush never polls a vendor.
+    onVisibleChanged: {
+        if (visible) {
+            brainConnectionViewModel.checkConnectionNow()
+        }
+    }
 
     Flickable {
         anchors.fill: parent
@@ -27,6 +37,83 @@ Rectangle {
             anchors.right: parent.right
             anchors.margins: 28
             spacing: 32
+
+            // ==========================================================
+            // The loudest thing on the page: which brain is actually live.
+            // Green means a real request just came back from the vendor —
+            // never a guess, never a leftover from the last launch.
+            // ==========================================================
+            Rectangle {
+                width: parent.width
+                height: activeBrainBannerColumn.implicitHeight + 28
+                radius: 10
+                color: JobCrushTheme.panelBackgroundColor
+                border.width: 1
+                border.color: settingsPage.brainConnectionViewModel.brainIsConnectedAndActive
+                    ? JobCrushTheme.positiveColor
+                    : JobCrushTheme.hairlineBorderColor
+
+                // A stripe of the same truth, for anyone reading shape before
+                // words.
+                Rectangle {
+                    width: 4
+                    height: parent.height - 20
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.leftMargin: 10
+                    radius: 2
+                    color: settingsPage.brainConnectionViewModel.brainIsConnectedAndActive
+                        ? JobCrushTheme.positiveColor
+                        : JobCrushTheme.noticeTextColor
+                }
+
+                Column {
+                    id: activeBrainBannerColumn
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.leftMargin: 28
+                    anchors.right: parent.right
+                    anchors.rightMargin: 20
+                    spacing: 5
+
+                    Text {
+                        id: activeBrainBannerLabel
+                        width: parent.width
+                        text: settingsPage.brainConnectionViewModel.bannerText
+                        color: settingsPage.brainConnectionViewModel.brainIsConnectedAndActive
+                            ? JobCrushTheme.positiveColor
+                            : JobCrushTheme.noticeTextColor
+                        font.pixelSize: JobCrushTheme.titleFontSize
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.5
+                        wrapMode: Text.Wrap
+
+                        // Confirming a connection is a real wait, so the words
+                        // say what is happening and breathe while it happens.
+                        // (No spinner. Ever.)
+                        SequentialAnimation on opacity {
+                            running: settingsPage.brainConnectionViewModel.connectionIsBeingChecked
+                            loops: Animation.Infinite
+                            NumberAnimation { from: 1.0; to: 0.4; duration: 700 }
+                            NumberAnimation { from: 0.4; to: 1.0; duration: 700 }
+                            onRunningChanged: {
+                                if (!running) {
+                                    activeBrainBannerLabel.opacity = 1.0
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        width: parent.width
+                        visible: text.length > 0
+                        text: settingsPage.brainConnectionViewModel.statusDetailText
+                        color: JobCrushTheme.secondaryTextColor
+                        font.pixelSize: JobCrushTheme.smallFontSize
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
 
             Text {
                 text: "Settings"
@@ -52,9 +139,11 @@ Rectangle {
 
                 Text {
                     width: parent.width
-                    text: "Pick a provider, drop in its key, done — green means "
-                          + "connected. AIBrain speaks Anthropic and OpenRouter "
-                          + "today; OpenAI, Gemini, and Ollama are on the way."
+                    text: "Two separate things live here. The TABS pick whose key "
+                          + "you're editing — a green ● means that slot already holds "
+                          + "one. The CHECKBOX picks which brain actually answers you. "
+                          + "AIBrain speaks Anthropic and OpenRouter today; OpenAI, "
+                          + "Gemini, and Ollama are on the way."
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     wrapMode: Text.Wrap
@@ -77,67 +166,165 @@ Rectangle {
                         anchors.margins: 16
                         spacing: 12
 
-                        // Provider chips.
+                        // Provider tabs, each with the checkbox that IS the
+                        // brain choice. The tab picks which key slot the form
+                        // below edits; the checkbox picks which brain actually
+                        // answers. Two jobs, two separate targets — so looking
+                        // at another provider's key never switches your brain
+                        // out from under you.
                         Row {
-                            spacing: 8
+                            spacing: 18
 
                             Repeater {
                                 model: ["anthropic", "openrouter", "openai", "gemini", "ollama"]
 
-                                delegate: Rectangle {
-                                    id: providerChip
+                                delegate: Row {
+                                    id: providerEntry
 
                                     required property string modelData
 
-                                    readonly property bool isSelected:
-                                        settingsPage.newKeyProviderKindName === modelData
+                                    spacing: 7
 
-                                    // Green chip = this provider already holds a key.
-                                    // (Reading rosterRevision makes this binding
-                                    // re-evaluate on every roster change.)
+                                    // Reading connectionRevision / rosterRevision makes
+                                    // every binding below re-evaluate whenever anything
+                                    // underneath moves.
+                                    readonly property bool canBeSelected: {
+                                        settingsPage.brainConnectionViewModel.connectionRevision
+                                        settingsPage.credentialRosterViewModel.rosterRevision
+                                        return settingsPage.brainConnectionViewModel
+                                            .providerCanBeSelected(providerEntry.modelData)
+                                    }
+                                    readonly property bool isSelectedBrain: {
+                                        settingsPage.brainConnectionViewModel.connectionRevision
+                                        return settingsPage.brainConnectionViewModel
+                                            .providerIsSelected(providerEntry.modelData)
+                                    }
+                                    readonly property bool isSelectedAndActive: {
+                                        settingsPage.brainConnectionViewModel.connectionRevision
+                                        return settingsPage.brainConnectionViewModel
+                                            .providerIsSelectedAndActive(providerEntry.modelData)
+                                    }
                                     readonly property bool slotIsFilled: {
                                         settingsPage.credentialRosterViewModel.rosterRevision
                                         return settingsPage.credentialRosterViewModel
-                                            .providerHasKey(providerChip.modelData)
+                                            .providerHasKey(providerEntry.modelData)
                                     }
+                                    readonly property bool isFocusedTab:
+                                        settingsPage.newKeyProviderKindName === providerEntry.modelData
 
-                                    width: providerChipLabel.implicitWidth + 24
-                                    height: 30
-                                    radius: 15
-                                    color: isSelected
-                                        ? (slotIsFilled ? JobCrushTheme.positiveColor
-                                                        : JobCrushTheme.accentColor)
-                                        : "transparent"
-                                    border.color: slotIsFilled
-                                        ? JobCrushTheme.positiveColor
-                                        : (isSelected ? JobCrushTheme.accentColor
-                                                      : JobCrushTheme.hairlineBorderColor)
-                                    border.width: 1
-
-                                    Text {
-                                        id: providerChipLabel
-                                        anchors.centerIn: parent
-                                        // The dot marks a filled slot at a glance.
-                                        text: (providerChip.slotIsFilled ? "● " : "")
-                                              + providerChip.modelData
-                                        color: providerChip.isSelected
-                                            ? "#0D0F14"
-                                            : (providerChip.slotIsFilled
+                                    // ---- The checkbox: the user's choice of brain ----
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 22
+                                        height: 22
+                                        radius: 5
+                                        color: providerEntry.isSelectedAndActive
+                                            ? JobCrushTheme.positiveColor : "transparent"
+                                        border.width: 2
+                                        border.color: !providerEntry.canBeSelected
+                                            ? JobCrushTheme.hairlineBorderColor
+                                            : (providerEntry.isSelectedBrain
                                                    ? JobCrushTheme.positiveColor
                                                    : JobCrushTheme.secondaryTextColor)
-                                        font.pixelSize: JobCrushTheme.smallFontSize
-                                        font.weight: providerChip.isSelected
-                                            ? Font.DemiBold : Font.Normal
+                                        opacity: providerEntry.canBeSelected ? 1.0 : 0.45
+
+                                        Text {
+                                            id: brainChoiceTick
+                                            anchors.centerIn: parent
+                                            visible: providerEntry.isSelectedBrain
+                                            text: "\u2713"
+                                            color: providerEntry.isSelectedAndActive
+                                                ? "#0D0F14" : JobCrushTheme.positiveColor
+                                            font.pixelSize: 15
+                                            font.weight: Font.Bold
+
+                                            // Chosen but not confirmed yet: the tick
+                                            // breathes rather than sitting there
+                                            // claiming to be live.
+                                            SequentialAnimation on opacity {
+                                                running: providerEntry.isSelectedBrain
+                                                         && !providerEntry.isSelectedAndActive
+                                                loops: Animation.Infinite
+                                                NumberAnimation { from: 1.0; to: 0.3; duration: 650 }
+                                                NumberAnimation { from: 0.3; to: 1.0; duration: 650 }
+                                                onRunningChanged: {
+                                                    if (!running) {
+                                                        brainChoiceTick.opacity = 1.0
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: providerEntry.canBeSelected
+                                            cursorShape: enabled
+                                                ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: settingsPage.brainConnectionViewModel
+                                                .setProviderSelected(providerEntry.modelData,
+                                                                     !providerEntry.isSelectedBrain)
+                                        }
                                     }
 
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: settingsPage.newKeyProviderKindName
-                                            = providerChip.modelData
+                                    // ---- The tab: which key slot the form edits ----
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: providerTabLabel.implicitWidth + 24
+                                        height: 30
+                                        radius: 15
+                                        color: providerEntry.isFocusedTab
+                                            ? JobCrushTheme.cardBackgroundColor : "transparent"
+                                        border.color: providerEntry.isFocusedTab
+                                            ? JobCrushTheme.accentColor
+                                            : (providerEntry.slotIsFilled
+                                                   ? JobCrushTheme.positiveColor
+                                                   : JobCrushTheme.hairlineBorderColor)
+                                        border.width: 1
+
+                                        Text {
+                                            id: providerTabLabel
+                                            anchors.centerIn: parent
+                                            // The dot marks a filled key slot at a glance.
+                                            text: (providerEntry.slotIsFilled ? "\u25CF " : "")
+                                                  + providerEntry.modelData
+                                            color: providerEntry.slotIsFilled
+                                                ? JobCrushTheme.positiveColor
+                                                : (providerEntry.isFocusedTab
+                                                       ? JobCrushTheme.primaryTextColor
+                                                       : JobCrushTheme.secondaryTextColor)
+                                            font.pixelSize: JobCrushTheme.smallFontSize
+                                            font.weight: providerEntry.isFocusedTab
+                                                ? Font.DemiBold : Font.Normal
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: settingsPage.newKeyProviderKindName
+                                                = providerEntry.modelData
+                                        }
                                     }
                                 }
                             }
+                        }
+
+                        // Why the focused provider's checkbox is unavailable —
+                        // a fact about the situation, so nobody is left
+                        // wondering what they did wrong.
+                        Text {
+                            width: parent.width
+                            readonly property string brainUnavailableReason: {
+                                settingsPage.brainConnectionViewModel.connectionRevision
+                                settingsPage.credentialRosterViewModel.rosterRevision
+                                return settingsPage.brainConnectionViewModel
+                                    .reasonProviderCannotBeSelected(
+                                        settingsPage.newKeyProviderKindName)
+                            }
+                            visible: brainUnavailableReason.length > 0
+                            text: brainUnavailableReason
+                            color: JobCrushTheme.mutedTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
                         }
 
                         // API key field. Two states:

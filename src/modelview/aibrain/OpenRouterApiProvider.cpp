@@ -17,6 +17,12 @@ namespace {
 const QString openRouterEndpointUrl =
     QStringLiteral("https://openrouter.ai/api/v1/chat/completions");
 
+// The connection check reads this instead: OpenRouter's key-info endpoint is
+// authenticated, free, and tiny — the cheapest honest way to ask "does this
+// key work?" without buying a completion to find out.
+const QString openRouterKeyInfoEndpointUrl =
+    QStringLiteral("https://openrouter.ai/api/v1/key");
+
 // "openrouter/auto" lets OpenRouter pick a capable model — true
 // set-it-and-forget-it until the per-provider model picker lands, at which
 // point this constant becomes a Settings choice like the others.
@@ -170,6 +176,39 @@ AiBrainReply *OpenRouterApiProvider::streamConversation(
         }
 
         brainReply->markFinished();
+    });
+
+    return brainReply;
+}
+
+AiBrainReply *OpenRouterApiProvider::verifyCredentialConnection(
+    const AiCredential &credential, QObject *replyParent)
+{
+    // OpenRouter publishes a key-info endpoint: it costs nothing, returns the
+    // key's own limits, and rejects a bad key outright. Perfect for asking
+    // "is this brain actually connected?" without spending a token.
+    AiBrainReply *brainReply = new AiBrainReply(replyParent);
+
+    QNetworkRequest networkRequest{QUrl(openRouterKeyInfoEndpointUrl)};
+    networkRequest.setRawHeader(QByteArrayLiteral("Authorization"),
+                                QByteArrayLiteral("Bearer ") + credential.secretKey.toUtf8());
+
+    QNetworkReply *networkReply = networkAccessManager.get(networkRequest);
+    networkReply->setParent(brainReply); // dies with the brain reply
+
+    QObject::connect(networkReply, &QNetworkReply::finished, brainReply,
+                     [networkReply, brainReply]() {
+        if (networkReply->error() == QNetworkReply::NoError) {
+            brainReply->markFinished();
+            return;
+        }
+        if (networkReply->error() == QNetworkReply::AuthenticationRequiredError) {
+            brainReply->markFailed(QStringLiteral(
+                "OpenRouter did not accept this key. Delete it in Settings and "
+                "add a fresh one from OpenRouter's key page."));
+            return;
+        }
+        brainReply->markFailed(networkReply->errorString());
     });
 
     return brainReply;

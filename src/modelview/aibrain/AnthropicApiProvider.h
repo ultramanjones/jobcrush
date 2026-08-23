@@ -25,6 +25,9 @@ public:
                                      const AiCredential &credential,
                                      QObject *replyParent) override;
 
+    AiBrainReply *verifyCredentialConnection(const AiCredential &credential,
+                                             QObject *replyParent) override;
+
 private:
     // Builds the JSON request body for the Messages API.
     QByteArray buildRequestBody(const QString &soulText,
