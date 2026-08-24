@@ -43,6 +43,12 @@ class DiscoveredJobListViewModel : public QAbstractListModel {
     Q_PROPERTY(QString lastSweepTroubleText READ lastSweepTroubleText
                    NOTIFY sweepProgressChanged)
 
+    // What a site said that was neither a count nor a fault — a site asking to
+    // be left alone for an hour, most often. Shown, but not painted as a
+    // failure.
+    Q_PROPERTY(QString lastSweepNoticeText READ lastSweepNoticeText
+                   NOTIFY sweepProgressChanged)
+
     // False until the user has told Job Crush what they are looking for. Top
     // Prospects says so plainly rather than showing a meaningless order.
     Q_PROPERTY(bool canRankProspects READ canRankProspects NOTIFY discoveredJobsChanged)
@@ -93,6 +99,7 @@ public:
     QString sweepProgressText() const;
     QString lastSweepSummaryText() const;
     QString lastSweepTroubleText() const;
+    QString lastSweepNoticeText() const;
     bool canRankProspects() const;
     int jobCountOutsideSearchArea() const;
     bool searchAreaIsNarrowed() const;
@@ -116,6 +123,31 @@ public:
     // of offering a button that will only decline.
     Q_INVOKABLE bool jobPostingAtIsOnTheBoard(int rowIndex) const;
 
+    bool leadIsBeingResolved() const;
+    QString leadStatusText() const;
+
+    // Paste a job link. Works for a link Job Crush can read directly and for
+    // one it cannot — a LinkedIn link still names the job well enough to go
+    // looking for it elsewhere.
+    Q_INVOKABLE void addJobFromLink(const QString &pastedLink);
+
+    // Type the company and the job title, straight off an alert email.
+    Q_INVOKABLE void addJobFromCompanyAndTitle(const QString &companyName,
+                                               const QString &positionTitle);
+
+    // --- Adding one job by hand ---
+    //
+    // The way around the sites Job Crush is not allowed to read: paste the
+    // link, or type the company and the title off a LinkedIn alert, and Job
+    // Crush goes and finds the same job on the employer's own board.
+
+    // True while Job Crush is out looking for one pasted job. The page says
+    // what it is doing rather than showing a spinner.
+    Q_PROPERTY(bool leadIsBeingResolved READ leadIsBeingResolved NOTIFY leadStatusChanged)
+
+    // What happened, in one sentence. Always ends with something to do next.
+    Q_PROPERTY(QString leadStatusText READ leadStatusText NOTIFY leadStatusChanged)
+
     // Bumped whenever the board changes, so the per-row bindings above
     // re-evaluate. Same technique as the credential roster.
     Q_PROPERTY(int boardRevision READ boardRevision NOTIFY boardChanged)
@@ -128,6 +160,7 @@ signals:
     void showingOutsideSearchAreaChanged();
     void discoveredJobsChanged();
     void sweepProgressChanged();
+    void leadStatusChanged();
 
 private:
     void rebuildRowsFromJobScout();

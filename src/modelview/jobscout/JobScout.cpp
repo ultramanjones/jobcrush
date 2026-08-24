@@ -9,6 +9,13 @@
 
 #include "../../model/JobPostingRepository.h"
 #include "ArbeitnowJobSource.h"
+#include "AtsBoardDetector.h"
+#include "CanonicalPostingResolver.h"
+#include "FollowedEmployerJobSource.h"
+#include "FollowedEmployerRoster.h"
+#include "JobicyJobSource.h"
+#include "UsaJobsJobSource.h"
+#include "JobLead.h"
 #include "JobScoutReply.h"
 #include "JobSearchProfile.h"
 #include "JobSourceProvider.h"
@@ -35,6 +42,7 @@ QString crossSourceIdentityOf(const JobPosting &jobPosting)
 
 JobScout::JobScout(JobPostingRepository &jobPostingRepository,
                    JobSourceRoster &sourceRoster,
+                   FollowedEmployerRoster &followedEmployerRoster,
                    JobSearchProfile &searchProfile,
                    const QString &diagnosticsFolderPath,
                    QObject *parent)
@@ -42,12 +50,19 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
     , sweepLogFolderPath(diagnosticsFolderPath)
     , discoveredJobPostingRepository(jobPostingRepository)
     , registeredSourceRoster(sourceRoster)
+    , watchedEmployerRoster(followedEmployerRoster)
     , userSearchProfile(searchProfile)
 {
     // Every site whose client is written, built once and kept. Adding a site
     // is one line here plus its class — nothing above JobScout changes.
+    builtJobSourceProviders.push_back(
+        std::make_unique<FollowedEmployerJobSource>(watchedEmployerRoster));
     builtJobSourceProviders.push_back(std::make_unique<RemotiveJobSource>());
     builtJobSourceProviders.push_back(std::make_unique<ArbeitnowJobSource>());
+    builtJobSourceProviders.push_back(std::make_unique<JobicyJobSource>());
+    builtJobSourceProviders.push_back(std::make_unique<UsaJobsJobSource>(registeredSourceRoster));
+
+    employerBoardResolver = std::make_unique<CanonicalPostingResolver>(this);
 
     // Editing the profile re-ranks everything already stored — instantly and
     // for free, because the scorer is arithmetic rather than a paid call.
@@ -56,6 +71,9 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
 
     // Ticking a site changes which tabs exist and what a sweep covers.
     connect(&registeredSourceRoster, &JobSourceRoster::enabledSourcesChanged,
+            this, &JobScout::discoveriesChanged);
+
+    connect(&watchedEmployerRoster, &FollowedEmployerRoster::followedEmployersChanged,
             this, &JobScout::discoveriesChanged);
 }
 
@@ -96,6 +114,11 @@ QString JobScout::lastSweepSummaryText() const
     return storedLastSweepSummaryText;
 }
 
+QString JobScout::lastSweepNoticeText() const
+{
+    return storedLastSweepNoticeText;
+}
+
 QString JobScout::lastSweepTroubleText() const
 {
     return storedLastSweepTroubleText;
@@ -117,6 +140,7 @@ void JobScout::startSweep()
 
     finishedSourceOutcomeLines.clear();
     sourcesThatHadTroubleThisSweep.clear();
+    sourceNoticesThisSweep.clear();
     totalJobsFoundThisSweep = 0;
     totalNewJobsThisSweep = 0;
     storedLastSweepSummaryText.clear();
@@ -214,13 +238,22 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
 
     connect(scoutReply, &JobScoutReply::failed, this,
             [this, scoutReply, sourceStorageName, sourceDisplayName](
-                const QString &humanReadableReason) {
+                const QString &humanReadableReason, bool sourceHadTrouble) {
         // One site being down is not the sweep failing. Say what happened,
         // keep the others running, and move on.
+        //
+        // Not every "failure" is trouble. A site that asks to be left alone
+        // for an hour and is being left alone is working exactly as intended,
+        // and painting that red would send the user looking for a fault that
+        // is not there.
+        if (!sourceHadTrouble) {
+            sourceNoticesThisSweep.append(
+                QStringLiteral("%1: %2").arg(sourceDisplayName, humanReadableReason));
+        }
         finishSourceAndReportProgress(
             sourceStorageName,
             QStringLiteral("%1: %2").arg(sourceDisplayName, humanReadableReason),
-            true);
+            sourceHadTrouble);
 
         scoutReply->deleteLater();
     });
@@ -277,6 +310,8 @@ void JobScout::finishSourceAndReportProgress(const QString &sourceStorageName,
         // of the sweep instead of being overwritten by a tidy summary.
         storedLastSweepTroubleText =
             sourcesThatHadTroubleThisSweep.join(QStringLiteral("   ·   "));
+        storedLastSweepNoticeText =
+            sourceNoticesThisSweep.join(QStringLiteral("   ·   "));
 
         writeSweepLog();
 
@@ -407,4 +442,193 @@ void JobScout::writeSweepLog() const
     for (const QString &sourceOutcomeLine : finishedSourceOutcomeLines) {
         sweepLogStream << "  - " << sourceOutcomeLine << "\n";
     }
+}
+
+
+// ---------------------------------------------------------------------------
+// Adding one job by hand
+// ---------------------------------------------------------------------------
+
+bool JobScout::leadIsBeingResolved() const
+{
+    return aLeadIsBeingResolved;
+}
+
+QString JobScout::leadStatusText() const
+{
+    return storedLeadStatusText;
+}
+
+void JobScout::addJobFromLink(const QString &pastedLink)
+{
+    const QString trimmedLink = pastedLink.trimmed();
+    if (trimmedLink.isEmpty()) {
+        finishLeadWith(QStringLiteral(
+            "Paste a link to the job, or type the company name and the job title."));
+        return;
+    }
+    if (aLeadIsBeingResolved) {
+        // Not finishLeadWith. Saying "still busy" must not also say "done" —
+        // that would switch the buttons back on and let a second search start
+        // beside the first, and then a third.
+        sayThisAboutTheLead(QStringLiteral(
+            "Job Crush is still looking for the last one. Give it a moment."));
+        return;
+    }
+
+    JobLead jobLead;
+    jobLead.discoveryUrl = trimmedLink;
+
+    AtsBoardDetector boardDetector;
+    jobLead.boardIdentity = boardDetector.identify(trimmedLink);
+
+    // Where it came from is worth keeping for the life of the job. A link off
+    // a site Job Crush is not allowed to read is still where the user found
+    // it, and "where did this come from?" is a question they will ask.
+    jobLead.discoverySource = jobLead.boardIdentity.isKnown()
+        ? jobLead.boardIdentity.boardName
+        : QStringLiteral("pasted");
+
+    goLookForOneLead(jobLead);
+}
+
+void JobScout::addJobFromCompanyAndTitle(const QString &companyName,
+                                         const QString &positionTitle)
+{
+    const QString trimmedCompany = companyName.trimmed();
+    const QString trimmedTitle = positionTitle.trimmed();
+
+    if (trimmedCompany.isEmpty() || trimmedTitle.isEmpty()) {
+        finishLeadWith(QStringLiteral(
+            "Job Crush needs both the company name and the job title to go looking. "
+            "Fill in both and try again."));
+        return;
+    }
+    if (aLeadIsBeingResolved) {
+        // Not finishLeadWith. Saying "still busy" must not also say "done" —
+        // that would switch the buttons back on and let a second search start
+        // beside the first, and then a third.
+        sayThisAboutTheLead(QStringLiteral(
+            "Job Crush is still looking for the last one. Give it a moment."));
+        return;
+    }
+
+    JobLead jobLead;
+    jobLead.companyName = trimmedCompany;
+    jobLead.positionTitle = trimmedTitle;
+    jobLead.discoverySource = QStringLiteral("typed in");
+
+    goLookForOneLead(jobLead);
+}
+
+void JobScout::goLookForOneLead(const JobLead &jobLead)
+{
+    aLeadIsBeingResolved = true;
+    storedLeadStatusText = jobLead.companyName.isEmpty()
+        ? QStringLiteral("Looking for that job on the employer's own board…")
+        : QStringLiteral("Looking for that job on %1's own board…").arg(jobLead.companyName);
+    emit leadStatusChanged();
+
+    JobScoutReply *resolverReply = employerBoardResolver->resolve(jobLead, this);
+
+    connect(resolverReply, &JobScoutReply::finished, this,
+            [this, resolverReply, jobLead](const QList<JobPosting> &foundPostings) {
+        resolverReply->deleteLater();
+
+        if (!foundPostings.isEmpty()) {
+            const JobPosting realPosting = foundPostings.first();
+            finishLeadWith(storeOnePostingAndSayWhatHappened(
+                realPosting,
+                AtsBoardName::displayNameFor(realPosting.discoverySource)));
+            return;
+        }
+
+        // Nobody's board had it.
+        finishLeadWith(keepWhatTheUserGaveUs(jobLead, QStringLiteral(
+            "%1 isn't on Greenhouse, Lever or Ashby, so open the link to read the "
+            "whole posting.").arg(jobLead.companyName)));
+    });
+
+    connect(resolverReply, &JobScoutReply::failed, this,
+            [this, resolverReply, jobLead](const QString &whyItFailed) {
+        resolverReply->deleteLater();
+        finishLeadWith(keepWhatTheUserGaveUs(jobLead, whyItFailed));
+    });
+}
+
+// Saves the job exactly as the user handed it over, because the search for the
+// real posting came up empty. A paste that appears to do nothing is worse than
+// a plain no.
+QString JobScout::keepWhatTheUserGaveUs(const JobLead &jobLead,
+                                        const QString &whyTheRealOneIsMissing)
+{
+    if (jobLead.positionTitle.trimmed().isEmpty()
+            || jobLead.companyName.trimmed().isEmpty()) {
+        return QStringLiteral(
+            "Job Crush couldn't read that link, and it isn't on Greenhouse, Lever or "
+            "Ashby. Type the company name and the job title instead and it will go "
+            "look again.");
+    }
+
+    JobPosting leadAsPosting;
+    leadAsPosting.companyName = jobLead.companyName;
+    leadAsPosting.positionTitle = jobLead.positionTitle;
+    leadAsPosting.locationText = jobLead.locationText;
+    leadAsPosting.salaryText = jobLead.salaryText;
+    leadAsPosting.sourceUrl = jobLead.discoveryUrl;
+    leadAsPosting.fullDescriptionText = jobLead.rawText;
+    leadAsPosting.isRemoteRole = jobLead.isRemoteRole;
+    leadAsPosting.postedTimestamp = jobLead.postedTimestamp;
+    leadAsPosting.discoverySource = jobLead.discoverySource;
+
+    // A hand-added job has no id from a board, so make one out of what it does
+    // have. Without this, pasting the same job twice would store it twice: the
+    // repository tells duplicates apart by source and id.
+    leadAsPosting.externalSourceId = crossSourceIdentityOf(leadAsPosting);
+
+    return storeOnePostingAndSayWhatHappened(leadAsPosting, QString())
+        + QLatin1Char(' ') + whyTheRealOneIsMissing;
+}
+
+QString JobScout::storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
+                                                    const QString &boardItCameFrom)
+{
+    if (jobPosting.discoveredTimestamp.isNull()) {
+        jobPosting.discoveredTimestamp = QDateTime::currentDateTime();
+    }
+
+    bool wasAlreadyKnown = false;
+    if (!discoveredJobPostingRepository.insertDiscoveryIfNew(jobPosting, wasAlreadyKnown)) {
+        return QStringLiteral("Job Crush couldn't save that job — %1. Try again.")
+            .arg(discoveredJobPostingRepository.lastErrorText());
+    }
+
+    emit discoveriesChanged();
+
+    const QString jobDescribed = jobPosting.companyName.isEmpty()
+        ? QStringLiteral("\"%1\"").arg(jobPosting.positionTitle)
+        : QStringLiteral("\"%1\" at %2").arg(jobPosting.positionTitle, jobPosting.companyName);
+
+    if (wasAlreadyKnown) {
+        return QStringLiteral("You already have this one. %1 is in Discoveries.")
+            .arg(jobDescribed);
+    }
+    if (boardItCameFrom.isEmpty()) {
+        return QStringLiteral("Added %1 to Discoveries.").arg(jobDescribed);
+    }
+    return QStringLiteral("Found it on %1. %2 is now in Discoveries.")
+        .arg(boardItCameFrom, jobDescribed);
+}
+
+void JobScout::finishLeadWith(const QString &statusTextForTheUser)
+{
+    aLeadIsBeingResolved = false;
+    storedLeadStatusText = statusTextForTheUser;
+    emit leadStatusChanged();
+}
+
+void JobScout::sayThisAboutTheLead(const QString &statusTextForTheUser)
+{
+    storedLeadStatusText = statusTextForTheUser;
+    emit leadStatusChanged();
 }

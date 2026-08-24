@@ -21,6 +21,7 @@
 #include "modelview/brainchat/BrainChatSession.h"
 #include "modelview/jobscout/JobScout.h"
 #include "modelview/jobscout/JobSearchProfile.h"
+#include "modelview/jobscout/FollowedEmployerRoster.h"
 #include "modelview/jobscout/JobSourceRoster.h"
 #include "modelview/prodocs/ProDocsIntake.h"
 #include "modelview/stats/JobSearchStatistics.h"
@@ -33,6 +34,7 @@
 #include "viewmodel/DiscoveredJobListViewModel.h"
 #include "viewmodel/JobPipelineBoardViewModel.h"
 #include "viewmodel/JobSearchProfileViewModel.h"
+#include "viewmodel/FollowedEmployerListViewModel.h"
 #include "viewmodel/JobSourceRosterViewModel.h"
 #include "viewmodel/ProfessionalDocumentListViewModel.h"
 #include "viewmodel/WorkExperienceListViewModel.h"
@@ -123,7 +125,11 @@ int main(int argc, char *argv[])
     JobSourceRoster jobSourceRoster;
     jobSourceRoster.loadFromSettings();
 
-    JobScout jobScout(jobPostingRepository, jobSourceRoster, jobSearchProfile,
+    FollowedEmployerRoster followedEmployerRoster;
+    followedEmployerRoster.loadFromSettings();
+
+    JobScout jobScout(jobPostingRepository, jobSourceRoster, followedEmployerRoster,
+                      jobSearchProfile,
                       applicationDataFolderPath);
 
     // The board. Loaded now so every screen that asks "is this job already on
@@ -160,6 +166,7 @@ int main(int argc, char *argv[])
     DiscoveredJobListViewModel discoveredJobListViewModel(jobScout, jobPipelines);
     JobPipelineBoardViewModel jobPipelineBoardViewModel(jobPipelines);
     JobSourceRosterViewModel jobSourceRosterViewModel(jobSourceRoster);
+    FollowedEmployerListViewModel followedEmployerListViewModel(followedEmployerRoster);
     JobSearchProfileViewModel jobSearchProfileViewModel(jobSearchProfile);
     ProfessionalDocumentListViewModel professionalDocumentListViewModel(
         professionalDocumentRepository, proDocsIntake);
@@ -195,6 +202,8 @@ int main(int argc, char *argv[])
           QVariant::fromValue(&discoveredJobListViewModel) },
         { QStringLiteral("jobSourceRosterViewModel"),
           QVariant::fromValue(&jobSourceRosterViewModel) },
+        { QStringLiteral("followedEmployerListViewModel"),
+          QVariant::fromValue(&followedEmployerListViewModel) },
         { QStringLiteral("jobSearchProfileViewModel"),
           QVariant::fromValue(&jobSearchProfileViewModel) },
         { QStringLiteral("professionalDocumentListViewModel"),

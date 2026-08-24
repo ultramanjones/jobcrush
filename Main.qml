@@ -19,6 +19,7 @@ Window {
     required property var selectedBrainConnectionViewModel
     required property var discoveredJobListViewModel
     required property var jobSourceRosterViewModel
+    required property var followedEmployerListViewModel
     required property var jobSearchProfileViewModel
     required property var professionalDocumentListViewModel
     required property var workExperienceListViewModel
@@ -309,6 +310,7 @@ Window {
         preferencesViewModel: applicationWindow.appPreferencesViewModel
         brainConnectionViewModel: applicationWindow.selectedBrainConnectionViewModel
         jobSourceRosterViewModel: applicationWindow.jobSourceRosterViewModel
+        followedEmployerListViewModel: applicationWindow.followedEmployerListViewModel
         jobSearchProfileViewModel: applicationWindow.jobSearchProfileViewModel
     }
 }

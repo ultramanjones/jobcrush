@@ -14,6 +14,15 @@ JobSourceRosterViewModel::JobSourceRosterViewModel(JobSourceRoster &sourceRoster
 {
     connect(&roster, &JobSourceRoster::enabledSourcesChanged,
             this, &JobSourceRosterViewModel::enabledSourcesChanged);
+
+    // A key changing must NOT rebuild the row list. The row the user is
+    // typing into would be destroyed and rebuilt under their hands, and
+    // whatever they had half-typed in the next box would go with it. So this
+    // only bumps a counter, and the handful of bindings that care re-read.
+    connect(&roster, &JobSourceRoster::accessKeysChanged, this, [this]() {
+        ++accessKeyChangeCounter;
+        emit accessKeysChanged();
+    });
 }
 
 QVariantList JobSourceRosterViewModel::allJobSources() const
@@ -29,6 +38,12 @@ QVariantList JobSourceRosterViewModel::allJobSources() const
         jobSourceRow.insert(QStringLiteral("clientIsBuilt"), descriptor.clientIsBuilt);
         jobSourceRow.insert(QStringLiteral("isEnabled"),
                             roster.sourceIsEnabled(descriptor.storageName));
+        jobSourceRow.insert(QStringLiteral("requiresRegisteredEmail"),
+                            descriptor.requiresRegisteredEmail);
+        jobSourceRow.insert(QStringLiteral("accessKeySignupUrl"),
+                            descriptor.accessKeySignupUrl);
+        jobSourceRow.insert(QStringLiteral("accessKeyHelpBlurb"),
+                            descriptor.accessKeyHelpBlurb);
         jobSourceRows.append(jobSourceRow);
     }
     return jobSourceRows;
@@ -68,7 +83,17 @@ QString JobSourceRosterViewModel::reasonSourceCannotBeUsed(
         return QString();
     }
     if (descriptor.clientIsBuilt) {
-        return QString(); // nothing standing in the way
+        if (roster.sourceHasWhatItNeeds(sourceStorageName)) {
+            return QString(); // nothing standing in the way
+        }
+        if (descriptor.requiresRegisteredEmail
+                && !roster.accessKeyFor(sourceStorageName).isEmpty()
+                && roster.registeredEmailFor(sourceStorageName).isEmpty()) {
+            return QStringLiteral("%1 also needs the email address you registered the "
+                                  "key with. Put it in below.").arg(descriptor.displayName);
+        }
+        return QStringLiteral("Put %1's free key in below and this box wakes up.")
+            .arg(descriptor.displayName);
     }
 
     if (descriptor.requiresAccessKey) {
@@ -88,4 +113,47 @@ void JobSourceRosterViewModel::openSourceWebsite(const QString &sourceStorageNam
         return;
     }
     QDesktopServices::openUrl(QUrl(descriptor.officialSiteUrl));
+}
+
+void JobSourceRosterViewModel::setAccessKey(const QString &sourceStorageName,
+                                            const QString &accessKey)
+{
+    roster.setAccessKeyFor(sourceStorageName, accessKey);
+}
+
+void JobSourceRosterViewModel::setRegisteredEmail(const QString &sourceStorageName,
+                                                  const QString &registeredEmail)
+{
+    roster.setRegisteredEmailFor(sourceStorageName, registeredEmail);
+}
+
+void JobSourceRosterViewModel::openAccessKeySignup(const QString &sourceStorageName) const
+{
+    bool descriptorFound = false;
+    const JobSourceDescriptor descriptor =
+        jobSourceDescriptorFor(sourceStorageName, descriptorFound);
+    if (!descriptorFound || descriptor.accessKeySignupUrl.isEmpty()) {
+        return;
+    }
+    QDesktopServices::openUrl(QUrl(descriptor.accessKeySignupUrl));
+}
+
+int JobSourceRosterViewModel::accessKeyRevision() const
+{
+    return accessKeyChangeCounter;
+}
+
+bool JobSourceRosterViewModel::sourceHasWhatItNeeds(const QString &sourceStorageName) const
+{
+    return roster.sourceHasWhatItNeeds(sourceStorageName);
+}
+
+QString JobSourceRosterViewModel::accessKeyFor(const QString &sourceStorageName) const
+{
+    return roster.accessKeyFor(sourceStorageName);
+}
+
+QString JobSourceRosterViewModel::registeredEmailFor(const QString &sourceStorageName) const
+{
+    return roster.registeredEmailFor(sourceStorageName);
 }

@@ -38,6 +38,11 @@ Rectangle {
 
     readonly property bool showingTopProspects: activeTabSourceName === ""
 
+    // Whether the "add one job by hand" panel is showing. Closed by default:
+    // most jobs arrive from a sweep, and a panel that is always open would
+    // push the rows down every time somebody opens this page.
+    property bool addOneJobPanelIsOpen: false
+
     // A site the user unticks must not leave a dead tab selected behind it.
     Connections {
         target: discoveriesPage.jobSourceRosterViewModel
@@ -66,6 +71,7 @@ Rectangle {
         height: 64
 
         Text {
+            id: discoveriesTitle
             anchors.verticalCenter: parent.verticalCenter
             anchors.left: parent.left
             anchors.leftMargin: 28
@@ -80,9 +86,12 @@ Rectangle {
         Text {
             id: sweepProgressLabel
             anchors.verticalCenter: parent.verticalCenter
-            anchors.left: parent.left
-            anchors.leftMargin: 170
-            anchors.right: scoutNowButton.left
+            // Anchored to the title rather than a measured margin. A number
+            // typed in here is a guess about a font, and it is wrong the first
+            // time the font changes or the words get longer.
+            anchors.left: discoveriesTitle.right
+            anchors.leftMargin: 20
+            anchors.right: addOneJobButton.left
             anchors.rightMargin: 20
             // While sweeping: the running counts. Afterwards: whatever went
             // WRONG takes priority over the tidy summary, because a source
@@ -92,8 +101,12 @@ Rectangle {
                 if (listViewModel.sweepIsRunning) {
                     return listViewModel.sweepProgressText
                 }
-                if (listViewModel.lastSweepTroubleText.length > 0) {
-                    return listViewModel.lastSweepTroubleText
+                const troubleAndNotices = [listViewModel.lastSweepTroubleText,
+                                           listViewModel.lastSweepNoticeText]
+                    .filter(function(line) { return line.length > 0 })
+                    .join("   ·   ")
+                if (troubleAndNotices.length > 0) {
+                    return troubleAndNotices
                 }
                 return listViewModel.lastSweepSummaryText
             }
@@ -107,6 +120,12 @@ Rectangle {
                     : JobCrushTheme.mutedTextColor
             }
             font.pixelSize: JobCrushTheme.smallFontSize
+
+            // Two lines, because a sweep across several sites has more to say
+            // than fits on one, and a report cut off at the first site is a
+            // report that hides the other two.
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
             elide: Text.ElideRight
 
             SequentialAnimation on opacity {
@@ -119,6 +138,45 @@ Rectangle {
                         sweepProgressLabel.opacity = 1.0
                     }
                 }
+            }
+        }
+
+        // Add one job by hand. Sits next to Scout now because it is the other
+        // half of the same question: where do the jobs on this page come from?
+        Rectangle {
+            id: addOneJobButton
+
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: scoutNowButton.left
+            anchors.rightMargin: 10
+            width: addOneJobButtonLabel.implicitWidth + 26
+            height: 36
+            radius: 8
+            color: discoveriesPage.addOneJobPanelIsOpen
+                ? JobCrushTheme.cardBackgroundColor
+                : (addOneJobMouseArea.containsMouse
+                       ? JobCrushTheme.cardBackgroundColor : "transparent")
+            border.width: discoveriesPage.addOneJobPanelIsOpen ? 2 : 1
+            border.color: discoveriesPage.addOneJobPanelIsOpen
+                ? JobCrushTheme.accentColor : JobCrushTheme.hairlineBorderColor
+
+            Text {
+                id: addOneJobButtonLabel
+                anchors.centerIn: parent
+                text: discoveriesPage.addOneJobPanelIsOpen ? "Done adding" : "Add a job"
+                color: discoveriesPage.addOneJobPanelIsOpen
+                    ? JobCrushTheme.primaryTextColor : JobCrushTheme.secondaryTextColor
+                font.pixelSize: JobCrushTheme.bodyFontSize
+                font.weight: Font.DemiBold
+            }
+
+            MouseArea {
+                id: addOneJobMouseArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: discoveriesPage.addOneJobPanelIsOpen
+                    = !discoveriesPage.addOneJobPanelIsOpen
             }
         }
 
@@ -259,10 +317,25 @@ Rectangle {
     // A whole BAR rather than a line of small print, because this is the app
     // admitting it is hiding things. Buried, it reads as a sweep that found
     // nothing and sends someone hunting for a bug that isn't there.
+    AddOneJobPanel {
+        id: addOneJobPanel
+
+        anchors.top: discoveryTabRow.bottom
+        anchors.topMargin: 14
+        anchors.left: parent.left
+        anchors.leftMargin: 28
+        anchors.right: parent.right
+        anchors.rightMargin: 46
+
+        visible: discoveriesPage.addOneJobPanelIsOpen
+        discoveredJobListViewModel: discoveriesPage.discoveredJobListViewModel
+    }
+
     Rectangle {
         id: outsideSearchAreaBar
 
-        anchors.top: discoveryTabRow.bottom
+        anchors.top: addOneJobPanel.visible
+            ? addOneJobPanel.bottom : discoveryTabRow.bottom
         anchors.topMargin: 12
         anchors.left: parent.left
         anchors.leftMargin: 28
@@ -360,7 +433,8 @@ Rectangle {
         id: discoveredJobListView
 
         anchors.top: outsideSearchAreaBar.visible
-            ? outsideSearchAreaBar.bottom : discoveryTabRow.bottom
+            ? outsideSearchAreaBar.bottom
+            : (addOneJobPanel.visible ? addOneJobPanel.bottom : discoveryTabRow.bottom)
         anchors.topMargin: 16
         anchors.bottom: parent.bottom
         anchors.left: parent.left

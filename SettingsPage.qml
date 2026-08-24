@@ -13,6 +13,7 @@ Rectangle {
     property var preferencesViewModel
     property var brainConnectionViewModel
     property var jobSourceRosterViewModel
+    property var followedEmployerListViewModel
     property var jobSearchProfileViewModel
 
     color: JobCrushTheme.appBackgroundColor
@@ -497,7 +498,11 @@ Rectangle {
                                   + (/^[aeiou]/.test(settingsPage.newKeyProviderKindName) ? "an " : "a ")
                                   + settingsPage.newKeyProviderKindName
                                   + " key?  <a href=\"open\">Open the official page</a>"
-                            textFormat: Text.RichText
+                            // StyledText, not RichText. Text.linkColor is
+                            // ignored under RichText — Qt draws the link in
+                            // its own hard blue instead, which is a colour
+                            // from outside the theme showing up on screen.
+                            textFormat: Text.StyledText
                             linkColor: JobCrushTheme.accentColor
                             color: JobCrushTheme.secondaryTextColor
                             font.pixelSize: JobCrushTheme.smallFontSize
@@ -521,7 +526,11 @@ Rectangle {
                             text: "Wondering what this key has spent?  "
                                   + "<a href=\"open\">Check usage on "
                                   + settingsPage.newKeyProviderKindName + "'s dashboard</a>"
-                            textFormat: Text.RichText
+                            // StyledText, not RichText. Text.linkColor is
+                            // ignored under RichText — Qt draws the link in
+                            // its own hard blue instead, which is a colour
+                            // from outside the theme showing up on screen.
+                            textFormat: Text.StyledText
                             linkColor: JobCrushTheme.accentColor
                             color: JobCrushTheme.secondaryTextColor
                             font.pixelSize: JobCrushTheme.smallFontSize
@@ -764,15 +773,37 @@ Rectangle {
                         Repeater {
                             model: settingsPage.jobSourceRosterViewModel.allJobSources
 
-                            delegate: Row {
+                            delegate: Column {
                                 id: jobSourceRow
 
                                 required property var modelData
 
                                 width: jobSourceListColumn.width
-                                spacing: 10
+                                spacing: 8
 
-                                readonly property bool canBeUsed: modelData.clientIsBuilt
+                                // The box can only be ticked when the site is
+                                // ready to answer — client written, and any
+                                // free key filled in below.
+                                // accessKeyRevision is read on purpose: it is
+                                // what tells this binding a key just landed,
+                                // since sourceHasWhatItNeeds is a plain call
+                                // with nothing for QML to watch.
+                                readonly property bool canBeUsed:
+                                    modelData.clientIsBuilt
+                                    && settingsPage.jobSourceRosterViewModel.accessKeyRevision >= 0
+                                    && settingsPage.jobSourceRosterViewModel
+                                           .sourceHasWhatItNeeds(modelData.storageName)
+
+                                // The key boxes show for any built site that
+                                // wants a key, whether or not one is in yet —
+                                // that is where the user goes to put it in,
+                                // and where they go to take it out again.
+                                readonly property bool wantsAKey:
+                                    modelData.clientIsBuilt && modelData.requiresAccessKey
+
+                                Row {
+                                    width: parent.width
+                                    spacing: 10
 
                                 // ---- The tick: watch this site or don't ----
                                 Rectangle {
@@ -780,19 +811,30 @@ Rectangle {
                                     width: 22
                                     height: 22
                                     radius: 5
-                                    color: jobSourceRow.modelData.isEnabled
+                                    // Ticked AND able to run. A site whose key
+                                    // was just cleared is not being swept any
+                                    // more, so the tick has to say so.
+                                    readonly property bool isTickedAndReady:
+                                        jobSourceRow.modelData.isEnabled
+                                        && jobSourceRow.canBeUsed
+
+                                    color: isTickedAndReady
                                         ? JobCrushTheme.positiveColor : "transparent"
                                     border.width: 2
                                     border.color: jobSourceRow.canBeUsed
-                                        ? (jobSourceRow.modelData.isEnabled
+                                        ? (isTickedAndReady
                                                ? JobCrushTheme.positiveColor
                                                : JobCrushTheme.secondaryTextColor)
                                         : JobCrushTheme.hairlineBorderColor
-                                    opacity: jobSourceRow.canBeUsed ? 1.0 : 0.45
+                                    // Faded means "not available". A site that
+                                    // is only waiting on a key stays bright,
+                                    // because it IS available — the key boxes
+                                    // are right underneath it.
+                                    opacity: jobSourceRow.modelData.clientIsBuilt ? 1.0 : 0.45
 
                                     Text {
                                         anchors.centerIn: parent
-                                        visible: jobSourceRow.modelData.isEnabled
+                                        visible: parent.isTickedAndReady
                                         text: "\u2713"
                                         color: JobCrushTheme.onAccentTextColor
                                         font.pixelSize: 15
@@ -819,7 +861,7 @@ Rectangle {
                                         text: jobSourceRow.modelData.displayName
                                               + (jobSourceRow.modelData.requiresAccessKey
                                                      ? "   (free sign-up)" : "")
-                                        color: jobSourceRow.canBeUsed
+                                        color: jobSourceRow.modelData.clientIsBuilt
                                             ? JobCrushTheme.primaryTextColor
                                             : JobCrushTheme.mutedTextColor
                                         font.pixelSize: JobCrushTheme.bodyFontSize
@@ -828,20 +870,46 @@ Rectangle {
 
                                     Text {
                                         width: parent.width
-                                        text: jobSourceRow.canBeUsed
-                                            ? jobSourceRow.modelData.coverageBlurb
-                                            : settingsPage.jobSourceRosterViewModel
-                                                  .reasonSourceCannotBeUsed(
-                                                      jobSourceRow.modelData.storageName)
+                                        visible: jobSourceRow.modelData.clientIsBuilt
+                                        text: jobSourceRow.modelData.coverageBlurb
                                         color: JobCrushTheme.secondaryTextColor
                                         font.pixelSize: JobCrushTheme.smallFontSize
                                         wrapMode: Text.Wrap
                                     }
 
+                                    // What is standing in the way, when
+                                    // something is. Its own line, so it never
+                                    // costs the user the description of the
+                                    // site itself.
                                     Text {
+                                        width: parent.width
+                                        visible: text.length > 0
+                                        text: settingsPage.jobSourceRosterViewModel
+                                                  .accessKeyRevision >= 0
+                                            ? settingsPage.jobSourceRosterViewModel
+                                                  .reasonSourceCannotBeUsed(
+                                                      jobSourceRow.modelData.storageName)
+                                            : ""
+                                        color: jobSourceRow.modelData.clientIsBuilt
+                                            ? JobCrushTheme.noticeTextColor
+                                            : JobCrushTheme.mutedTextColor
+                                        font.pixelSize: JobCrushTheme.smallFontSize
+                                        wrapMode: Text.Wrap
+                                    }
+
+                                    Text {
+                                        // "Companies you follow" is not a
+                                        // website, so it gets no link. One
+                                        // that does nothing when clicked is
+                                        // worse than none at all.
+                                        visible: jobSourceRow.modelData
+                                                     .officialSiteUrl.length > 0
                                         text: "<a href=\"open\">Visit "
                                               + jobSourceRow.modelData.displayName + "</a>"
-                                        textFormat: Text.RichText
+                                        // StyledText, not RichText: linkColor
+                                        // is ignored under RichText and Qt
+                                        // draws its own hard blue instead.
+                                        textFormat: Text.StyledText
                                         linkColor: JobCrushTheme.accentColor
                                         color: JobCrushTheme.mutedTextColor
                                         font.pixelSize: JobCrushTheme.smallFontSize
@@ -856,7 +924,314 @@ Rectangle {
                                         }
                                     }
                                 }
+                                }
+
+                                // ---- The free key, for the sites that want one ----
+                                Column {
+                                    visible: jobSourceRow.wantsAKey
+                                    width: jobSourceRow.width - 32
+                                    x: 32
+                                    spacing: 6
+
+                                    Text {
+                                        width: parent.width
+                                        visible: text.length > 0
+                                        text: jobSourceRow.modelData.accessKeyHelpBlurb
+                                        color: JobCrushTheme.mutedTextColor
+                                        font.pixelSize: JobCrushTheme.smallFontSize
+                                        wrapMode: Text.Wrap
+                                    }
+
+                                    Text {
+                                        visible: jobSourceRow.modelData.accessKeySignupUrl.length > 0
+                                        text: "<a href=\"key\">Get a free "
+                                              + jobSourceRow.modelData.displayName + " key</a>"
+                                        // StyledText, not RichText: linkColor
+                                        // is ignored under RichText and Qt
+                                        // draws its own hard blue instead.
+                                        textFormat: Text.StyledText
+                                        linkColor: JobCrushTheme.accentColor
+                                        color: JobCrushTheme.mutedTextColor
+                                        font.pixelSize: JobCrushTheme.smallFontSize
+                                        onLinkActivated: settingsPage.jobSourceRosterViewModel
+                                            .openAccessKeySignup(
+                                                jobSourceRow.modelData.storageName)
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            cursorShape: parent.hoveredLink !== ""
+                                                ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                        }
+                                    }
+
+                                    InlineEditField {
+                                        width: parent.width
+                                        labelText: "API key"
+                                        placeholderText: "paste the key they emailed you"
+                                        // accessKeyRevision is read so this
+                                        // re-reads after a save. Without it
+                                        // the box compares what you type
+                                        // against a value from startup and
+                                        // saves again every time you leave it.
+                                        fieldText: settingsPage.jobSourceRosterViewModel
+                                                       .accessKeyRevision >= 0
+                                            ? settingsPage.jobSourceRosterViewModel
+                                                  .accessKeyFor(
+                                                      jobSourceRow.modelData.storageName)
+                                            : ""
+                                        onEditingCommitted: function(newText) {
+                                            settingsPage.jobSourceRosterViewModel.setAccessKey(
+                                                jobSourceRow.modelData.storageName, newText)
+                                        }
+                                    }
+
+                                    InlineEditField {
+                                        visible: jobSourceRow.modelData.requiresRegisteredEmail
+                                        width: parent.width
+                                        labelText: "The email you registered it with"
+                                        placeholderText: "the same address, exactly"
+                                        fieldText: settingsPage.jobSourceRosterViewModel
+                                                       .accessKeyRevision >= 0
+                                            ? settingsPage.jobSourceRosterViewModel
+                                                  .registeredEmailFor(
+                                                      jobSourceRow.modelData.storageName)
+                                            : ""
+                                        onEditingCommitted: function(newText) {
+                                            settingsPage.jobSourceRosterViewModel
+                                                .setRegisteredEmail(
+                                                    jobSourceRow.modelData.storageName, newText)
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
+
+                // ---- Companies you're watching -----------------------
+                //
+                // The other half of job discovery. A job site answers "what
+                // jobs like this exist?". This answers "what is Acme hiring
+                // for right now?" — and for anyone with a list of places they
+                // actually want to work, that is the better question.
+                Text {
+                    width: parent.width
+                    text: "Watch a company and Job Crush reads their whole careers page "
+                          + "every time you scout — the employer's own posting, all of "
+                          + "it, and gone from the list when the job is filled. Works "
+                          + "for any company on Greenhouse, Lever or Ashby."
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: followedEmployerColumn.implicitHeight + 28
+                    radius: 8
+                    color: JobCrushTheme.panelBackgroundColor
+                    border.color: JobCrushTheme.hairlineBorderColor
+                    border.width: 1
+
+                    Column {
+                        id: followedEmployerColumn
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.margins: 14
+                        spacing: 10
+
+                        // The companies already being watched.
+                        Repeater {
+                            model: settingsPage.followedEmployerListViewModel.followedEmployers
+
+                            delegate: Item {
+                                id: followedEmployerRow
+
+                                required property var modelData
+
+                                width: followedEmployerColumn.width
+                                height: 34
+
+                                Text {
+                                    id: followedEmployerName
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    // Capped, or a long name runs on under the
+                                    // button and disappears behind it.
+                                    width: Math.min(implicitWidth,
+                                                    parent.width
+                                                    - stopWatchingButton.width - 120)
+                                    elide: Text.ElideRight
+                                    text: followedEmployerRow.modelData.displayName
+                                    color: JobCrushTheme.primaryTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: followedEmployerName.right
+                                    anchors.leftMargin: 10
+                                    anchors.right: stopWatchingButton.left
+                                    anchors.rightMargin: 12
+                                    text: "on " + followedEmployerRow.modelData.boardDisplayName
+                                    color: JobCrushTheme.mutedTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
+                                    elide: Text.ElideRight
+                                }
+
+                                Rectangle {
+                                    id: stopWatchingButton
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.right: parent.right
+                                    width: stopWatchingLabel.implicitWidth + 22
+                                    height: 28
+                                    radius: 6
+                                    color: stopWatchingMouseArea.containsMouse
+                                        ? JobCrushTheme.cardBackgroundColor : "transparent"
+                                    border.width: 1
+                                    border.color: JobCrushTheme.hairlineBorderColor
+
+                                    Text {
+                                        id: stopWatchingLabel
+                                        anchors.centerIn: parent
+                                        text: "Stop watching"
+                                        color: JobCrushTheme.secondaryTextColor
+                                        font.pixelSize: JobCrushTheme.smallFontSize
+                                    }
+
+                                    MouseArea {
+                                        id: stopWatchingMouseArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: settingsPage.followedEmployerListViewModel
+                                            .stopFollowing(
+                                                followedEmployerRow.modelData.employerKey)
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: settingsPage.followedEmployerListViewModel
+                                         .followedEmployerCount === 0
+                            text: "Not watching anyone yet."
+                            color: JobCrushTheme.mutedTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                        }
+
+                        // ---- Add one ----
+                        Item {
+                            width: parent.width
+                            height: 34
+
+                            Rectangle {
+                                id: followCompanyBox
+                                anchors.left: parent.left
+                                anchors.right: followCompanyButton.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                height: 34
+                                radius: 6
+                                color: JobCrushTheme.appBackgroundColor
+                                border.color: followCompanyInput.activeFocus
+                                    ? JobCrushTheme.accentColor
+                                    : JobCrushTheme.hairlineBorderColor
+                                border.width: followCompanyInput.activeFocus ? 2 : 1
+                                clip: true
+
+                                TextInput {
+                                    id: followCompanyInput
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 9
+                                    anchors.rightMargin: 9
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    color: JobCrushTheme.primaryTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                    selectionColor: JobCrushTheme.accentColor
+                                    selectedTextColor: JobCrushTheme.onAccentTextColor
+                                    selectByMouse: true
+
+                                    Keys.onReturnPressed: followCompanyButton.follow()
+                                    Keys.onEnterPressed: followCompanyButton.follow()
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 10
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 10
+                                    visible: followCompanyInput.text.length === 0
+                                             && !followCompanyInput.activeFocus
+                                    text: "Paste a link to any job at the company"
+                                    color: JobCrushTheme.mutedTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Rectangle {
+                                id: followCompanyButton
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: followCompanyLabel.implicitWidth + 28
+                                height: 34
+                                radius: 6
+
+                                readonly property bool canBePressed:
+                                    followCompanyInput.text.trim().length > 0
+
+                                function follow() {
+                                    if (!canBePressed) {
+                                        return
+                                    }
+                                    settingsPage.followedEmployerListViewModel
+                                        .followFromLink(followCompanyInput.text)
+                                    followCompanyInput.text = ""
+                                }
+
+                                color: canBePressed
+                                    ? (followCompanyMouseArea.containsMouse
+                                           ? Qt.lighter(JobCrushTheme.callToActionColor, 1.15)
+                                           : JobCrushTheme.callToActionColor)
+                                    : JobCrushTheme.cardBackgroundColor
+
+                                Text {
+                                    id: followCompanyLabel
+                                    anchors.centerIn: parent
+                                    text: "Watch them"
+                                    color: followCompanyButton.canBePressed
+                                        ? JobCrushTheme.onAccentTextColor
+                                        : JobCrushTheme.mutedTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
+                                    font.weight: Font.DemiBold
+                                }
+
+                                MouseArea {
+                                    id: followCompanyMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    enabled: followCompanyButton.canBePressed
+                                    cursorShape: enabled
+                                        ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: followCompanyButton.follow()
+                                }
+                            }
+                        }
+
+                        // What the last add or removal did. Never a bare no.
+                        Text {
+                            width: parent.width
+                            visible: text.length > 0
+                            text: settingsPage.followedEmployerListViewModel.lastActionText
+                            color: JobCrushTheme.secondaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
                         }
                     }
                 }

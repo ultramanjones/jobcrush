@@ -113,10 +113,17 @@ bool JobPostingRepository::insertDiscoveryIfNew(JobPosting &jobPosting, bool &wa
         "SELECT jobPostingId FROM jobPosting "
         "WHERE discoverySource = :discoverySource "
         "  AND externalSourceId = :externalSourceId"));
+    // textOrEmpty on BOTH, same as the insert.
+    //
+    // A QString nobody assigned is null, and a null binds as SQL NULL — and
+    // in SQLite nothing equals NULL, not even NULL. So the lookup would miss
+    // every time, the insert would store "" instead, and the same job would
+    // be stored again on every sweep, forever. The insert learned this lesson
+    // already; the lookup beside it did not.
     existingDiscoveryQuery.bindValue(QStringLiteral(":discoverySource"),
-                                     jobPosting.discoverySource);
+                                     textOrEmpty(jobPosting.discoverySource));
     existingDiscoveryQuery.bindValue(QStringLiteral(":externalSourceId"),
-                                     jobPosting.externalSourceId);
+                                     textOrEmpty(jobPosting.externalSourceId));
 
     if (!existingDiscoveryQuery.exec()) {
         lastErrorDescription = existingDiscoveryQuery.lastError().text();

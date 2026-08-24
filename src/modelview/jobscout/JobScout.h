@@ -11,6 +11,9 @@
 #include "../../model/JobPosting.h"
 #include "ProspectScorer.h"
 
+class CanonicalPostingResolver;
+class FollowedEmployerRoster;
+struct JobLead;
 class JobPostingRepository;
 class JobSearchProfile;
 class JobSourceProvider;
@@ -64,6 +67,7 @@ public:
     // to know where that is.
     JobScout(JobPostingRepository &jobPostingRepository,
              JobSourceRoster &sourceRoster,
+             FollowedEmployerRoster &followedEmployerRoster,
              JobSearchProfile &searchProfile,
              const QString &diagnosticsFolderPath,
              QObject *parent = nullptr);
@@ -86,9 +90,39 @@ public:
     // ran: the user is left knowing something is wrong and unable to say what.
     QString lastSweepTroubleText() const;
 
+    // What a site SAID that was not a count and not a fault — most often a
+    // site asking to be left alone for a while, and being left alone. The
+    // user still needs told, or an untouched tab is a mystery, but painting
+    // it as a failure would send them looking for a fault that is not there.
+    QString lastSweepNoticeText() const;
+
     // Sweeps every ticked site. Does nothing while a sweep is already running
     // — one at a time, so the numbers on screen always mean something.
     void startSweep();
+
+    // --- Adding one job by hand ---
+    //
+    // This is the way around the sites Job Crush is not allowed to read. The
+    // user pastes a link, or types the company and the job title straight off
+    // a LinkedIn alert, and Job Crush goes and finds that same job on the
+    // employer's own board — where it is allowed to look, and where the
+    // posting is the real one instead of somebody's copy of it.
+    //
+    // When the job cannot be found, what the user typed is saved anyway. A
+    // paste that appears to do nothing is worse than a plain no.
+    //
+    // One at a time, same as a sweep, so the status line always means one
+    // thing.
+    void addJobFromLink(const QString &pastedLink);
+    void addJobFromCompanyAndTitle(const QString &companyName,
+                                   const QString &positionTitle);
+
+    // True while Job Crush is out looking for one pasted job.
+    bool leadIsBeingResolved() const;
+
+    // What happened, in one sentence for the user to read. Always ends with
+    // something they can do next.
+    QString leadStatusText() const;
 
     // Everything one site has delivered, newest first, each with its score.
     QList<ScoredJobPosting> scoredJobPostingsFromSource(
@@ -121,6 +155,9 @@ signals:
     // Stored discoveries changed — the lists above are worth re-reading.
     void discoveriesChanged();
 
+    // leadIsBeingResolved() or leadStatusText() changed.
+    void leadStatusChanged();
+
 private:
     // The client for a site, or nullptr while that site's client has not been
     // written yet.
@@ -128,6 +165,28 @@ private:
 
     // Wires up one site's reply and folds its results into the sweep.
     void beginSweepOfSource(const QString &sourceStorageName);
+
+    // Goes looking for one lead on the employer's own board, then stores
+    // whatever comes back — the real posting when it is found, and what the
+    // user gave us when it is not.
+    void goLookForOneLead(const JobLead &jobLead);
+
+    // Saves one posting and returns the sentence to show the user. An empty
+    // board name means the user handed this job over rather than a board
+    // giving it up.
+    QString storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
+                                              const QString &boardItCameFrom);
+
+    // Saves the job as the user typed or pasted it, for when the real posting
+    // could not be found, and says why in the same breath.
+    QString keepWhatTheUserGaveUs(const JobLead &jobLead,
+                                  const QString &whyTheRealOneIsMissing);
+
+    void finishLeadWith(const QString &statusTextForTheUser);
+
+    // Says something to the user WITHOUT ending the search that is running.
+    // Used to turn down a second request while the first is still out.
+    void sayThisAboutTheLead(const QString &statusTextForTheUser);
 
     // Stores one site's finds, counting what was genuinely new.
     void recordFindingsFromSource(const QString &sourceStorageName,
@@ -151,6 +210,7 @@ private:
 
     JobPostingRepository &discoveredJobPostingRepository;
     JobSourceRoster &registeredSourceRoster;
+    FollowedEmployerRoster &watchedEmployerRoster;
     JobSearchProfile &userSearchProfile;
 
     // A plain vector rather than a keyed container: QHash is implicitly
@@ -160,11 +220,21 @@ private:
     // with this one, and there will only ever be a handful of them.
     std::vector<std::unique_ptr<JobSourceProvider>> builtJobSourceProviders;
 
+    // Built once and kept, same as the site clients. Held by pointer so this
+    // header does not have to drag in all three board readers.
+    std::unique_ptr<CanonicalPostingResolver> employerBoardResolver;
+
+    // Live bookkeeping for one pasted job.
+    bool aLeadIsBeingResolved = false;
+    QString storedLeadStatusText;
+
     // Live sweep bookkeeping. Cleared when a sweep ends.
     QStringList sourcesStillSweeping;
     QStringList finishedSourceOutcomeLines;
     QStringList sourcesThatHadTroubleThisSweep;
+    QStringList sourceNoticesThisSweep;
     QString storedLastSweepTroubleText;
+    QString storedLastSweepNoticeText;
     int jobPostingsRefusedThisSource = 0;
     QString firstRefusalReasonThisSource;
     int totalJobsFoundThisSweep = 0;

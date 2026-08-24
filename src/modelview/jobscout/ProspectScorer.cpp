@@ -249,6 +249,17 @@ bool ProspectScorer::jobPostingIsInsideSearchArea(const JobPosting &jobPosting) 
         return true;
     }
 
+    // A posting that names no place at all cannot be somewhere else. This
+    // filter is meant to hold back jobs in the wrong CITY, and holding one
+    // back for saying nothing turns silence into a rejection.
+    //
+    // It matters most for a job the user typed in by hand: they gave a
+    // company and a title and no location, and having it vanish from the
+    // page they just added it to would look like the app losing their work.
+    if (jobPosting.locationText.trimmed().isEmpty()) {
+        return true;
+    }
+
     return !matchedWorkLocationFor(jobPosting).isEmpty();
 }
 

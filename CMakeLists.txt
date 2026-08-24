@@ -65,10 +65,35 @@ qt_add_executable(jobcrush
     src/modelview/jobscout/JobPostingTextCleanup.h
     src/modelview/jobscout/JobScoutReply.h
     src/modelview/jobscout/JobSourceProvider.h
+    src/modelview/jobscout/JobLead.h
+    src/modelview/jobscout/AtsBoardIdentity.h
+    src/modelview/jobscout/AtsBoardDetector.h
+    src/modelview/jobscout/UrlCanonicalizer.h
+    src/modelview/jobscout/DuplicateJobDetector.h
+    src/modelview/jobscout/EmployerBoardProvider.h
+    src/modelview/jobscout/EmployerBoardHttp.h
+    src/modelview/jobscout/GreenhouseBoardSource.h
+    src/modelview/jobscout/GreenhouseBoardSource.cpp
+    src/modelview/jobscout/LeverBoardSource.h
+    src/modelview/jobscout/LeverBoardSource.cpp
+    src/modelview/jobscout/AshbyBoardSource.h
+    src/modelview/jobscout/AshbyBoardSource.cpp
+    src/modelview/jobscout/EmployerTenantGuesser.h
+    src/modelview/jobscout/CanonicalPostingResolver.h
+    src/modelview/jobscout/CanonicalPostingResolver.cpp
     src/modelview/jobscout/RemotiveJobSource.h
     src/modelview/jobscout/RemotiveJobSource.cpp
     src/modelview/jobscout/ArbeitnowJobSource.h
     src/modelview/jobscout/ArbeitnowJobSource.cpp
+    src/modelview/jobscout/JobicyJobSource.h
+    src/modelview/jobscout/JobicyJobSource.cpp
+    src/modelview/jobscout/UsaJobsJobSource.h
+    src/modelview/jobscout/UsaJobsJobSource.cpp
+    src/modelview/jobscout/FollowedEmployer.h
+    src/modelview/jobscout/FollowedEmployerRoster.h
+    src/modelview/jobscout/FollowedEmployerRoster.cpp
+    src/modelview/jobscout/FollowedEmployerJobSource.h
+    src/modelview/jobscout/FollowedEmployerJobSource.cpp
     src/modelview/jobscout/JobSearchProfile.h
     src/modelview/jobscout/JobSearchProfile.cpp
     src/modelview/jobscout/JobSourceRoster.h
@@ -130,6 +155,8 @@ qt_add_executable(jobcrush
     src/viewmodel/DiscoveredJobListViewModel.cpp
     src/viewmodel/JobSourceRosterViewModel.h
     src/viewmodel/JobSourceRosterViewModel.cpp
+    src/viewmodel/FollowedEmployerListViewModel.h
+    src/viewmodel/FollowedEmployerListViewModel.cpp
     src/viewmodel/JobSearchProfileViewModel.h
     src/viewmodel/JobSearchProfileViewModel.cpp
     src/viewmodel/ProfessionalDocumentListViewModel.h
@@ -188,6 +215,7 @@ qt_add_qml_module(jobcrush
         StagingPage.qml
         StatsPage.qml
         SettingsPage.qml
+        AddOneJobPanel.qml
         InlineEditField.qml
         TokenEntryField.qml
         VerticalScrollBar.qml

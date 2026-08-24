@@ -33,10 +33,17 @@ public:
 
     // Called by the source on any failure. Not for consumers.
     // The reason is written for human eyes and reaches the user as-is.
-    void markFailed(const QString &humanReadableReason)
+    //
+    // sourceHadTrouble separates two failures that look the same and are not.
+    // "There is no board by that name" is an ANSWER — the thing asked for
+    // does not exist. "The connection timed out" is TROUBLE — the thing may
+    // exist and we could not find out. Telling a user their employer is not on
+    // Greenhouse when the truth is their wifi dropped sends them off fixing
+    // the wrong problem.
+    void markFailed(const QString &humanReadableReason, bool sourceHadTrouble = true)
     {
         replyHasFinished = true;
-        emit failed(humanReadableReason);
+        emit failed(humanReadableReason, sourceHadTrouble);
     }
 
 signals:
@@ -47,7 +54,9 @@ signals:
 
     // Network trouble, a rejected request, or a response Job Crush could not
     // make sense of. One dead source never stops the others.
-    void failed(const QString &humanReadableReason);
+    //
+    // Handlers that only care about the words may take one argument.
+    void failed(const QString &humanReadableReason, bool sourceHadTrouble);
 
 private:
     bool replyHasFinished = false;

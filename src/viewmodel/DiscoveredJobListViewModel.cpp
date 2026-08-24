@@ -60,11 +60,33 @@ DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
         emit sweepProgressChanged();
     });
 
+    connect(&discoveryJobScout, &JobScout::leadStatusChanged, this, [this]() {
+        emit leadStatusChanged();
+    });
+
+    // The CRUSH button on a row asks the board whether this job is already on
+    // it. Removing that job over on Job Pipelines has to reach back here, or
+    // the row goes on saying "on your board" and the button stays dead.
+    connect(&board, &JobPipelines::boardChanged, this, [this]() {
+        ++boardChangeCounter;
+        emit boardChanged();
+    });
+
     rebuildRowsFromJobScout();
 }
 
 void DiscoveredJobListViewModel::rebuildRowsFromJobScout()
 {
+    // The "outside your area" view has one way out, and it is a button on a
+    // bar that only exists while a location filter exists. Clear the last
+    // location in Settings while that view is showing and the bar goes with
+    // it, taking the way back — and every tab reads empty forever after.
+    // Nothing is being held back any more, so there is nothing to look at.
+    if (storedShowingOutsideSearchArea && !discoveryJobScout.searchAreaIsNarrowed()) {
+        storedShowingOutsideSearchArea = false;
+        emit showingOutsideSearchAreaChanged();
+    }
+
     // The lists are small and rebuilt only when something genuinely changed
     // (a sweep finished, a tab switched, the profile was edited), so a full
     // reset keeps this translation layer honest and simple.
@@ -171,6 +193,11 @@ QString DiscoveredJobListViewModel::lastSweepTroubleText() const
     return discoveryJobScout.lastSweepTroubleText();
 }
 
+QString DiscoveredJobListViewModel::lastSweepNoticeText() const
+{
+    return discoveryJobScout.lastSweepNoticeText();
+}
+
 bool DiscoveredJobListViewModel::canRankProspects() const
 {
     return discoveryJobScout.searchProfileCanRank();
@@ -248,4 +275,25 @@ bool DiscoveredJobListViewModel::jobPostingAtIsOnTheBoard(int rowIndex) const
     }
     return board.jobPostingIsOnTheBoard(
         displayedJobPostings.at(rowIndex).jobPosting.jobPostingId);
+}
+
+bool DiscoveredJobListViewModel::leadIsBeingResolved() const
+{
+    return discoveryJobScout.leadIsBeingResolved();
+}
+
+QString DiscoveredJobListViewModel::leadStatusText() const
+{
+    return discoveryJobScout.leadStatusText();
+}
+
+void DiscoveredJobListViewModel::addJobFromLink(const QString &pastedLink)
+{
+    discoveryJobScout.addJobFromLink(pastedLink);
+}
+
+void DiscoveredJobListViewModel::addJobFromCompanyAndTitle(const QString &companyName,
+                                                           const QString &positionTitle)
+{
+    discoveryJobScout.addJobFromCompanyAndTitle(companyName, positionTitle);
 }
