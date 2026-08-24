@@ -172,6 +172,13 @@ qt_add_qml_module(jobcrush
     QML_FILES
         Main.qml
         JobCrushTheme.qml
+        ThemePalette.qml
+        ThemeClassic.qml
+        ThemeGrayscale.qml
+        ThemeFruitLoops.qml
+        ThemeAmish.qml
+        ThemeTraceOn.qml
+        ThemeTraceOnTwo.qml
         NavigationSidebar.qml
         BrainChatPage.qml
         DiscoveriesPage.qml

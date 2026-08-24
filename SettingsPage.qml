@@ -1154,14 +1154,9 @@ Rectangle {
                     spacing: 8
 
                     Repeater {
-                        model: [
-                            { themeName: "classic",    displayLabel: "Classic Job Crush" },
-                            { themeName: "grayscale",  displayLabel: "Grayscale" },
-                            { themeName: "fruitloops", displayLabel: "Fruit Loops" },
-                            { themeName: "amish",      displayLabel: "Amish" },
-                            { themeName: "traceon",    displayLabel: "Trace On" },
-                            { themeName: "traceon2",   displayLabel: "Trace On II" }
-                        ]
+                        // Built from the theme files themselves, so adding a
+                        // theme does not mean editing this page.
+                        model: JobCrushTheme.availableThemes
 
                         delegate: Rectangle {
                             id: themeChip

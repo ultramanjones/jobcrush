@@ -3,280 +3,114 @@ import QtQuick
 
 // JobCrushTheme
 //
-// The one theme object every component reads — no component ever hardcodes a
-// color, so palettes are swappable by design. Five ship today:
+// The one theme object every component reads. No component ever hardcodes a
+// color, so themes are swappable.
 //
-//   "classic"    — retro-80s neons and pastels on near-black (default)
-//   "grayscale"  — same dark base, distinguished by shade, for sensitive eyes
-//                  (and quietly colorblind-friendly)
-//   "fruitloops" — the loud one: red, yellow, orange, lime and purple
-//   "amish"      — the daylight one, and the only light palette: muslin
-//                  paper, morning straw, buggy black ink, Sunday blue,
-//                  barn red and walnut
-//   "traceon"    — the digital void: cyan program glow on black, with
-//                  hostile orange and circuit green
-//   "traceon2"   — the sequel's grid: Good Cyan and Clueless Yellow over
-//                  Grid Sky, with Recognizer Red for the things that bite
+// Each theme is its own file: ThemeClassic.qml, ThemeGrayscale.qml,
+// ThemeFruitLoops.qml, ThemeAmish.qml, ThemeTraceOn.qml, ThemeTraceOnTwo.qml.
+// They all start from ThemePalette.qml, which lists every token a theme has to
+// provide.
 //
-// Main.qml binds activeThemeName to the preferences viewmodel; everything
-// else just reads the semantic tokens below and re-renders on change.
+// This file does two things: it picks which theme is active, and it re-exposes
+// that theme's tokens so the rest of the app has one name to read.
 //
-// Adding a palette means adding one branch per token and a chip in Settings.
-// Nothing else in the app changes, which is the whole point.
+// To add a theme: write the file, add it to the palettes list below, and add it
+// to QML_FILES in CMakeLists.txt. Nothing else in the app changes. Settings
+// builds its chips from availableThemes, so the new theme shows up on its own.
+//
+// Main.qml binds activeThemeName to the preferences viewmodel. Everything else
+// reads the tokens below and re-renders when the theme changes.
 QtObject {
     id: theme
 
     property string activeThemeName: "classic"
 
-    readonly property bool isGrayscale: activeThemeName === "grayscale"
-    readonly property bool isFruitLoops: activeThemeName === "fruitloops"
-    readonly property bool isAmish: activeThemeName === "amish"
-    readonly property bool isTraceOn: activeThemeName === "traceon"
-    readonly property bool isTraceOnTwo: activeThemeName === "traceon2"
-
-    // Amish is the one palette that is light rather than dark. Anything that
-    // needs to know which way round it is asks HERE rather than checking for
-    // a theme by name — otherwise every future light palette means hunting
-    // down the places that assumed dark.
-    readonly property bool isLightTheme: isAmish
-
-    // --- Base surfaces (dark first, always — every palette) ---------------
-    readonly property color appBackgroundColor: {
-        if (isFruitLoops) return "#120A18"
-        if (isAmish)      return "#F2EFE9"   // Plain Muslin — paper
-        if (isTraceOnTwo) return "#061722"   // Grid Sky, sunk to the horizon
-        if (isTraceOn)    return "#050505"   // deep digital void
-        return "#0D0F14"
-    }
-    readonly property color sidebarBackgroundColor: {
-        if (isFruitLoops) return "#170D20"
-        // Amish Sunday Blue, a full wall of it, the way a quilt uses a block.
-        // If this reads as too much, the previous version was Morning Straw
-        // at "#DFCFA8" — swapping the line back is the whole revert.
-        if (isAmish)      return "#3B5973"
-        if (isTraceOnTwo) return "#0E3E55"   // Grid Sky, a full wall of it
-        if (isTraceOn)    return "#080A0C"
-        return "#101319"
-    }
-    readonly property color panelBackgroundColor: {
-        if (isFruitLoops) return "#1D1129"
-        if (isAmish)      return "#FAF7F0"   // muslin, for the straw to sit against
-        if (isTraceOnTwo) return "#0B2C3D"   // Grid Sky, lifted one step
-        if (isTraceOn)    return "#0B0F12"
-        return "#151922"
-    }
-    readonly property color cardBackgroundColor: {
-        if (isFruitLoops) return "#261635"
-        if (isAmish)      return "#E4D9BE"   // a Morning Straw block
-        if (isTraceOnTwo) return "#124B65"   // Grid Sky, lifted two steps
-        if (isTraceOn)    return "#101619"
-        return "#1B202C"
-    }
-    // The panel behind the current sidebar row. On Amish it sits ON the blue,
-    // so it lifts rather than lightening to muslin, which would look like a
-    // hole cut in the wall.
-    readonly property color sidebarSelectedRowColor:
-        isAmish ? "#4B6E8C" : panelBackgroundColor
-
-    readonly property color hairlineBorderColor: {
-        if (isFruitLoops) return "#3A2350"
-        if (isAmish)      return "#2B2B2B"   // Buggy Black — quilt binding, not a
-                                             // whisper. Every block gets a seam.
-        if (isTraceOnTwo) return "#7E99A4"   // Digital Skin Gray — the seams
-        if (isTraceOn)    return "#3A4A5A"   // inactive wireframe gray
-        return "#262C3A"
-    }
-
-    // --- Sidebar text ------------------------------------------------------
+    // --- The themes -------------------------------------------------------
     //
-    // Its own tokens because the sidebar is the one surface that can carry a
-    // bold block of color while the rest of the page stays pale. Without
-    // these, dark ink on Amish's Sunday Blue wall would be unreadable, and
-    // the whole idea would be off the table.
-    readonly property color sidebarPrimaryTextColor:
-        isAmish ? "#F6F3EC" : primaryTextColor
-    readonly property color sidebarSecondaryTextColor:
-        isAmish ? "#CBD8E4" : secondaryTextColor
-    readonly property color sidebarMutedTextColor:
-        isAmish ? "#93A9BC" : mutedTextColor
-    readonly property color sidebarWordmarkColor:
-        isAmish ? "#FFCF6B" : callToActionColor
+    // All six exist at once. They are property bags, so this costs nothing,
+    // and it means switching themes is a pointer change rather than rebuilding
+    // anything.
+    readonly property ThemeClassic classicTheme: ThemeClassic {}
+    readonly property ThemeGrayscale grayscaleTheme: ThemeGrayscale {}
+    readonly property ThemeFruitLoops fruitLoopsTheme: ThemeFruitLoops {}
+    readonly property ThemeAmish amishTheme: ThemeAmish {}
+    readonly property ThemeTraceOn traceOnTheme: ThemeTraceOn {}
+    readonly property ThemeTraceOnTwo traceOnTwoTheme: ThemeTraceOnTwo {}
 
-    // --- Text -------------------------------------------------------------
-    readonly property color primaryTextColor: {
-        if (isFruitLoops) return "#FFF6E5"
-        if (isAmish)      return "#2B2B2B"   // Buggy Black — ink on paper
-        if (isTraceOnTwo) return "#FEF3F7"   // Glowy White
-        if (isTraceOn)    return "#FFFFFF"   // high-energy core
-        return "#E8EAED"
-    }
-    readonly property color secondaryTextColor: {
-        if (isFruitLoops) return "#C4A8D8"
-        if (isAmish)      return "#5C5248"   // walnut-gray, still comfortably readable
-        if (isTraceOnTwo) return "#7E99A4"   // Digital Skin Gray
-        if (isTraceOn)    return "#8FA6B8"
-        return "#8A93A5"
-    }
-    readonly property color mutedTextColor: {
-        if (isFruitLoops) return "#8A6BA3"
-        if (isAmish)      return "#8A8177"   // faded ink
-        if (isTraceOnTwo) return "#587683"   // Digital Skin Gray, dimmed
-        if (isTraceOn)    return "#5A6C7A"
-        return "#5A6272"
+    readonly property var everyTheme: [
+        classicTheme, grayscaleTheme, fruitLoopsTheme,
+        amishTheme, traceOnTheme, traceOnTwoTheme
+    ]
+
+    // The theme that is on right now. An unknown name falls back to Classic,
+    // so a settings file from an older build cannot leave the app unpainted.
+    readonly property ThemePalette activeTheme: {
+        for (let i = 0; i < everyTheme.length; ++i) {
+            if (everyTheme[i].themeName === activeThemeName) {
+                return everyTheme[i]
+            }
+        }
+        return classicTheme
     }
 
-    // Text and glyphs that sit ON a filled accent or call-to-action shape.
+    // The chips in Settings are built from this, so adding a theme does not
+    // mean editing SettingsPage.
+    readonly property var availableThemes: {
+        let list = []
+        for (let i = 0; i < everyTheme.length; ++i) {
+            list.push({
+                themeName: everyTheme[i].themeName,
+                displayLabel: everyTheme[i].displayLabel
+            })
+        }
+        return list
+    }
+
+    // --- The tokens -------------------------------------------------------
     //
-    // This exists because a palette can be dark-on-bright (neon buttons) or
-    // bright-on-dark (Barn Red buttons), and a component cannot know which.
-    // Before this token every button hardcoded near-black label text, which
-    // was invisible the moment a palette used a dark button.
-    readonly property color onAccentTextColor: {
-        if (isAmish)   return "#F2EFE9"   // muslin on barn red, blue or walnut fills
-        if (isTraceOnTwo) return "#0E3E55"   // Grid Sky ink on a lit program
-        if (isTraceOn) return "#050505"   // void black on a glowing program
-        return "#0D0F14"
-    }
+    // Every one of these is the active theme's value. They are listed here so
+    // the rest of the app says JobCrushTheme.accentColor and never has to know
+    // which theme is on.
+    readonly property bool isLightTheme: activeTheme.isLightTheme
 
-    // --- Accents -----------------------------------------------------------
-    //
-    // Amish note: this is the daylight palette. Muslin is the paper, Buggy
-    // Black is the ink, and Morning Straw carries the sidebar and the Saved
-    // stage so it is visible constantly rather than only when something goes
-    // wrong. The palette ships no green, so "positive" takes Dark Walnut
-    // Wood — solid, and dark enough to read as text on paper, which a warm
-    // gold simply is not. Where a token has to be a shade rather than one of
-    // the six exact colors, it is a tint of one of them and says so.
-    readonly property color accentColor: {
-        if (isGrayscale)  return "#C9CED9"
-        if (isFruitLoops) return "#FF6600"   // Lively Orange
-        if (isAmish)      return "#3B5973"   // Amish Sunday Blue, at full strength
-        if (isTraceOnTwo) return "#f0b432"   // Clueless Yellow
-        if (isTraceOn)    return "#00F0FF"   // standard program glow
-        return "#35D6EE"                     // cyan
-    }
-    readonly property color callToActionColor: {
-        if (isGrayscale)  return "#E8EAED"
-        if (isFruitLoops) return "#FF0033"   // Bright Red
-        if (isAmish)      return "#6B1A1B"   // Barn Red
-        if (isTraceOnTwo) return "#C43041"   // Recognizer Red, lit enough to
-                                             // read against Grid Sky
-        if (isTraceOn)    return "#FF2A00"   // hostile program glow
-        return "#FF3D8A"                     // hot pink
-    }
-    readonly property color positiveColor: {
-        if (isGrayscale)  return "#AEB6C4"
-        if (isFruitLoops) return "#66CC33"   // Lime Green
-        if (isAmish)      return "#4A321E"   // Dark Walnut Wood — solid, and dark
-                                             // enough to read as text on paper
-        if (isTraceOnTwo) return "#6DEBFA"   // Good Cyan — the good programs
-        if (isTraceOn)    return "#00FF66"   // secondary circuit paths
-        return "#3DF08C"                     // terminal green
-    }
+    readonly property color appBackgroundColor: activeTheme.appBackgroundColor
+    readonly property color sidebarBackgroundColor: activeTheme.sidebarBackgroundColor
+    readonly property color panelBackgroundColor: activeTheme.panelBackgroundColor
+    readonly property color cardBackgroundColor: activeTheme.cardBackgroundColor
+    readonly property color sidebarSelectedRowColor: activeTheme.sidebarSelectedRowColor
+    readonly property color hairlineBorderColor: activeTheme.hairlineBorderColor
 
-    // Something is happening and has not finished — a connection being
-    // confirmed, a check in flight. Deliberately colorless in every palette:
-    // "waiting" must never be mistaken at a glance for "working".
-    readonly property color pendingColor: {
-        if (isFruitLoops) return "#6E5A82"
-        if (isAmish)      return "#9A9086"
-        if (isTraceOnTwo) return "#7E99A4"   // Digital Skin Gray
-        if (isTraceOn)    return "#3A4A5A"
-        return "#6B7484"
-    }
+    readonly property color primaryTextColor: activeTheme.primaryTextColor
+    readonly property color secondaryTextColor: activeTheme.secondaryTextColor
+    readonly property color mutedTextColor: activeTheme.mutedTextColor
+    readonly property color onAccentTextColor: activeTheme.onAccentTextColor
 
-    // What positiveColor actually LOOKS like, in one word.
-    //
-    // UI copy is allowed to point at a color — "a green ● means that slot
-    // already holds one" is a genuinely useful sentence. What it is not
-    // allowed to do is hardcode the word, because that sentence is a lie in
-    // four of the six palettes. Any prose that names a color reads it from
-    // here, so the words change with the paint.
-    readonly property string positiveColorName: {
-        if (isGrayscale)  return "pale"
-        if (isFruitLoops) return "lime"
-        if (isAmish)      return "walnut-brown"
-        if (isTraceOnTwo) return "cyan"
-        if (isTraceOn)    return "green"
-        return "green"
-    }
+    readonly property color sidebarPrimaryTextColor: activeTheme.sidebarPrimaryTextColor
+    readonly property color sidebarSecondaryTextColor: activeTheme.sidebarSecondaryTextColor
+    readonly property color sidebarMutedTextColor: activeTheme.sidebarMutedTextColor
+    readonly property color sidebarWordmarkColor: activeTheme.sidebarWordmarkColor
 
-    // --- Pipeline stage colors (used by the Job Pipelines board in Phase 4;
-    //     defined now so every palette is complete from day one) -----------
-    readonly property color stageSavedColor: {
-        if (isGrayscale)  return "#7A8290"
-        if (isFruitLoops) return "#FFCC00"   // Sunny Yellow
-        if (isAmish)      return "#D6B35A"   // Morning Straw — freshly gathered
-        if (isTraceOnTwo) return "#7E99A4"
-        if (isTraceOn)    return "#3A4A5A"
-        return "#8A93A5"
-    }
-    readonly property color stageAppliedColor: {
-        if (isGrayscale)  return "#9AA2B1"
-        if (isFruitLoops) return "#66CC33"
-        if (isAmish)      return "#4A321E"
-        if (isTraceOnTwo) return "#6DEBFA"
-        if (isTraceOn)    return "#00FF66"
-        return "#3DF08C"
-    }
-    readonly property color stageInterviewColor: {
-        if (isGrayscale)  return "#C9CED9"
-        if (isFruitLoops) return "#FF6600"
-        if (isAmish)      return "#3B5973"
-        if (isTraceOnTwo) return "#F7DC97"
-        if (isTraceOn)    return "#00F0FF"
-        return "#35D6EE"
-    }
-    readonly property color stageOfferColor: {
-        if (isGrayscale)  return "#F0F2F5"
-        if (isFruitLoops) return "#FF0033"
-        if (isAmish)      return "#6B1A1B"   // Barn Red
-        if (isTraceOnTwo) return "#C43041"
-        if (isTraceOn)    return "#FF2A00"
-        return "#FF3D8A"
-    }
-    readonly property color stageClosedColor: {
-        if (isFruitLoops) return "#660099"   // Deep Purple
-        if (isAmish)      return "#9A9086"
-        if (isTraceOnTwo) return "#41626F"
-        if (isTraceOn)    return "#3A4A5A"
-        return "#5A6272"
-    }
+    readonly property color accentColor: activeTheme.accentColor
+    readonly property color callToActionColor: activeTheme.callToActionColor
+    readonly property color positiveColor: activeTheme.positiveColor
+    readonly property color pendingColor: activeTheme.pendingColor
+    readonly property string positiveColorName: activeTheme.positiveColorName
 
-    // --- Brain Chat -------------------------------------------------------
-    readonly property color humanBubbleColor: {
-        if (isGrayscale)  return "#232936"
-        if (isFruitLoops) return "#331A47"
-        if (isAmish)      return "#DDE4EC"   // Sunday Blue, washed out to a paper tint
-        if (isTraceOnTwo) return "#123A4E"   // Grid Sky, one step toward the light
-        if (isTraceOn)    return "#08262B"
-        return "#20303E"
-    }
-    readonly property color brainBubbleColor: {
-        if (isFruitLoops) return "#261635"
-        if (isAmish)      return "#FBF9F5"
-        if (isTraceOnTwo) return "#0B2C3D"
-        if (isTraceOn)    return "#101619"
-        return "#1B202C"
-    }
-    readonly property color noticeTextColor: {
-        if (isGrayscale)  return "#AEB6C4"
-        if (isFruitLoops) return "#FFCC00"
-        if (isAmish)      return "#8A6B1F"   // Morning Straw, darkened so a warning
-                                             // still reads as text on pale paper
-        if (isTraceOnTwo) return "#E8737F"   // Recognizer Red, lit for a warning
-        if (isTraceOn)    return "#FF2A00"
-        return "#FFB86B"
-    }
+    readonly property color stageSavedColor: activeTheme.stageSavedColor
+    readonly property color stageAppliedColor: activeTheme.stageAppliedColor
+    readonly property color stageInterviewColor: activeTheme.stageInterviewColor
+    readonly property color stageOfferColor: activeTheme.stageOfferColor
+    readonly property color stageClosedColor: activeTheme.stageClosedColor
 
-    // --- Glow -------------------------------------------------------------
-    //
-    // How strongly lit shapes bleed into the dark around them, 0 to 1. Only
-    // Trace On lights up; every other palette sits flat at zero so nothing
-    // else in the app changes appearance because this token exists.
-    readonly property real glowStrength: (isTraceOn || isTraceOnTwo) ? 1.0 : 0.0
+    readonly property color humanBubbleColor: activeTheme.humanBubbleColor
+    readonly property color brainBubbleColor: activeTheme.brainBubbleColor
+    readonly property color noticeTextColor: activeTheme.noticeTextColor
+
+    readonly property real glowStrength: activeTheme.glowStrength
 
     // --- Type scale -------------------------------------------------------
+    //
+    // The same in every theme, so it lives here instead of in the theme files.
     readonly property int titleFontSize: 22
     readonly property int bodyFontSize: 15
     readonly property int smallFontSize: 12
