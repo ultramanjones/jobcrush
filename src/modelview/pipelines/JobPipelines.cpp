@@ -102,6 +102,9 @@ bool JobPipelines::crushJobPosting(qint64 jobPostingId, QString &reasonText)
     // does not try.
     reasonText = QStringLiteral("%1 at %2 is on your board.")
         .arg(posting.positionTitle, posting.companyName);
+
+    // StagingWorkbench listens for this and starts the packet.
+    emit jobWasCrushed(newCampaign.jobApplicationId);
     return true;
 }
 

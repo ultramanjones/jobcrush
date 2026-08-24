@@ -128,6 +128,22 @@ bool JobCrushDatabase::createSchemaIfMissing()
             "  isConfirmedByUser INTEGER NOT NULL DEFAULT 0"
             ")"),
 
+        // One piece of one application packet (see StagedDocument.h).
+        // Deleting a campaign also deletes its packet.
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS stagedDocument ("
+            "  stagedDocumentId    INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  jobApplicationId    INTEGER NOT NULL,"
+            "  documentKind        TEXT NOT NULL DEFAULT 'other',"
+            "  titleText           TEXT NOT NULL DEFAULT '',"
+            "  markdownText        TEXT NOT NULL DEFAULT '',"
+            "  wasWrittenByBrain   INTEGER NOT NULL DEFAULT 0,"
+            "  wasEditedByUser     INTEGER NOT NULL DEFAULT 0,"
+            "  isApprovedByUser    INTEGER NOT NULL DEFAULT 0,"
+            "  createdTimestamp    TEXT NOT NULL DEFAULT '',"
+            "  lastEditedTimestamp TEXT NOT NULL DEFAULT ''"
+            ")"),
+
         // One ProDocs item (see ProfessionalDocument.h).
         QStringLiteral(
             "CREATE TABLE IF NOT EXISTS professionalDocument ("
@@ -191,6 +207,25 @@ bool JobCrushDatabase::createSchemaIfMissing()
         || !addColumnIfMissing(QStringLiteral("educationRecord"),
                                QStringLiteral("wasEditedByUser"),
                                QStringLiteral("INTEGER NOT NULL DEFAULT 0"))) {
+        return false;
+    }
+
+    // --- Schema growth: the column the task layer added -------------------
+    //
+    // Defaults to -1, not 0. Unscored and scored-zero are different, and every
+    // row that existed before scoring existed is unscored.
+    if (!addColumnIfMissing(QStringLiteral("jobApplication"),
+                            QStringLiteral("fitScorePercent"),
+                            QStringLiteral("INTEGER NOT NULL DEFAULT -1"))) {
+        return false;
+    }
+
+    // Packets are only ever looked up by campaign.
+    QSqlQuery packetIndexQuery(databaseConnection);
+    if (!packetIndexQuery.exec(QStringLiteral(
+            "CREATE INDEX IF NOT EXISTS stagedDocumentByApplication "
+            "ON stagedDocument (jobApplicationId)"))) {
+        lastErrorDescription = packetIndexQuery.lastError().text();
         return false;
     }
 

@@ -11,6 +11,7 @@
 #include "model/JobApplicationRepository.h"
 #include "model/ProfessionalDocumentRepository.h"
 #include "model/CareerHistoryRepository.h"
+#include "model/StagedDocumentRepository.h"
 
 #include "modelview/AppPreferences.h"
 #include "modelview/aibrain/AiBrain.h"
@@ -22,6 +23,8 @@
 #include "modelview/jobscout/JobSearchProfile.h"
 #include "modelview/jobscout/JobSourceRoster.h"
 #include "modelview/prodocs/ProDocsIntake.h"
+#include "modelview/stats/JobSearchStatistics.h"
+#include "modelview/tasks/StagingWorkbench.h"
 
 #include "viewmodel/AiCredentialRosterViewModel.h"
 #include "viewmodel/AppPreferencesViewModel.h"
@@ -34,6 +37,9 @@
 #include "viewmodel/ProfessionalDocumentListViewModel.h"
 #include "viewmodel/WorkExperienceListViewModel.h"
 #include "viewmodel/EducationListViewModel.h"
+#include "viewmodel/StagedJobListViewModel.h"
+#include "viewmodel/StagingPacketViewModel.h"
+#include "viewmodel/JobSearchStatsViewModel.h"
 
 // main — the composition root.
 //
@@ -72,6 +78,7 @@ int main(int argc, char *argv[])
     JobApplicationRepository jobApplicationRepository(jobCrushDatabase);
     ProfessionalDocumentRepository professionalDocumentRepository(jobCrushDatabase);
     CareerHistoryRepository careerHistoryRepository(jobCrushDatabase);
+    StagedDocumentRepository stagedDocumentRepository(jobCrushDatabase);
 
     // (The Job Pipelines board arrives in Phase 4; its repository stays wired
     //  so the startup path is proven end to end.)
@@ -129,6 +136,21 @@ int main(int argc, char *argv[])
 
     BrainChatSession brainChatSession(aiBrain);
 
+    // The packet bench. Built after AIBrain because it asks the brain to do
+    // the work, and after the board because a packet belongs to a campaign.
+    StagingWorkbench stagingWorkbench(aiBrain, jobPipelines, stagedDocumentRepository,
+                                      jobApplicationRepository, careerHistoryRepository,
+                                      professionalDocumentRepository);
+
+    // Crushing a job starts its packet. The checklist costs nothing and needs
+    // no brain, so every crushed job has something in it from the first
+    // moment — and the two cheap questions (what is this, am I in with a
+    // chance) are asked straight away when a brain is connected.
+    QObject::connect(&jobPipelines, &JobPipelines::jobWasCrushed,
+                     &stagingWorkbench, &StagingWorkbench::startPacketFor);
+
+    JobSearchStatistics jobSearchStatistics(jobPipelines, stagedDocumentRepository);
+
     // --- ViewModel layer ----------------------------------------------------
     BrainChatConversationViewModel brainChatConversationViewModel(
         brainChatSession, aiBrain);
@@ -144,6 +166,12 @@ int main(int argc, char *argv[])
     WorkExperienceListViewModel workExperienceListViewModel(
         careerHistoryRepository, proDocsIntake);
     EducationListViewModel educationListViewModel(careerHistoryRepository, proDocsIntake);
+    StagedJobListViewModel stagedJobListViewModel(jobPipelines, stagedDocumentRepository,
+                                                  stagingWorkbench);
+    StagingPacketViewModel stagingPacketViewModel(stagingWorkbench, stagedDocumentRepository,
+                                                  jobPipelines, appPreferences,
+                                                  applicationDataFolderPath);
+    JobSearchStatsViewModel jobSearchStatsViewModel(jobSearchStatistics, stagingWorkbench);
 
     // --- View layer: the QML engine ----------------------------------------
     QQmlApplicationEngine qmlEngine;
@@ -175,6 +203,12 @@ int main(int argc, char *argv[])
           QVariant::fromValue(&workExperienceListViewModel) },
         { QStringLiteral("educationListViewModel"),
           QVariant::fromValue(&educationListViewModel) },
+        { QStringLiteral("stagedJobListViewModel"),
+          QVariant::fromValue(&stagedJobListViewModel) },
+        { QStringLiteral("stagingPacketViewModel"),
+          QVariant::fromValue(&stagingPacketViewModel) },
+        { QStringLiteral("jobSearchStatsViewModel"),
+          QVariant::fromValue(&jobSearchStatsViewModel) },
     });
 
     qmlEngine.loadFromModule("JobCrush", "Main");

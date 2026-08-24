@@ -23,6 +23,9 @@ Window {
     required property var professionalDocumentListViewModel
     required property var workExperienceListViewModel
     required property var educationListViewModel
+    required property var stagedJobListViewModel
+    required property var stagingPacketViewModel
+    required property var jobSearchStatsViewModel
 
     width: 1280
     height: 800
@@ -105,6 +108,33 @@ Window {
         professionalDocumentListViewModel: applicationWindow.professionalDocumentListViewModel
         workExperienceListViewModel: applicationWindow.workExperienceListViewModel
         educationListViewModel: applicationWindow.educationListViewModel
+    }
+
+    StagingPage {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: navigationSidebar.right
+        anchors.leftMargin: 1
+        anchors.right: parent.right
+        visible: applicationWindow.currentPageName === "staging"
+        stagedJobListViewModel: applicationWindow.stagedJobListViewModel
+        stagingPacketViewModel: applicationWindow.stagingPacketViewModel
+    }
+
+    StatsPage {
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: navigationSidebar.right
+        anchors.leftMargin: 1
+        anchors.right: parent.right
+        visible: applicationWindow.currentPageName === "stats"
+        jobSearchStatsViewModel: applicationWindow.jobSearchStatsViewModel
+
+        // Recount when the page is opened rather than on a timer. The numbers
+        // cannot change while somebody is looking at another screen, and a
+        // dashboard that recomputes itself every few seconds is a dashboard
+        // burning battery to tell you nothing new.
+        onVisibleChanged: if (visible) jobSearchStatsViewModel.refresh()
     }
 
     // ------------------------------------------------------------------

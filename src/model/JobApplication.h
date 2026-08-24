@@ -17,4 +17,10 @@ struct JobApplication {
     QDateTime targetedTimestamp;          // when the user crushed it onto the board
     QDateTime appliedTimestamp;           // when the human actually sent it (invalid until then)
     QString notesText;                    // the user's own running notes
+
+    // How well the user's history matches this posting, 0-100, as scored by
+    // the AI. -1 means it has not been scored. That is different from a score
+    // of zero, and the two must stay distinguishable: an unscored job must not
+    // sort below a job that scored badly.
+    int fitScorePercent = -1;
 };

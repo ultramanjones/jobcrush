@@ -2,6 +2,7 @@
 
 #include <QRegularExpression>
 
+#include "InstitutionWords.h"
 #include "PlainTextNormalizer.h"
 
 namespace {
@@ -312,49 +313,18 @@ QString credentialPhraseIn(const QString &line)
     return line.mid(match.capturedStart(0), matchEnd - match.capturedStart(0)).trimmed();
 }
 
-// The words that mark an institution. One list, so the detector below and
-// the splitter below THAT can never disagree about what a school looks like.
-const QStringList &wordsThatNameASchool()
-{
-    static const QStringList schoolWords = {
-        QStringLiteral("university"), QStringLiteral("college"), QStringLiteral("institute"),
-        QStringLiteral("academy"), QStringLiteral("school"), QStringLiteral("polytechnic"),
-        QStringLiteral("seminary"), QStringLiteral("conservatory"),
-        // "Univ Alabama Huntsville" is how it appears on a real transcript;
-        // matching only the full word would have missed it entirely.
-        QStringLiteral("univ"),
-    };
-    return schoolWords;
-}
-
+// The words that mark an institution now live in InstitutionWords.h, because
+// the transcript reader needs the same list. Two copies would drift apart and
+// the failure would be silent: a school one reader knows and the other does
+// not.
 bool looksLikeSchoolName(const QString &piece)
 {
-    const QString loweredPiece = piece.toLower();
-    for (const QString &schoolWord : wordsThatNameASchool()) {
-        if (loweredPiece.contains(schoolWord)) {
-            return true;
-        }
-    }
-    return false;
+    return InstitutionWords::namesASchool(piece);
 }
 
-// One word, stripped of the punctuation transcripts sprinkle around, asked
-// whether it is the word that names an institution.
 bool thisWordNamesASchool(const QString &word)
 {
-    QString bareWord = word.toLower();
-    static const QRegularExpression edgePunctuationPattern(
-        QStringLiteral("^[^a-z]+|[^a-z]+$"));
-    bareWord.remove(edgePunctuationPattern);
-    if (bareWord.isEmpty()) {
-        return false;
-    }
-    for (const QString &schoolWord : wordsThatNameASchool()) {
-        if (bareWord == schoolWord || bareWord == schoolWord + QStringLiteral("s")) {
-            return true;
-        }
-    }
-    return false;
+    return InstitutionWords::thisWordNamesASchool(word);
 }
 
 // Small words that belong INSIDE an institution's name rather than ending it.

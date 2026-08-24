@@ -6,6 +6,7 @@
 
 #include "DocumentTextExtractor.h"
 #include "DroppedFileClassifier.h"
+#include "AcademicTranscriptReader.h"
 #include "ResumeInsightParser.h"
 
 class CareerHistoryRepository;
@@ -95,8 +96,13 @@ private:
 
     // Reads one document's text into work experience and education entries.
     // Returns how many entries came out of it.
+    // documentKind decides WHICH reader gets it. A transcript has no EDUCATION
+    // heading — the whole page is the education section — so the resume parser
+    // reads one as nothing at all. Telling the reader what it is holding is
+    // the whole fix.
     int recordInsightsFromDocument(qint64 professionalDocumentId,
-                                   const QString &documentText);
+                                   const QString &documentText,
+                                   const QString &documentKind);
 
     ProfessionalDocumentRepository &repository;
     CareerHistoryRepository &careerHistoryRepository;
@@ -105,4 +111,5 @@ private:
     DocumentTextExtractor textExtractor;
     DroppedFileClassifier fileClassifier;
     ResumeInsightParser resumeParser;
+    AcademicTranscriptReader transcriptReader;
 };

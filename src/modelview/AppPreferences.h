@@ -25,9 +25,24 @@ public:
     QString boardThemeName() const;
     void setBoardThemeName(const QString &themeName);
 
+    // The format used when exporting a packet: "docx" or "pdf". See
+    // ExportFormat.h. It is a saved default so the user is not asked on every
+    // export. The Staging page still shows both choices.
+    QString defaultDownloadFormat() const;
+    void setDefaultDownloadFormat(const QString &downloadFormat);
+
+    // Where exported packets are saved. Empty means use the default:
+    // Documents/Job Crush Packets.
+    QString exportFolderPath() const;
+    void setExportFolderPath(const QString &folderPath);
+
 signals:
     void boardThemeNameChanged();
+    void defaultDownloadFormatChanged();
+    void exportFolderPathChanged();
 
 private:
     QString selectedBoardThemeName = QStringLiteral("classic");
+    QString selectedDownloadFormat = QStringLiteral("docx");
+    QString selectedExportFolderPath;
 };

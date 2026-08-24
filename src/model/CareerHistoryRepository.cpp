@@ -292,8 +292,8 @@ bool CareerHistoryRepository::educationRecordAlreadyRecorded(
     if (educationRecord.sourceLineText.trimmed().isEmpty()) {
         return false;
     }
-    // The same two tests as above: the same line twice out of one document,
-    // or the same SCHOOLING arriving out of a second copy of the same resume.
+    // The same two tests as above: the same line twice from one document, or
+    // the same schooling from a second copy of the same resume.
     QSqlQuery lookupQuery(jobCrushDatabase.connection());
     lookupQuery.prepare(QStringLiteral(
         "SELECT 1 FROM educationRecord "

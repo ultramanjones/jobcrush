@@ -6,6 +6,12 @@ the moment it is asked for rather than the moment somebody gets round to it.
 
 A backlog nobody updates is a lie with a filename.
 
+**The solutions are researched.** `BACKLOG_RESEARCH.md`, in the "QtQuick App"
+planning folder, carries one section per item below: the endpoints, the field
+names, the licence traps and the decisions, so picking one up is implementation
+rather than investigation. Five findings in it change plans — read its opening
+section before starting anything here.
+
 ---
 
 ## Next up
@@ -110,6 +116,22 @@ shape has to be a catch-all into an Email Worker that reads the address and
 does the routing itself. Inbound messages are capped at 25 MiB.
 
 Ultra has details to work out first. Not started until he says so.
+
+**Google Calendar.** An interview earns a place in the calendar the user
+actually looks at. Requested 2026-08-23.
+
+Researched: **build the free version and it may be the only version needed.**
+An "Add to calendar" button on a job reaching Interview, offering a proper .ics
+file and a Google Calendar deep link the user confirms themselves. No Cloud
+project, no client secret, no verification, no tokens, no privacy policy — and
+it works with Outlook and Apple Calendar too, which matters when somebody's
+real calendar is their day job's. The full API version needs each user to
+bring their own Google credentials, because Google's own terms say developer
+credentials "may not be embedded in open source projects" and a shared one caps
+the whole app at 100 lifetime users.
+
+Upcoming interviews get listed from Job Crush's own database. We already have
+the data; no calendar API is needed to show our own interviews back to us.
 
 **Adding a job by hand, or by pasting the description in.** For the sites no
 API and no automation can reach. Somebody who found a job anywhere at all

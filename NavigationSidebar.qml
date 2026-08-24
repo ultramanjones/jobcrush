@@ -24,8 +24,8 @@ Rectangle {
         { pageName: "pipelines",   displayLabel: "Job Pipelines", phaseTag: "" },
         { pageName: "discoveries", displayLabel: "Discoveries", phaseTag: "" },
         { pageName: "proDocs",     displayLabel: "ProDocs",     phaseTag: "" },
-        { pageName: "staging",     displayLabel: "Staging",     phaseTag: "Phase 5" },
-        { pageName: "stats",       displayLabel: "Stats",       phaseTag: "Phase 7" },
+        { pageName: "staging",     displayLabel: "Staging",     phaseTag: "" },
+        { pageName: "stats",       displayLabel: "Stats",       phaseTag: "" },
         { pageName: "brainChat",   displayLabel: "Brain Chat",  phaseTag: "" },
         { pageName: "settings",    displayLabel: "Settings",    phaseTag: "" }
     ]

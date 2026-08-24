@@ -32,6 +32,7 @@ JobApplication jobApplicationFromQueryRow(const QSqlQuery &row)
     jobApplication.appliedTimestamp = QDateTime::fromString(
         row.value(QStringLiteral("appliedTimestamp")).toString(), Qt::ISODate);
     jobApplication.notesText = row.value(QStringLiteral("notesText")).toString();
+    jobApplication.fitScorePercent = row.value(QStringLiteral("fitScorePercent")).toInt();
     return jobApplication;
 }
 
@@ -126,6 +127,22 @@ bool JobApplicationRepository::updateAppliedTimestamp(qint64 jobApplicationId,
                               : QString::fromLatin1(""));
     updateQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
     return updateQuery.exec();
+}
+
+bool JobApplicationRepository::updateFitScorePercent(qint64 jobApplicationId,
+                                                     int fitScorePercent)
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE jobApplication SET fitScorePercent = :fitScorePercent "
+        "WHERE jobApplicationId = :jobApplicationId"));
+    updateQuery.bindValue(QStringLiteral(":fitScorePercent"), fitScorePercent);
+    updateQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
+    if (!updateQuery.exec()) {
+        lastErrorDescription = updateQuery.lastError().text();
+        return false;
+    }
+    return true;
 }
 
 bool JobApplicationRepository::removeJobApplication(qint64 jobApplicationId)

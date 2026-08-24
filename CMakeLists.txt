@@ -35,6 +35,9 @@ qt_add_executable(jobcrush
     src/model/EducationRecord.h
     src/model/CareerHistoryRepository.h
     src/model/CareerHistoryRepository.cpp
+    src/model/StagedDocument.h
+    src/model/StagedDocumentRepository.h
+    src/model/StagedDocumentRepository.cpp
 
     # ModelView layer — the whole back end
     src/modelview/AppPreferences.h
@@ -89,10 +92,28 @@ qt_add_executable(jobcrush
     src/modelview/pipelines/JobPipelines.h
     src/modelview/pipelines/JobPipelines.cpp
     src/modelview/prodocs/PlainTextNormalizer.h
+    src/modelview/prodocs/InstitutionWords.h
     src/modelview/prodocs/ResumeInsightParser.h
     src/modelview/prodocs/ResumeInsightParser.cpp
+    src/modelview/prodocs/AcademicTranscriptReader.h
+    src/modelview/prodocs/AcademicTranscriptReader.cpp
     src/modelview/prodocs/ProDocsIntake.h
     src/modelview/prodocs/ProDocsIntake.cpp
+    src/modelview/tasks/AiBrainTask.h
+    src/modelview/tasks/PostingRequirementReader.h
+    src/modelview/tasks/TaskInstructionWriter.h
+    src/modelview/tasks/TaskInstructionWriter.cpp
+    src/modelview/tasks/TaskReplyReader.h
+    src/modelview/tasks/TaskReplyReader.cpp
+    src/modelview/tasks/StagingWorkbench.h
+    src/modelview/tasks/StagingWorkbench.cpp
+    src/modelview/exporting/ExportFormat.h
+    src/modelview/exporting/MarkdownDocumentReader.h
+    src/modelview/exporting/ZipArchiveWriter.h
+    src/modelview/exporting/PacketExporter.h
+    src/modelview/exporting/PacketExporter.cpp
+    src/modelview/stats/JobSearchStatistics.h
+    src/modelview/stats/JobSearchStatistics.cpp
 
     # ViewModel layer — translation and organization only
     src/viewmodel/BrainChatConversationViewModel.h
@@ -117,6 +138,12 @@ qt_add_executable(jobcrush
     src/viewmodel/WorkExperienceListViewModel.cpp
     src/viewmodel/EducationListViewModel.h
     src/viewmodel/EducationListViewModel.cpp
+    src/viewmodel/StagedJobListViewModel.h
+    src/viewmodel/StagedJobListViewModel.cpp
+    src/viewmodel/StagingPacketViewModel.h
+    src/viewmodel/StagingPacketViewModel.cpp
+    src/viewmodel/JobSearchStatsViewModel.h
+    src/viewmodel/JobSearchStatsViewModel.cpp
 )
 
 target_include_directories(jobcrush PRIVATE src)
@@ -150,6 +177,8 @@ qt_add_qml_module(jobcrush
         DiscoveriesPage.qml
         JobPipelinesPage.qml
         ProDocsPage.qml
+        StagingPage.qml
+        StatsPage.qml
         SettingsPage.qml
         InlineEditField.qml
         TokenEntryField.qml

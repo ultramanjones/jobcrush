@@ -34,6 +34,11 @@ public:
     // and this is a fact about the world.
     bool updateAppliedTimestamp(qint64 jobApplicationId, const QDateTime &appliedTimestamp);
 
+    // Saves the AI's fit score, 0-100. Stored on the campaign, not in the
+    // packet, because things that never open a packet need it: board sorting
+    // and the Stats page.
+    bool updateFitScorePercent(qint64 jobApplicationId, int fitScorePercent);
+
     // Takes a campaign off the board. The posting it targeted is untouched.
     bool removeJobApplication(qint64 jobApplicationId);
 

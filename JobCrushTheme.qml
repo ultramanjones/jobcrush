@@ -151,7 +151,7 @@ QtObject {
         if (isGrayscale)  return "#C9CED9"
         if (isFruitLoops) return "#FF6600"   // Lively Orange
         if (isAmish)      return "#3B5973"   // Amish Sunday Blue, at full strength
-        if (isTraceOnTwo) return "#F7DC97"   // Clueless Yellow
+        if (isTraceOnTwo) return "#f0b432"   // Clueless Yellow
         if (isTraceOn)    return "#00F0FF"   // standard program glow
         return "#35D6EE"                     // cyan
     }

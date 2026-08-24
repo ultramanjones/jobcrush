@@ -12,11 +12,10 @@ class JobPostingRepository;
 
 // TargetedJob
 //
-// One card on the board: the campaign AND the job it is aimed at, already
-// joined. Nothing above this layer should have to hold an application in one
-// hand and go looking for its posting with the other — a card with a company
-// name missing because a second lookup failed is not a card, it is a bug with
-// rounded corners.
+// One card on the board: the campaign and the job posting it targets, already
+// joined. Nothing above this layer should have to look up the posting
+// separately. A card missing its company name because a second lookup failed
+// is a bug the user sees.
 struct TargetedJob {
     JobApplication campaign;
     JobPosting posting;
@@ -94,6 +93,14 @@ public:
 signals:
     // The board changed: a card arrived, moved, or left.
     void boardChanged();
+
+    // A job was just crushed onto the board. Carries the new campaign id.
+    //
+    // Separate from boardChanged because they mean different things:
+    // boardChanged means redraw, this means a new campaign started.
+    // StagingWorkbench listens for this and starts the packet. It only fires
+    // on a real crush, never when a duplicate crush is refused.
+    void jobWasCrushed(qint64 jobApplicationId);
 
 private:
     JobApplicationRepository &campaignRepository;

@@ -23,7 +23,7 @@ namespace {
 //      word, so two schools on one line became one school with a strange
 //      name. Explicit "|" field separators are no longer second-guessed, and
 //      a run of spaces is now read as the column gap it is.
-constexpr int currentInsightsReaderVersion = 3;
+constexpr int currentInsightsReaderVersion = 4;
 
 // Where the last-used reader version is remembered. QSettings alongside the
 // rest of the app's preferences — this is a fact about the installation, not
@@ -124,7 +124,8 @@ QString ProDocsIntake::acceptDroppedFiles(const QStringList &droppedFilePaths)
         ++acceptedCount;
 
         const int entriesRead = recordInsightsFromDocument(
-            professionalDocument.professionalDocumentId, extraction.extractedText);
+            professionalDocument.professionalDocumentId, extraction.extractedText,
+            professionalDocument.documentKind);
         repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
         if (entriesRead > 0) {
             emit careerHistoryChanged();
@@ -163,13 +164,26 @@ QString ProDocsIntake::allDocumentTextJoined() const
 }
 
 int ProDocsIntake::recordInsightsFromDocument(qint64 professionalDocumentId,
-                                              const QString &documentText)
+                                              const QString &documentText,
+                                              const QString &documentKind)
 {
     if (documentText.trimmed().isEmpty()) {
         return 0;
     }
 
-    const ParsedResumeInsights parsedInsights = resumeParser.parseResumeText(documentText);
+    // A transcript goes to the reader that knows what one looks like. If that
+    // reader does not recognise it — a document filed as a transcript that
+    // turns out to be something else, which classification gets wrong often
+    // enough to matter — the resume parser gets its turn rather than the user
+    // getting nothing.
+    ParsedResumeInsights parsedInsights;
+    if (documentKind == DocumentKind::Transcript) {
+        parsedInsights = transcriptReader.parseTranscriptText(documentText);
+    }
+    if (parsedInsights.educationRecords.isEmpty()
+            && parsedInsights.workExperiences.isEmpty()) {
+        parsedInsights = resumeParser.parseResumeText(documentText);
+    }
     int storedEntryCount = 0;
 
     // Reading a document twice must not say everything twice.
@@ -215,7 +229,8 @@ int ProDocsIntake::readAnyDocumentsNotReadYet()
             continue;
         }
         entriesFound += recordInsightsFromDocument(
-            professionalDocument.professionalDocumentId, professionalDocument.extractedText);
+            professionalDocument.professionalDocumentId, professionalDocument.extractedText,
+            professionalDocument.documentKind);
         repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
     }
 
@@ -270,7 +285,8 @@ QString ProDocsIntake::rereadEveryDocument()
         }
         ++documentsRead;
         entriesFound += recordInsightsFromDocument(
-            professionalDocument.professionalDocumentId, professionalDocument.extractedText);
+            professionalDocument.professionalDocumentId, professionalDocument.extractedText,
+            professionalDocument.documentKind);
         repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
     }
 
