@@ -36,10 +36,11 @@ QtObject {
     readonly property ThemeAmish amishTheme: ThemeAmish {}
     readonly property ThemeTraceOn traceOnTheme: ThemeTraceOn {}
     readonly property ThemeTraceOnTwo traceOnTwoTheme: ThemeTraceOnTwo {}
+    readonly property ThemeWraithWranglers wraithWranglersTheme: ThemeWraithWranglers {}
 
     readonly property var everyTheme: [
         classicTheme, grayscaleTheme, fruitLoopsTheme,
-        amishTheme, traceOnTheme, traceOnTwoTheme
+        amishTheme, traceOnTheme, traceOnTwoTheme, wraithWranglersTheme
     ]
 
     // The theme that is on right now. An unknown name falls back to Classic,

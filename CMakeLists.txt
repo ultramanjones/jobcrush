@@ -179,6 +179,7 @@ qt_add_qml_module(jobcrush
         ThemeAmish.qml
         ThemeTraceOn.qml
         ThemeTraceOnTwo.qml
+        ThemeWraithWranglers.qml
         NavigationSidebar.qml
         BrainChatPage.qml
         DiscoveriesPage.qml
