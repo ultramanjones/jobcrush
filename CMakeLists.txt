@@ -135,6 +135,11 @@ qt_add_executable(jobcrush
     src/modelview/exporting/ExportFormat.h
     src/modelview/exporting/MarkdownDocumentReader.h
     src/modelview/exporting/ZipArchiveWriter.h
+    src/modelview/exporting/FormattedDocumentWriter.h
+    src/modelview/exporting/FormattedDocumentWriter.cpp
+    src/modelview/exporting/DocumentConverter.h
+    src/modelview/exporting/DocumentConverter.cpp
+    src/modelview/exporting/ExportFolder.h
     src/modelview/exporting/PacketExporter.h
     src/modelview/exporting/PacketExporter.cpp
     src/modelview/stats/JobSearchStatistics.h
@@ -189,7 +194,7 @@ if (MINGW)
 endif()
 
 # The theme singleton must be declared as such before qt_add_qml_module.
-set_source_files_properties(JobCrushTheme.qml PROPERTIES
+set_source_files_properties(src/view/JobCrushTheme.qml PROPERTIES
     QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -197,28 +202,28 @@ qt_add_qml_module(jobcrush
     URI JobCrush
     VERSION 1.0
     QML_FILES
-        Main.qml
-        JobCrushTheme.qml
-        ThemePalette.qml
-        ThemeClassic.qml
-        ThemeGrayscale.qml
-        ThemeFruitLoops.qml
-        ThemeAmish.qml
-        ThemeTraceOn.qml
-        ThemeTraceOnTwo.qml
-        ThemeWraithWranglers.qml
-        NavigationSidebar.qml
-        BrainChatPage.qml
-        DiscoveriesPage.qml
-        JobPipelinesPage.qml
-        ProDocsPage.qml
-        StagingPage.qml
-        StatsPage.qml
-        SettingsPage.qml
-        AddOneJobPanel.qml
-        InlineEditField.qml
-        TokenEntryField.qml
-        VerticalScrollBar.qml
+        src/view/Main.qml
+        src/view/JobCrushTheme.qml
+        src/view/ThemePalette.qml
+        src/view/ThemeClassic.qml
+        src/view/ThemeGrayscale.qml
+        src/view/ThemeFruitLoops.qml
+        src/view/ThemeAmish.qml
+        src/view/ThemeTraceOn.qml
+        src/view/ThemeTraceOnTwo.qml
+        src/view/ThemeWraithWranglers.qml
+        src/view/NavigationSidebar.qml
+        src/view/BrainChatPage.qml
+        src/view/DiscoveriesPage.qml
+        src/view/JobPipelinesPage.qml
+        src/view/ProDocsPage.qml
+        src/view/StagingPage.qml
+        src/view/StatsPage.qml
+        src/view/SettingsPage.qml
+        src/view/AddOneJobPanel.qml
+        src/view/InlineEditField.qml
+        src/view/TokenEntryField.qml
+        src/view/VerticalScrollBar.qml
 )
 
 # The icon the app carries at RUNTIME — the one Windows shows in the taskbar

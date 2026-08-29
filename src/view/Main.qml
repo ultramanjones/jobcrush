@@ -1,4 +1,5 @@
 import QtQuick
+import JobCrush
 
 // Main
 //
@@ -241,15 +242,16 @@ Window {
         }
     }
 
-    // What became of the last drop, in the app's own words — including the
-    // parts that are bad news. It waits to be dismissed rather than fading:
-    // "that PDF is a scan and has no text in it" is precisely the sentence a
-    // timer must not be allowed to take away.
+    // What ProDocs last did, in the app's own words — a file dropped, or a
+    // copy saved out — including the parts that are bad news. It waits to be
+    // dismissed rather than fading: "that PDF is a scan and has no text in it"
+    // is precisely the sentence a timer must not be allowed to take away, and
+    // a path to a file the user is about to go and open is another.
     Rectangle {
         id: dropOutcomeNotice
 
         readonly property string outcomeText:
-            applicationWindow.professionalDocumentListViewModel.lastDropOutcomeText
+            applicationWindow.professionalDocumentListViewModel.lastProDocsOutcomeText
 
         property bool dismissed: false
 

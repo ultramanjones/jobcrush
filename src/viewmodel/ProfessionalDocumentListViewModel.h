@@ -6,7 +6,9 @@
 #include <QStringList>
 
 #include "../model/ProfessionalDocument.h"
+#include "../modelview/exporting/DocumentConverter.h"
 
+class AppPreferences;
 class ProDocsIntake;
 class ProfessionalDocumentRepository;
 
@@ -22,10 +24,11 @@ class ProfessionalDocumentListViewModel : public QAbstractListModel {
 
     Q_PROPERTY(int documentCount READ rowCountForProperty NOTIFY documentsChanged)
 
-    // What just happened to a dropped file, in one human sentence. The basket
-    // shows it verbatim, including the parts that are bad news.
-    Q_PROPERTY(QString lastDropOutcomeText READ lastDropOutcomeText
-                   NOTIFY lastDropOutcomeChanged)
+    // What just happened on this page, in one human sentence: a file that was
+    // dropped, or a copy that was saved out. The notice shows it verbatim,
+    // including the parts that are bad news.
+    Q_PROPERTY(QString lastProDocsOutcomeText READ lastProDocsOutcomeText
+                   NOTIFY lastProDocsOutcomeChanged)
 
 public:
     enum DocumentRole {
@@ -41,6 +44,8 @@ public:
 
     ProfessionalDocumentListViewModel(ProfessionalDocumentRepository &documentRepository,
                                       ProDocsIntake &intake,
+                                      AppPreferences &preferences,
+                                      const QString &applicationDataFolderPath,
                                       QObject *parent = nullptr);
 
     int rowCount(const QModelIndex &parentIndex = QModelIndex()) const override;
@@ -48,7 +53,7 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     int rowCountForProperty() const;
-    QString lastDropOutcomeText() const;
+    QString lastProDocsOutcomeText() const;
 
     // The drop basket hands over what landed on the window.
     Q_INVOKABLE void acceptDroppedFiles(const QStringList &droppedFilePaths);
@@ -69,15 +74,38 @@ public:
     // themselves survives it.
     Q_INVOKABLE void rereadEveryDocument();
 
+    // --- Saving a copy in another format ---
+
+    // The formats offered, in the order they are shown, and the one-word name
+    // that fits on a button.
+    Q_INVOKABLE QStringList selectableConversionFormats() const;
+    Q_INVOKABLE QString conversionFormatButtonName(const QString &format) const;
+
+    // Writes this document out as Word, PDF or plain text, into the folder
+    // Job Crush writes to. Reports what happened through
+    // lastProDocsOutcomeText, including the full path when it worked, because
+    // a file the user cannot find was not delivered.
+    Q_INVOKABLE void saveCopyOfDocumentAt(int rowIndex, const QString &format);
+
+    // The sentence shown next to the buttons, before anything is pressed. The
+    // page design does not survive a conversion and the user hears that from
+    // us first, not from the file.
+    Q_INVOKABLE QString warningAboutConversion() const;
+
 signals:
     void documentsChanged();
-    void lastDropOutcomeChanged();
+    void lastProDocsOutcomeChanged();
 
 private:
     void reloadDocuments();
 
+    void reportOutcome(const QString &outcomeText);
+
     ProfessionalDocumentRepository &repository;
     ProDocsIntake &proDocsIntake;
+    AppPreferences &appPreferences;
+    const QString applicationDataFolderPath;
+    DocumentConverter documentConverter;
     QList<ProfessionalDocument> loadedDocuments;
-    QString storedLastDropOutcomeText;
+    QString storedLastProDocsOutcomeText;
 };

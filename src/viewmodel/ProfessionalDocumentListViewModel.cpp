@@ -2,11 +2,17 @@
 
 #include <QDate>
 #include <QDesktopServices>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QLocale>
+#include <QRegularExpression>
 #include <QUrl>
 
 #include "../model/ProfessionalDocumentRepository.h"
+#include "../modelview/AppPreferences.h"
+#include "../modelview/exporting/ExportFolder.h"
+#include "../modelview/exporting/ExportFormat.h"
 #include "../modelview/prodocs/DocumentKind.h"
 #include "../modelview/prodocs/ProDocsIntake.h"
 
@@ -62,10 +68,14 @@ QString wordCountTextFor(const QString &extractedText)
 ProfessionalDocumentListViewModel::ProfessionalDocumentListViewModel(
     ProfessionalDocumentRepository &documentRepository,
     ProDocsIntake &intake,
+    AppPreferences &preferences,
+    const QString &dataFolderPath,
     QObject *parent)
     : QAbstractListModel(parent)
     , repository(documentRepository)
     , proDocsIntake(intake)
+    , appPreferences(preferences)
+    , applicationDataFolderPath(dataFolderPath)
 {
     connect(&proDocsIntake, &ProDocsIntake::professionalDocumentsChanged,
             this, [this]() { reloadDocuments(); });
@@ -127,9 +137,15 @@ int ProfessionalDocumentListViewModel::rowCountForProperty() const
     return loadedDocuments.count();
 }
 
-QString ProfessionalDocumentListViewModel::lastDropOutcomeText() const
+QString ProfessionalDocumentListViewModel::lastProDocsOutcomeText() const
 {
-    return storedLastDropOutcomeText;
+    return storedLastProDocsOutcomeText;
+}
+
+void ProfessionalDocumentListViewModel::reportOutcome(const QString &outcomeText)
+{
+    storedLastProDocsOutcomeText = outcomeText;
+    emit lastProDocsOutcomeChanged();
 }
 
 void ProfessionalDocumentListViewModel::acceptDroppedFiles(const QStringList &droppedFilePaths)
@@ -145,8 +161,7 @@ void ProfessionalDocumentListViewModel::acceptDroppedFiles(const QStringList &dr
                                                        : droppedFilePath);
     }
 
-    storedLastDropOutcomeText = proDocsIntake.acceptDroppedFiles(localFilePaths);
-    emit lastDropOutcomeChanged();
+    reportOutcome(proDocsIntake.acceptDroppedFiles(localFilePaths));
 }
 
 QStringList ProfessionalDocumentListViewModel::selectableDocumentKinds() const
@@ -204,6 +219,58 @@ void ProfessionalDocumentListViewModel::rereadEveryDocument()
 {
     // The same one-sentence channel a drop uses, because it answers the same
     // question: what did Job Crush just do with my documents?
-    storedLastDropOutcomeText = proDocsIntake.rereadEveryDocument();
-    emit lastDropOutcomeChanged();
+    reportOutcome(proDocsIntake.rereadEveryDocument());
+}
+
+QStringList ProfessionalDocumentListViewModel::selectableConversionFormats() const
+{
+    return ExportFormat::everyConversionFormat();
+}
+
+QString ProfessionalDocumentListViewModel::conversionFormatButtonName(
+    const QString &format) const
+{
+    return ExportFormat::buttonNameFor(format);
+}
+
+QString ProfessionalDocumentListViewModel::warningAboutConversion() const
+{
+    return QStringLiteral("You get the words, not the page design — a two-column "
+                          "resume comes out as one column. Your original is untouched.");
+}
+
+void ProfessionalDocumentListViewModel::saveCopyOfDocumentAt(int rowIndex,
+                                                             const QString &format)
+{
+    if (rowIndex < 0 || rowIndex >= loadedDocuments.count()) {
+        return;
+    }
+
+    const ProfessionalDocument &document = loadedDocuments.at(rowIndex);
+
+    // The name the user already knows this document by, with anything the
+    // filesystem refuses taken out.
+    QString baseName = QFileInfo(document.displayName).completeBaseName();
+    baseName.remove(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")));
+    baseName = baseName.trimmed();
+    if (baseName.isEmpty()) {
+        baseName = QStringLiteral("Job Crush document");
+    }
+
+    const DocumentConverter::ConversionOutcome outcome = documentConverter.convertToFile(
+        document.extractedText,
+        baseName,
+        format,
+        ExportFolder::folderJobCrushWritesTo(appPreferences, applicationDataFolderPath));
+
+    if (!outcome.succeeded) {
+        reportOutcome(outcome.reasonText + QStringLiteral("  ") + outcome.whatToDoNextText);
+        return;
+    }
+
+    // The full path, not "saved". A file somebody cannot find was not
+    // delivered, and this is the sentence they will read to go and get it.
+    reportOutcome(QStringLiteral("Saved a %1 copy: %2")
+                      .arg(ExportFormat::displayNameFor(format),
+                           QDir::toNativeSeparators(outcome.writtenFilePath)));
 }

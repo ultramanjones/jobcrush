@@ -65,12 +65,148 @@ shown. The tab is the tidier home for it.
 
 **11. OCR for scanned documents.** People scan real-world paper and find it
 useless in the digital world — the transcript that started this was a photo of
-a page, and Job Crush could only tell them so. Must not spend the user's AI
-credits to do it.
+a page, and Job Crush could only tell them so. Local OCR must not spend the
+user's AI credits: nothing reaches for the brain on its own. Handing the page
+to Moonlight instead is a separate, offered choice the user makes knowingly,
+and on hard pages — handwriting, odd layouts — it is the better reader. See
+item 14.
+
+**12. Paste any text and let Moonlight fill the form in.** On "Add a job", a
+box where the user pastes an email, a job alert, a recruiter message or a
+posting copied off a page no API can reach. With a brain connected, Moonlight
+reads it and fills in company, title, location, salary, remote or not, the
+link, the posting date and the description. Anything it cannot find in the text
+is left empty and marked as still needing the user — it never guesses a field.
+Once the fields are filled, item 13 goes looking for the employer's own posting
+of the same job.
+Two things have to come first: "Add a job" today has only a link box and
+company/title boxes, so the full set of editable fields has to exist before
+anything can fill them; and with no brain connected the paste box greys out and
+says why, same rule as item 6.
+
+**13. Every job knows where it can be applied to, and Staging hands them
+over.** A job can be reachable in more than one place at once: the aggregator
+that found it (USAJOBS, Remotive, Jobicy) and the employer's own posting. Both
+are worth keeping. The employer's own board is the source of truth — it is
+current, it is not a rewrite, and it is where a lot of people would rather
+apply — but the aggregator link is the one that was actually verified to exist,
+and some people prefer applying there. Job Crush offers both and the user
+picks.
+
+Three parts:
+
+*Finding them.* `CanonicalPostingResolver` already guesses the employer's
+Greenhouse, Lever or Ashby account from the company name and matches by title.
+It runs today only at the moment a job is added by hand, and it REPLACES the
+lead with what it finds. Both of those change: it runs for any job, and it adds
+what it finds instead of overwriting. Where the account guess fails and a brain
+is connected, Moonlight gets asked — a person reads "The Home Depot" and knows
+to try `homedepot`; a string rule does not. The same hunt widens to the sources
+that take search terms (Remotive, Jobicy, and USAJOBS by keyword and
+organization; Arbeitnow has no search).
+
+*Storing them.* `JobPosting.sourceUrl` is one link and this is a list, so
+apply routes become their own table: the job, the link, which site it is, and
+whether it is the employer's own. A route already known is not added twice.
+Finding nothing extra is a normal answer and leaves the job as it was.
+
+*Using them.* An **Apply:** block in Staging, next to "I've sent it" — a button
+per route, each naming where it goes ("Apply on USAJOBS", "Apply on Acme's own
+site"). That is the whole point of the step: Job Crush hands the user the cover
+letter written for this job AND the places to send it, in one screen, and the
+user chooses. A "search for this job elsewhere" button, on the job itself, runs
+the hunt again on demand for anything added before this existed or added
+without a brain connected.
+
+*When it runs.* On CRUSH, not on discovery. Settled 2026-08-28. A sweep turns
+up a lot of jobs that are not a real match — the scorer tries, but it is not
+perfect — and looking up the employer's own posting for every one of them
+spends bandwidth, and the user's AI credits, on jobs they were never going to
+open. Interest is the signal: the moment a job goes on the board, Job Crush
+goes and finds out more about it. Jobs sitting in Discoveries are left alone.
+The manual "search for this job elsewhere" button covers anything else.
+
+Paid and subscription sites become routes the day they are added; nothing about
+the block changes when they are.
+
+**14. Convert a document from one format to another.** Somebody asks for a Word
+copy and all the user has is a PDF. Today that means searching the web for a
+converter, landing on whichever ad-funded site paid for the top result, and
+uploading a document with their home address and their whole work history on it
+to a stranger. Job Crush should just do it.
+
+**This needs no brain and costs no credits.** Both halves already exist and are
+already shipped: `DocumentTextExtractor` reads PDF, .docx and plain text
+(ProDocs takes those drops today), and `ZipArchiveWriter` and `PacketExporter`
+write .docx and PDF (Staging exports those today). Nothing new has to be
+learned — the two ends have to be joined and given a button. It works with no
+AI connected, offline, and the document never leaves the machine, which is the
+whole selling point over the search-result converters.
+
+Where it goes: **ProDocs**, on each document — "Save a copy as ▸ Word / PDF /
+plain text". The file is already there; that is where a person will look for
+it. The Moonlight chat page should also accept a dropped file and do the same
+thing, because that is where people will ASK for it, but the chat page is the
+second door, not the feature.
+
+*What the plain conversion cannot do, and what to offer instead.* Two places
+this falls short, and neither one is allowed to end in an apology. When all
+else fails, be helpful — we can do these, so we say so, and the way to do it is
+one click away and not a paragraph of instructions.
+
+**The page design does not survive.** The words come out of the PDF and a new
+Word file is built from them; nothing carries the fonts, the columns, the
+margins or the rules. A two-column resume becomes one column of plain text. The
+button says that before it runs, and next to it: *"Want it to look right?
+Moonlight can lay it out properly."* Moonlight is handed the extracted words
+and writes them back as a structured document — headings, dates, bullets in the
+right places — which `MarkdownDocumentReader` and `PacketExporter` already turn
+into a .docx. It is not a copy of the original PDF and is not sold as one. It
+is a clean, well-shaped Word resume, which is what the person actually wanted.
+
+**A scanned PDF has no words in it at all.** It is a picture of a page. The
+message says exactly that, then how much of the document is affected, then the
+way out — and the way out is a button sitting right there, not an instruction:
+*"Moonlight can read this. Do it now?"* One click and it is done. A connected
+brain looks at the image and reads it back as text; on handwriting and odd
+layouts it beats the OCR in item 11 outright. The user is told it spends their
+AI credits before it runs, and chooses. Typing it in by hand stays on the
+screen as the other option, because somebody with no brain connected still
+needs a way forward — but it is no longer the ONLY thing we can offer, and it
+stops being the headline.
+
+Two things in the existing detector have to change for this:
+
+*Count the pages, not the document.* `extractFromPortableDocument` adds up the
+text from every page and compares the total against 40 characters. A five-page
+PDF with one real text page and four scans clears 40 easily and is reported as
+read, with four fifths of it silently missing — worse than a full scan, because
+a full scan at least tells the user. Count the pages that gave nothing and say
+it: *"3 of the 5 pages in this PDF are pictures, so Job Crush could not read
+them."* Then the same button.
+
+*The current message is now wrong.* It ends with "if a scan is all you have,
+type the important parts into Experience & Education yourself", which was true
+when nothing could read a picture. It stops being the last resort the day
+Moonlight can read one. That paragraph is where the offer goes.
+
+Neither offer appears when no brain is connected. There the message says what
+is missing and how to connect one, same rule as item 6.
+
+**15. A hints strip on the Moonlight chat page.** A small line near the bottom
+naming one thing Moonlight or Job Crush can do that the user has not found —
+"Drop a PDF here and ask for a Word copy", "Paste a job email into Add a job
+and I will fill the form in". Rotates, and dismissible. Written last, once the
+features it advertises exist, because a hint pointing at something that is not
+there is worse than no hint.
 
 ---
 
 ## Shipped
+
+Adding a job by hand. Discoveries → "Add a job" takes a link, or a company and
+a title typed off an alert email, and saves what the user gave it when no board
+match comes back. Pasting a whole description in and having it read is item 12.
 
 The Job Pipelines board (what used to be Phase 4): five columns, cards dragged
 between them, notes on each card, and CRUSH on every Discoveries row to put a
@@ -132,12 +268,6 @@ the whole app at 100 lifetime users.
 
 Upcoming interviews get listed from Job Crush's own database. We already have
 the data; no calendar API is needed to show our own interviews back to us.
-
-**Adding a job by hand, or by pasting the description in.** For the sites no
-API and no automation can reach. Somebody who found a job anywhere at all
-should be able to put it on their board and track it like any other — an app
-that only tracks the jobs IT found is an app that quietly tells people their
-real leads do not count.
 
 **Paid and subscription job sources.** Not v1, not alpha. Later.
 

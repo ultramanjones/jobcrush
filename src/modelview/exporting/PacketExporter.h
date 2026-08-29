@@ -5,7 +5,7 @@
 
 #include "../../model/StagedDocument.h"
 #include "ExportFormat.h"
-#include "MarkdownDocumentReader.h"
+#include "FormattedDocumentWriter.h"
 
 // PacketExporter
 //
@@ -42,13 +42,5 @@ public:
     QString assembledMarkdownFor(const QList<StagedDocument> &packet) const;
 
 private:
-    bool writeWordDocument(const QString &markdownText,
-                           const QString &filePath,
-                           QString &reasonText) const;
-
-    bool writePortableDocument(const QString &markdownText,
-                               const QString &filePath,
-                               QString &reasonText) const;
-
-    MarkdownDocumentReader markdownReader;
+    FormattedDocumentWriter documentWriter;
 };

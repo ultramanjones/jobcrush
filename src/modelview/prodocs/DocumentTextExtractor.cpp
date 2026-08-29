@@ -16,6 +16,11 @@ namespace {
 // being a scan, but a scanned one yields almost nothing and must be caught.
 constexpr int fewestCharactersThatCountAsRealText = 40;
 
+// The same question asked of ONE page. A scanned page usually gives back
+// nothing at all, sometimes a stray character the renderer found in a margin,
+// so the bar is low but not zero.
+constexpr int fewestCharactersThatCountAsAPageOfWords = 25;
+
 } // namespace
 
 DocumentTextExtractor::ExtractionResult
@@ -39,38 +44,75 @@ DocumentTextExtractor::extractFromPortableDocument(const QString &filePath) cons
                                 "protected or damaged.") };
     }
 
+    // Counted page by page, not added up and judged at the end.
+    //
+    // A five-page PDF where page one is a real text cover sheet and pages two
+    // to five are scans clears any whole-document threshold easily, and would
+    // be reported as read with four fifths of it silently missing. That is
+    // worse than a document that fails outright, because a full scan at least
+    // tells the user something is wrong.
     QString allPagesText;
+    int pagesWithWords = 0;
+    int pagesThatArePictures = 0;
+
     for (int pageNumber = 0; pageNumber < portableDocument.pageCount(); ++pageNumber) {
         const QPdfSelection wholePage = portableDocument.getAllText(pageNumber);
-        if (!wholePage.text().isEmpty()) {
-            allPagesText += wholePage.text();
+        const QString pageText = wholePage.text();
+
+        if (pageText.trimmed().length() >= fewestCharactersThatCountAsAPageOfWords) {
+            ++pagesWithWords;
+        } else {
+            ++pagesThatArePictures;
+        }
+
+        if (!pageText.isEmpty()) {
+            allPagesText += pageText;
             allPagesText += QStringLiteral("\n");
         }
     }
 
-    if (allPagesText.trimmed().length() < fewestCharactersThatCountAsRealText) {
-        // A scan is a photograph of words, and there is nothing in the file to
-        // read. Say so — otherwise the user believes their experience loaded,
-        // wonders later why nothing matches, and blames the wrong thing.
-        // Wording matters here. An earlier version said "a version exported
-        // from Word or Google Docs will come in properly", which reads as
-        // "put THIS file through Google Docs and re-download it" — a round
-        // trip that adds no text and wastes the user's time. The fix is to
-        // find the ORIGINAL digital document, and the copy has to say that
-        // without leaving room for the other reading.
-        return { allPagesText,
-                 QStringLiteral("There's no text inside this PDF — it's a picture of "
-                                "the page, not words, so there's nothing for Job Crush "
-                                "to read. It's saved either way.  If you have the "
-                                "original digital copy — the file it was written in, or "
-                                "one you downloaded from a website or an email — drop "
-                                "that in too and it'll come straight through. Putting "
-                                "this scan through Word or Google Docs won't add text "
-                                "to it.  And if a scan is all you have, type the "
-                                "important parts into Experience & Education yourself — "
-                                "Job Crush will use those just the same.") };
+    ExtractionResult result;
+    result.extractedText = allPagesText;
+    result.pageCount = portableDocument.pageCount();
+    result.pagesThatArePictures = pagesThatArePictures;
+
+    // Nothing readable anywhere. The whole file is a photograph of paper.
+    //
+    // Wording matters here. An earlier version said "a version exported from
+    // Word or Google Docs will come in properly", which reads as "put THIS
+    // file through Google Docs and re-download it" — a round trip that adds no
+    // text and wastes the user's time. The fix is to find the ORIGINAL digital
+    // document, and the copy has to say that without leaving room for the
+    // other reading.
+    if (pagesWithWords == 0
+        || allPagesText.trimmed().length() < fewestCharactersThatCountAsRealText) {
+        result.pagesThatArePictures = result.pageCount;
+        result.note =
+            QStringLiteral("There's no text inside this PDF — it's a picture of the "
+                           "page, not words, so there's nothing for Job Crush to read "
+                           "on its own. It's saved either way.  If you have the "
+                           "original digital copy — the file it was written in, or one "
+                           "you downloaded from a website or an email — drop that in "
+                           "too and it'll come straight through. Putting this scan "
+                           "through Word or Google Docs won't add text to it.");
+        return result;
     }
-    return { allPagesText, QString() };
+
+    // Some of it read and some of it did not. Say which, and say how much:
+    // "some pages" leaves the user guessing whether the missing part was the
+    // job they most want counted.
+    if (pagesThatArePictures > 0) {
+        result.note =
+            QStringLiteral("%1 of the %2 pages in this PDF are pictures rather than "
+                           "words, so Job Crush read the rest and could not read those. "
+                           "Anything on them is missing from your experience and "
+                           "schooling.")
+                .arg(pagesThatArePictures)
+                .arg(result.pageCount);
+        return result;
+    }
+
+    return result;
 }
 
 DocumentTextExtractor::ExtractionResult
@@ -88,9 +130,10 @@ DocumentTextExtractor::extractTextFrom(const QString &filePath) const
     // One door in, one alphabet out. Every reader below hands its result
     // through the normalizer, so nothing downstream ever meets a non-breaking
     // space or somebody's favourite bullet glyph.
-    const ExtractionResult rawResult = extractTextFromFileByKind(filePath);
-    return { withEveryLookalikeCharacterNormalized(rawResult.extractedText),
-             rawResult.note };
+    ExtractionResult normalizedResult = extractTextFromFileByKind(filePath);
+    normalizedResult.extractedText =
+        withEveryLookalikeCharacterNormalized(normalizedResult.extractedText);
+    return normalizedResult;
 }
 
 DocumentTextExtractor::ExtractionResult

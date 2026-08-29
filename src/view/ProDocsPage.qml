@@ -1,4 +1,5 @@
 import QtQuick
+import JobCrush
 
 // ProDocsPage
 //
@@ -273,6 +274,107 @@ Rectangle {
                     color: JobCrushTheme.noticeTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     wrapMode: Text.Wrap
+                }
+
+                // Somebody asked for a Word copy and all they have is a PDF.
+                // Job Crush already read this document and already writes
+                // those formats, so it converts it here rather than sending
+                // the user off to whichever web converter paid for the top
+                // search result.
+                //
+                // Only offered when there are words to convert. A scan has
+                // none, and a button that cannot work is worse than no button.
+                Item {
+                    width: parent.width
+                    height: documentRow.hasReadableText ? saveCopyColumn.implicitHeight + 8 : 0
+                    visible: documentRow.hasReadableText
+
+                    Column {
+                        id: saveCopyColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        spacing: 4
+
+                        Row {
+                            id: saveCopyRow
+                            spacing: 8
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Save a copy as"
+                                color: JobCrushTheme.secondaryTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
+
+                            Repeater {
+                                model: proDocsPage.professionalDocumentListViewModel
+                                    .selectableConversionFormats()
+
+                                delegate: Rectangle {
+                                    id: saveCopyButton
+
+                                    required property var modelData
+
+                                    width: saveCopyButtonLabel.implicitWidth + 20
+                                    height: 24
+                                    radius: 12
+                                    color: saveCopyButtonMouseArea.containsMouse
+                                        ? JobCrushTheme.accentColor : "transparent"
+                                    border.width: 1
+                                    border.color: JobCrushTheme.accentColor
+
+                                    Text {
+                                        id: saveCopyButtonLabel
+                                        anchors.centerIn: parent
+                                        text: proDocsPage.professionalDocumentListViewModel
+                                            .conversionFormatButtonName(saveCopyButton.modelData)
+                                        color: saveCopyButtonMouseArea.containsMouse
+                                            ? JobCrushTheme.onAccentTextColor
+                                            : JobCrushTheme.accentColor
+                                        font.pixelSize: JobCrushTheme.smallFontSize
+                                    }
+
+                                    MouseArea {
+                                        id: saveCopyButtonMouseArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: proDocsPage.professionalDocumentListViewModel
+                                            .saveCopyOfDocumentAt(documentRow.index,
+                                                                  saveCopyButton.modelData)
+                                    }
+                                }
+                            }
+                        }
+
+                        // The limit, said before the button is pressed rather
+                        // than discovered when the file opens.
+                        Text {
+                            width: saveCopyColumn.width
+                            visible: saveCopyHoverArea.containsMouse
+                            text: proDocsPage.professionalDocumentListViewModel
+                                .warningAboutConversion()
+                            color: JobCrushTheme.mutedTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
+                        }
+                    }
+
+                    // Anchoring rules: an item may only anchor to its parent or a
+                    // sibling, and saveCopyRow is a child of saveCopyColumn. So this
+                    // anchors to the column (a sibling) and copies the row's size,
+                    // which lands on the same rectangle anchors.fill would have.
+                    MouseArea {
+                        id: saveCopyHoverArea
+                        anchors.left: saveCopyColumn.left
+                        anchors.top: saveCopyColumn.top
+                        anchors.margins: -4
+                        width: saveCopyRow.width + 8
+                        height: saveCopyRow.height + 8
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                    }
                 }
             }
 

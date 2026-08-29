@@ -169,7 +169,8 @@ int main(int argc, char *argv[])
     FollowedEmployerListViewModel followedEmployerListViewModel(followedEmployerRoster);
     JobSearchProfileViewModel jobSearchProfileViewModel(jobSearchProfile);
     ProfessionalDocumentListViewModel professionalDocumentListViewModel(
-        professionalDocumentRepository, proDocsIntake);
+        professionalDocumentRepository, proDocsIntake, appPreferences,
+        applicationDataFolderPath);
     WorkExperienceListViewModel workExperienceListViewModel(
         careerHistoryRepository, proDocsIntake);
     EducationListViewModel educationListViewModel(careerHistoryRepository, proDocsIntake);

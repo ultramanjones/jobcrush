@@ -4,11 +4,11 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QRegularExpression>
-#include <QStandardPaths>
 #include <QUrl>
 
 #include "../model/StagedDocumentRepository.h"
 #include "../modelview/AppPreferences.h"
+#include "../modelview/exporting/ExportFolder.h"
 #include "../modelview/exporting/PacketExporter.h"
 #include "../modelview/pipelines/JobPipelines.h"
 #include "../modelview/tasks/StagingWorkbench.h"
@@ -377,16 +377,7 @@ QString StagingPacketViewModel::downloadFormatDisplayName() const
 
 QString StagingPacketViewModel::folderExportsGoTo() const
 {
-    const QString chosenFolderPath = appPreferences.exportFolderPath();
-    if (!chosenFolderPath.trimmed().isEmpty()) {
-        return chosenFolderPath;
-    }
-    const QString documentsFolderPath =
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    if (documentsFolderPath.isEmpty()) {
-        return QDir(applicationDataFolderPath).filePath(QStringLiteral("packets"));
-    }
-    return QDir(documentsFolderPath).filePath(QStringLiteral("Job Crush Packets"));
+    return ExportFolder::folderJobCrushWritesTo(appPreferences, applicationDataFolderPath);
 }
 
 QString StagingPacketViewModel::exportFolderPath() const

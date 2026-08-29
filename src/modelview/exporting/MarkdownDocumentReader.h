@@ -69,6 +69,18 @@ public:
                 continue;
             }
 
+            // A backslash in front of a character that would otherwise be an
+            // instruction means the writer wanted the character itself. A
+            // resume line reading "#1 salesperson" is not a heading, and the
+            // backslash that protects it must not survive into the document.
+            static const QRegularExpression escapedFirstCharacter(
+                QStringLiteral("^\\\\([#>*_\\-+])"));
+            const QRegularExpressionMatch escapeMatch = escapedFirstCharacter.match(line);
+            if (escapeMatch.hasMatch()) {
+                paragraphLines.append(escapeMatch.captured(1) + line.mid(2));
+                continue;
+            }
+
             static const QRegularExpression headingPattern(QStringLiteral("^(#{1,6})\\s+(.*)$"));
             const QRegularExpressionMatch headingMatch = headingPattern.match(line);
             if (headingMatch.hasMatch()) {
