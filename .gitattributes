@@ -1,0 +1,13 @@
+# One law for line endings on every machine, so git never warns again.
+# Text files are stored in the repo as LF and checked out as LF.
+
+* text=auto eol=lf
+
+# Windows resource files are the one place CRLF is the native tongue.
+*.rc text eol=crlf
+
+# Binary files: never translated, never diffed as text.
+*.png binary
+*.ico binary
+*.pdf binary
+*.docx binary
