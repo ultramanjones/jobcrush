@@ -16,7 +16,25 @@ section before starting anything here.
 
 ## Next up
 
-**1. Transcripts produce nothing.** A resume has an EDUCATION heading; a
+**1. The applied date has to be editable.** Ultra, 2026-09-15: "If they do not
+drag and drop into Applied on the exact day they apply, they need an option to
+edit the apply date (or estimate). Let's not hold them to remembering that
+mechanic."
+
+Right now the date is stamped when the card reaches Applied, and that is the
+only way it is ever set. Drag the card three days after you actually sent the
+application and the board says you applied today. The user is not told, so the
+number is wrong and looks right — and every count on the Stats page is built on
+it. Nobody should have to remember to move a card on the correct day for their
+own records to be true.
+
+The date already exists as `JobApplication::appliedTimestamp` and the card
+already has an editable field pattern in `InlineEditField` (the Notes box), so
+this is a setter through `JobPipelines`, an invokable on
+`JobPipelineBoardViewModel`, and a field on the open card. Let the user type an
+estimate; an estimate they chose beats a date the app invented.
+
+**3. Transcripts produce nothing.** A resume has an EDUCATION heading; a
 transcript does not. All three transcripts in testing were stored, read, and
 yielded zero entries, while the resume yielded everything — so the schools a
 transcript proves are the ones Job Crush cannot see. A document already
@@ -28,16 +46,53 @@ Remotive and Arbeitnow are wired. Every other free board is a class that
 implements `JobSourceProvider` and a row in the roster. No scraping — APIs and
 published feeds only.
 
-**3. OAuth for OpenAI (Sign in with ChatGPT).** Launched 2 August 2026 as a
+**3a. Workday and Taleo. This one is worth more than the rest of item 3 put
+together.** Job Crush reads three boards: Greenhouse, Lever and Ashby. Those
+are startup boards. Defense and medical-device employers — L3Harris, Lockheed,
+Northrop, RTX, Boeing, GE — run Workday or Taleo almost without exception. So
+pasting a link from the employers that matter most here fails, and no amount of
+polish on the Add panel fixes that.
+
+Workday has a JSON API. Two documented sources agree on its shape:
+
+```
+list   POST https://{tenant}.wd{N}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
+       Content-Type: application/json, Accept-Language: en-US
+       {"appliedFacets":{},"limit":20,"offset":0,"searchText":""}
+       -> total, jobPostings[] with title, externalPath, locationsText, postedOn
+
+one    GET  https://{tenant}.wd{N}.myworkdayjobs.com/wday/cxs/{tenant}/{site}{externalPath}
+       -> jobDescription (HTML), jobReqId, startDate, timeType, country
+```
+
+A public URL is `https://{tenant}.wd{N}.myworkdayjobs.com/{locale}/{site}/job/...`,
+so the tenant is the first host label, the shard is the second, the site is the
+path segment after the locale, and the locale is dropped.
+
+Two traps are already reported: asking for a limit above 20 returns zero rows
+with no error, and `postedOn` is localized display text, not a parseable date.
+
+**NONE OF THIS IS VERIFIED AGAINST A LIVE RESPONSE**, which is the standard
+every other entry in `jobsource_notes` was held to. The cloud sandbox this was
+researched in cannot reach job boards at all — its egress proxy refuses
+myworkdayjobs.com and, for that matter, Greenhouse. So the first step is to run
+the two calls above from a machine with a normal network and read the real
+field names off the answer. Do not write the source class from the block above.
+
+Taleo is the harder half and should be costed separately. There is no
+consistent public JSON endpoint across Taleo instances the way there is for
+Workday.
+
+**4. OAuth for OpenAI (Sign in with ChatGPT).** Launched 2 August 2026 as a
 closed beta: six partners, no open enrollment. The flow gets built against the
 published shape and sits behind an honest "waiting on OpenAI program access"
 state rather than a button that does nothing.
 
-**4. The rest of the brains.** An OpenAI API-key provider (an OpenRouter clone
+**5. The rest of the brains.** An OpenAI API-key provider (an OpenRouter clone
 pointed elsewhere) and Ollama. Ollama needs `providerIsSelectable` to stop
 demanding a credential — it runs on the user's own machine and has no key.
 
-**5. Brain levels.** Per-provider model choice, so "which brain" and "how much
+**6. Brain levels.** Per-provider model choice, so "which brain" and "how much
 brain" are separate questions. Replaces the hardcoded model constant in each
 provider. The naming is the hard part: model version numbers mean nothing to
 somebody who just wants their cover letter to sound like them.
@@ -203,6 +258,28 @@ there is worse than no hint.
 ---
 
 ## Shipped
+
+The Manual Add tab. Jobs you add by hand get their own tab on Discoveries,
+newest added first, and the location filter never touches it. Each row says
+what happened: the board Job Crush found the posting on, or an amber outline
+and a plain sentence saying no board had it and the rest is yours to fill in.
+The sentence in the add panel now comes with a Show me button that takes you
+straight to the row and marks it. Adding a job by hand still does NOT put it on
+the board — the hunt for the real posting stays in the middle, on purpose.
+
+Two source fields instead of one. What the code called `discoverySource` always
+held the BOARD a posting was read off, never who found it, so it is now
+`postingSource`, and a new `scoutSource` says who brought the job in. A job is
+often both at once — you added it AND Job Crush found it on Ashby — and that is
+exactly what the Manual Add tab shows. Databases written before this are
+migrated on the next launch and keep every row.
+
+Several posting sources per job. A job can live on more than one board. Every
+route found is kept, with its board, its id there and its link, and the card on
+Job Pipelines lists them all: "see this one on Ashby", "see this one on Lever".
+Paste a Lever link for a company that is also on Ashby and both are saved,
+because which door to walk through is the user's call, not the app's. This
+swallowed item 13.
 
 Adding a job by hand. Discoveries → "Add a job" takes a link, or a company and
 a title typed off an alert email, and saves what the user gave it when no board

@@ -5,6 +5,8 @@
 #include <QUrl>
 #include <QVariantMap>
 
+#include "../modelview/jobscout/AtsBoardIdentity.h"
+#include "../modelview/jobscout/JobSourceDescriptor.h"
 #include "../modelview/pipelines/JobPipelines.h"
 
 namespace {
@@ -125,6 +127,21 @@ QString JobPipelineBoardViewModel::explanationForStage(const QString &stageName)
     return explanationFor(pipelineStageFromStorageText(stageName));
 }
 
+// A route's board is either a job SITE Job Crush sweeps or an employer BOARD
+// it reads. Two rosters, and asking only one is how a lowercase storage name
+// reaches the screen.
+static QString sourceDisplayNameFor(const QString &sourceStorageName)
+{
+    bool descriptorFound = false;
+    const JobSourceDescriptor descriptor =
+        jobSourceDescriptorFor(sourceStorageName, descriptorFound);
+    if (descriptorFound) {
+        return descriptor.displayName;
+    }
+    const QString boardDisplayName = AtsBoardName::displayNameFor(sourceStorageName);
+    return boardDisplayName.isEmpty() ? sourceStorageName : boardDisplayName;
+}
+
 QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) const
 {
     const PipelineStage wantedStage = pipelineStageFromStorageText(stageName);
@@ -142,7 +159,7 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
         card.insert(QStringLiteral("companyName"),   targetedJob.posting.companyName);
         card.insert(QStringLiteral("locationText"),  targetedJob.posting.locationText);
         card.insert(QStringLiteral("salaryText"),    targetedJob.posting.salaryText);
-        card.insert(QStringLiteral("sourceName"),    targetedJob.posting.discoverySource);
+        card.insert(QStringLiteral("sourceName"),    targetedJob.posting.postingSource);
         card.insert(QStringLiteral("isRemoteRole"),  targetedJob.posting.isRemoteRole);
         card.insert(QStringLiteral("stageName"),     stageName);
         card.insert(QStringLiteral("notesText"),     targetedJob.campaign.notesText);
@@ -150,6 +167,21 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
                     shortDateTextFor(targetedJob.campaign.targetedTimestamp));
         card.insert(QStringLiteral("appliedText"),
                     shortDateTextFor(targetedJob.campaign.appliedTimestamp));
+
+        // Every way of reaching this job, ready for the card to list. The
+        // board name is put in front of the user already spelled properly —
+        // a link reading "see this one on ashby" looks like a bug.
+        QVariantList routes;
+        for (const PostingSource &route :
+                 board.routesToJobPosting(targetedJob.posting.jobPostingId)) {
+            QVariantMap routeEntry;
+            routeEntry.insert(QStringLiteral("boardDisplayName"),
+                              sourceDisplayNameFor(route.boardName));
+            routeEntry.insert(QStringLiteral("postingUrl"), route.postingUrl);
+            routes.append(routeEntry);
+        }
+        card.insert(QStringLiteral("postingRoutes"), routes);
+
         cards.append(card);
     }
     return cards;
@@ -234,4 +266,18 @@ void JobPipelineBoardViewModel::openPostingInBrowser(qint64 jobApplicationId) co
         }
         return;
     }
+}
+
+void JobPipelineBoardViewModel::openPostingRouteInBrowser(const QString &postingUrl) const
+{
+    const QUrl routeUrl(postingUrl);
+    // Only http and https. A stored string reaches this from the database and
+    // handing anything else to the desktop is handing it whatever scheme the
+    // string happens to carry.
+    if (!routeUrl.isValid()
+            || (routeUrl.scheme() != QStringLiteral("http")
+                && routeUrl.scheme() != QStringLiteral("https"))) {
+        return;
+    }
+    QDesktopServices::openUrl(routeUrl);
 }

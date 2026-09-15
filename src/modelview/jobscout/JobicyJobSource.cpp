@@ -95,7 +95,7 @@ QString payLineFrom(const QJsonObject &jobObject)
 JobPosting postingFromJobicyJob(const QJsonObject &jobObject, const QDateTime &sweepTimestamp)
 {
     JobPosting jobPosting;
-    jobPosting.discoverySource = jobicyStorageName;
+    jobPosting.postingSource = jobicyStorageName;
 
     // The live feed calls this "id". Jobicy's own documentation says "jobId"
     // — it is wrong, and code written from the docs quietly stores every job

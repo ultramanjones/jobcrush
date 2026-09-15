@@ -8,6 +8,7 @@
 #include <QTextStream>
 
 #include "../../model/JobPostingRepository.h"
+#include "../../model/PostingSourceRepository.h"
 #include "ArbeitnowJobSource.h"
 #include "AtsBoardDetector.h"
 #include "CanonicalPostingResolver.h"
@@ -41,6 +42,7 @@ QString crossSourceIdentityOf(const JobPosting &jobPosting)
 } // namespace
 
 JobScout::JobScout(JobPostingRepository &jobPostingRepository,
+                   PostingSourceRepository &postingSourceRepository,
                    JobSourceRoster &sourceRoster,
                    FollowedEmployerRoster &followedEmployerRoster,
                    JobSearchProfile &searchProfile,
@@ -49,6 +51,7 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
     : QObject(parent)
     , sweepLogFolderPath(diagnosticsFolderPath)
     , discoveredJobPostingRepository(jobPostingRepository)
+    , jobRouteRepository(postingSourceRepository)
     , registeredSourceRoster(sourceRoster)
     , watchedEmployerRoster(followedEmployerRoster)
     , userSearchProfile(searchProfile)
@@ -346,6 +349,29 @@ QList<ScoredJobPosting> JobScout::scoredJobPostingsFromSource(
     return scoredJobPostings;
 }
 
+QList<ScoredJobPosting> JobScout::handAddedJobPostings() const
+{
+    const ProspectScorer prospectScorer(userSearchProfile);
+
+    QList<ScoredJobPosting> scoredJobPostings;
+    const QList<JobPosting> storedJobPostings =
+        discoveredJobPostingRepository.loadHandAddedJobPostings();
+
+    scoredJobPostings.reserve(storedJobPostings.count());
+    for (const JobPosting &storedJobPosting : storedJobPostings) {
+        // No search-area test here. See the comment on the declaration: these
+        // are the jobs the user asked for by name.
+        scoredJobPostings.append(
+            { storedJobPosting, prospectScorer.scoreJobPosting(storedJobPosting) });
+    }
+    return scoredJobPostings;
+}
+
+qint64 JobScout::mostRecentlyHandAddedJobPostingId() const
+{
+    return lastHandAddedJobPostingId;
+}
+
 int JobScout::jobPostingCountOutsideSearchArea() const
 {
     if (!searchAreaIsNarrowed()) {
@@ -482,12 +508,13 @@ void JobScout::addJobFromLink(const QString &pastedLink)
     AtsBoardDetector boardDetector;
     jobLead.boardIdentity = boardDetector.identify(trimmedLink);
 
-    // Where it came from is worth keeping for the life of the job. A link off
-    // a site Job Crush is not allowed to read is still where the user found
-    // it, and "where did this come from?" is a question they will ask.
-    jobLead.discoverySource = jobLead.boardIdentity.isKnown()
+    // Only a real board name goes in here. A link off a site Job Crush is not
+    // allowed to read names no board, and the field stays empty — the fact
+    // that the user pasted it is recorded separately, on the posting, as the
+    // scout source.
+    jobLead.postingSource = jobLead.boardIdentity.isKnown()
         ? jobLead.boardIdentity.boardName
-        : QStringLiteral("pasted");
+        : QString();
 
     goLookForOneLead(jobLead);
 }
@@ -516,7 +543,7 @@ void JobScout::addJobFromCompanyAndTitle(const QString &companyName,
     JobLead jobLead;
     jobLead.companyName = trimmedCompany;
     jobLead.positionTitle = trimmedTitle;
-    jobLead.discoverySource = QStringLiteral("typed in");
+    // No link, so no board is known yet. A resolver may fill this in.
 
     goLookForOneLead(jobLead);
 }
@@ -524,6 +551,9 @@ void JobScout::addJobFromCompanyAndTitle(const QString &companyName,
 void JobScout::goLookForOneLead(const JobLead &jobLead)
 {
     aLeadIsBeingResolved = true;
+    // The last job's row is not this job's row. Forget it now rather than
+    // leaving a button that quietly jumps to the wrong place.
+    lastHandAddedJobPostingId = 0;
     storedLeadStatusText = jobLead.companyName.isEmpty()
         ? QStringLiteral("Looking for that job on the employer's own board…")
         : QStringLiteral("Looking for that job on %1's own board…").arg(jobLead.companyName);
@@ -537,9 +567,24 @@ void JobScout::goLookForOneLead(const JobLead &jobLead)
 
         if (!foundPostings.isEmpty()) {
             const JobPosting realPosting = foundPostings.first();
-            finishLeadWith(storeOnePostingAndSayWhatHappened(
+            const QString whatHappened = storeOnePostingAndSayWhatHappened(
                 realPosting,
-                AtsBoardName::displayNameFor(realPosting.discoverySource)));
+                AtsBoardName::displayNameFor(realPosting.postingSource));
+
+            // The link the user pasted is a real way of reaching this job, and
+            // it is often not the one the resolver settled on: paste a Lever
+            // link for a company that is also on Ashby and the search answers
+            // from Ashby. Both work. Throwing one away would be the app
+            // deciding for the user which door they walk through.
+            if (jobLead.boardIdentity.isKnown()
+                    && jobLead.boardIdentity.boardName != realPosting.postingSource) {
+                rememberRouteToThisJob(lastHandAddedJobPostingId,
+                                       jobLead.boardIdentity.boardName,
+                                       jobLead.boardIdentity.jobId,
+                                       jobLead.discoveryUrl);
+            }
+
+            finishLeadWith(whatHappened);
             return;
         }
 
@@ -579,7 +624,7 @@ QString JobScout::keepWhatTheUserGaveUs(const JobLead &jobLead,
     leadAsPosting.fullDescriptionText = jobLead.rawText;
     leadAsPosting.isRemoteRole = jobLead.isRemoteRole;
     leadAsPosting.postedTimestamp = jobLead.postedTimestamp;
-    leadAsPosting.discoverySource = jobLead.discoverySource;
+    leadAsPosting.postingSource = jobLead.postingSource;
 
     // A hand-added job has no id from a board, so make one out of what it does
     // have. Without this, pasting the same job twice would store it twice: the
@@ -590,6 +635,22 @@ QString JobScout::keepWhatTheUserGaveUs(const JobLead &jobLead,
         + QLatin1Char(' ') + whyTheRealOneIsMissing;
 }
 
+void JobScout::rememberRouteToThisJob(qint64 jobPostingId, const QString &boardName,
+                                      const QString &externalId,
+                                      const QString &postingUrl)
+{
+    PostingSource route;
+    route.jobPostingId = jobPostingId;
+    route.boardName    = boardName;
+    route.externalId   = externalId;
+    route.postingUrl   = postingUrl;
+
+    // Best effort on purpose. A route that could not be written is a link the
+    // card will not offer, which is a smaller problem than refusing to save
+    // the job over it.
+    jobRouteRepository.recordPostingSourceIfNew(route);
+}
+
 QString JobScout::storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
                                                     const QString &boardItCameFrom)
 {
@@ -597,11 +658,27 @@ QString JobScout::storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
         jobPosting.discoveredTimestamp = QDateTime::currentDateTime();
     }
 
+    // Everything that reaches this function was pasted or typed by the user.
+    // Both ways of adding a job by hand end up here, and nothing else calls
+    // it, so this is the one place that has to say so.
+    jobPosting.scoutSource = ScoutSourceText::You;
+
     bool wasAlreadyKnown = false;
     if (!discoveredJobPostingRepository.insertDiscoveryIfNew(jobPosting, wasAlreadyKnown)) {
+        lastHandAddedJobPostingId = 0;
         return QStringLiteral("Job Crush couldn't save that job — %1. Try again.")
             .arg(discoveredJobPostingRepository.lastErrorText());
     }
+
+    // Remembered so the page can take the user straight to the row instead of
+    // telling them it is in a list of a thousand and leaving them to look.
+    lastHandAddedJobPostingId = jobPosting.jobPostingId;
+
+    // The route this posting was read off. Recorded even when it is the only
+    // one, because a card with one link and a card with three are built the
+    // same way, and a job with no recorded route would show nothing at all.
+    rememberRouteToThisJob(jobPosting.jobPostingId, jobPosting.postingSource,
+                           jobPosting.externalSourceId, jobPosting.sourceUrl);
 
     emit discoveriesChanged();
 
@@ -610,13 +687,20 @@ QString JobScout::storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
         : QStringLiteral("\"%1\" at %2").arg(jobPosting.positionTitle, jobPosting.companyName);
 
     if (wasAlreadyKnown) {
-        return QStringLiteral("You already have this one. %1 is in Discoveries.")
+        // Job Crush had it already — from a sweep, or from an earlier paste.
+        // Either way the user just went and fetched this link, so it belongs
+        // on their Manual Add list from now on. Leaving it where it was would
+        // mean telling them to look somewhere it is not.
+        discoveredJobPostingRepository.markJobPostingAsHandAdded(
+            jobPosting.jobPostingId);
+
+        return QStringLiteral("You already had this one. %1 is on your Manual Add list.")
             .arg(jobDescribed);
     }
     if (boardItCameFrom.isEmpty()) {
-        return QStringLiteral("Added %1 to Discoveries.").arg(jobDescribed);
+        return QStringLiteral("Saved %1 to Manual Add.").arg(jobDescribed);
     }
-    return QStringLiteral("Found it on %1. %2 is now in Discoveries.")
+    return QStringLiteral("Found it on %1. %2 is now in Manual Add.")
         .arg(boardItCameFrom, jobDescribed);
 }
 

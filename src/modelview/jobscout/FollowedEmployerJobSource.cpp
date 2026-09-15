@@ -123,7 +123,7 @@ JobScoutReply *FollowedEmployerJobSource::searchForJobs(const JobSearchProfile &
             // ticked and tabs come from ticked boxes. Which board it came
             // from is still there in the link on every row.
             for (JobPosting posting : boardPostings) {
-                posting.discoverySource = followedEmployersStorageName;
+                posting.postingSource = followedEmployersStorageName;
                 sweep->everythingFound.append(posting);
             }
             --sweep->boardsStillAnswering;

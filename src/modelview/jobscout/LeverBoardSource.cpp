@@ -134,7 +134,7 @@ JobPosting postingFromLeverJob(const QJsonObject &postingObject, const QString &
     // field that shows up reliably across boards, and a field read by a name
     // nobody confirmed is dead code that looks like it works.
 
-    posting.discoverySource = AtsBoardName::Lever;
+    posting.postingSource = AtsBoardName::Lever;
     posting.discoveredTimestamp = QDateTime::currentDateTime();
     return posting;
 }

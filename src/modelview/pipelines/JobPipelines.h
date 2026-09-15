@@ -6,9 +6,11 @@
 
 #include "../../model/JobApplication.h"
 #include "../../model/JobPosting.h"
+#include "../../model/PostingSource.h"
 
 class JobApplicationRepository;
 class JobPostingRepository;
+class PostingSourceRepository;
 
 // TargetedJob
 //
@@ -46,6 +48,7 @@ class JobPipelines : public QObject {
 public:
     JobPipelines(JobApplicationRepository &applicationRepository,
                  JobPostingRepository &postingRepository,
+                 PostingSourceRepository &postingSourceRepository,
                  QObject *parent = nullptr);
 
     // Reads the board in. Called once from the composition root and again
@@ -55,6 +58,10 @@ public:
     // Every card, in board order (oldest crush first, so the board reads like
     // a history rather than reshuffling itself every time you look at it).
     QList<TargetedJob> everyTargetedJob() const;
+
+    // Every way of reaching one job. The card shows these so the user picks
+    // the route rather than the app picking it for them.
+    QList<PostingSource> routesToJobPosting(qint64 jobPostingId) const;
 
     // How many cards sit in one stage. The column headers show this, and a
     // count that has to be recomputed by the view is a count that will
@@ -105,6 +112,7 @@ signals:
 private:
     JobApplicationRepository &campaignRepository;
     JobPostingRepository &postingRepository;
+    PostingSourceRepository &jobRouteRepository;
 
     QList<TargetedJob> loadedTargetedJobs;
 };

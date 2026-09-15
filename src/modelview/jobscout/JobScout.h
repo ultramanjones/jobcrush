@@ -15,6 +15,7 @@ class CanonicalPostingResolver;
 class FollowedEmployerRoster;
 struct JobLead;
 class JobPostingRepository;
+class PostingSourceRepository;
 class JobSearchProfile;
 class JobSourceProvider;
 class JobSourceRoster;
@@ -66,6 +67,7 @@ public:
     // data folder, handed in by the composition root so this class never has
     // to know where that is.
     JobScout(JobPostingRepository &jobPostingRepository,
+             PostingSourceRepository &postingSourceRepository,
              JobSourceRoster &sourceRoster,
              FollowedEmployerRoster &followedEmployerRoster,
              JobSearchProfile &searchProfile,
@@ -134,6 +136,20 @@ public:
     QList<ScoredJobPosting> rankedTopProspects(
         SearchAreaScope searchAreaScope = SearchAreaScope::InsideSearchArea) const;
 
+    // Every job the user added by hand, newest added first.
+    //
+    // There is no search-area argument and that is deliberate. The location
+    // filter exists to keep a sweep from burying the user in jobs on the wrong
+    // side of the country. A job the user went and fetched themselves was
+    // asked for by name, and hiding it because the employer's office is far
+    // away would take the one list that is supposed to be findable and make
+    // the job disappear from it.
+    QList<ScoredJobPosting> handAddedJobPostings() const;
+
+    // The job the user added by hand most recently, so the page can go
+    // straight to it. 0 when there is nothing to go to.
+    qint64 mostRecentlyHandAddedJobPostingId() const;
+
     // How many stored discoveries the location filter is holding back right
     // now. Shown to the user, always: a filter that quietly eats jobs and
     // never admits it is indistinguishable from a broken sweep.
@@ -174,6 +190,15 @@ private:
     // Saves one posting and returns the sentence to show the user. An empty
     // board name means the user handed this job over rather than a board
     // giving it up.
+    // The job the user added by hand most recently, so the page can jump
+    // straight to it. 0 means there is nowhere to jump.
+    qint64 lastHandAddedJobPostingId = 0;
+
+    // Keeps one more way of reaching a job the user already has. Safe to call
+    // with something already recorded.
+    void rememberRouteToThisJob(qint64 jobPostingId, const QString &boardName,
+                                const QString &externalId, const QString &postingUrl);
+
     QString storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
                                               const QString &boardItCameFrom);
 
@@ -209,6 +234,7 @@ private:
     const QString sweepLogFolderPath;
 
     JobPostingRepository &discoveredJobPostingRepository;
+    PostingSourceRepository &jobRouteRepository;
     JobSourceRoster &registeredSourceRoster;
     FollowedEmployerRoster &watchedEmployerRoster;
     JobSearchProfile &userSearchProfile;

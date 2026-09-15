@@ -34,10 +34,16 @@ struct JobLead {
     // URL, which Job Crush keeps as a reference and does not fetch.
     QString discoveryUrl;
 
-    // Where the lead came from: "linkedin-email", "pasted-url", "remotive",
-    // and so on. Kept for the life of the job, because "where did this come
-    // from?" is a question the user will ask.
-    QString discoverySource;
+    // The board this lead is believed to live on — "ashby", "lever",
+    // "greenhouse" — when the link named one. Empty when it did not, and it
+    // stays empty until a resolver actually reads the posting off a board.
+    //
+    // This used to be called discoverySource and used to hold "pasted" or
+    // "typed in" when no board was known. Those answer a different question:
+    // who brought the job in, which is now JobPosting::scoutSource. Leaving
+    // them here made a job the user typed look like a job read off a board
+    // called "typed in".
+    QString postingSource;
 
     // The raw text the lead arrived with, when there was any: a pasted job
     // description, or the body of a forwarded email. Kept whole, because a

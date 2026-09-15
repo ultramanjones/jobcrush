@@ -121,7 +121,7 @@ JobPosting postingFromAshbyJob(const QJsonObject &jobObject, const QString &tena
                         || locationLowered.contains(QStringLiteral("anywhere"))
                         || locationLowered.contains(QStringLiteral("distributed"));
 
-    posting.discoverySource = AtsBoardName::Ashby;
+    posting.postingSource = AtsBoardName::Ashby;
     posting.discoveredTimestamp = QDateTime::currentDateTime();
     return posting;
 }

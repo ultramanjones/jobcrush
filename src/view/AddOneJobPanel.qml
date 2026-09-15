@@ -22,6 +22,11 @@ Rectangle {
     // Injected by the page.
     property var discoveredJobListViewModel
 
+    // Raised when the user asks to be taken to the job that was just added.
+    // The panel does not navigate; it does not know where the list is or
+    // which tab holds it. It says what the user asked for and the page acts.
+    signal showTheJobJustAddedRequested()
+
     readonly property bool isBusy: discoveredJobListViewModel.leadIsBeingResolved
 
     color: JobCrushTheme.panelBackgroundColor
@@ -237,17 +242,42 @@ Rectangle {
             }
         }
 
-        // What happened, in the app's own words. Never blank while something
-        // is going on, and never a dead end: every one of these sentences
-        // ends with something the user can do.
-        Text {
+        // What happened, in the app's own words, and the way to go see it.
+        //
+        // The sentence used to end here, and that was the whole complaint:
+        // being told a job is "in Discoveries" is not being told where it is.
+        // A list of a thousand rows ranked by score is not somewhere a person
+        // can go. So the sentence now comes with the trip.
+        Item {
             width: parent.width
-            visible: text.length > 0
-            text: addOneJobPanel.discoveredJobListViewModel.leadStatusText
-            color: addOneJobPanel.isBusy
-                ? JobCrushTheme.accentColor : JobCrushTheme.secondaryTextColor
-            font.pixelSize: JobCrushTheme.smallFontSize
-            wrapMode: Text.WordWrap
+            visible: statusSentence.text.length > 0
+            implicitHeight: Math.max(statusSentence.implicitHeight,
+                                     showMeButton.visible ? showMeButton.height : 0)
+
+            Text {
+                id: statusSentence
+                anchors.left: parent.left
+                anchors.right: showMeButton.visible ? showMeButton.left : parent.right
+                anchors.rightMargin: showMeButton.visible ? 10 : 0
+                anchors.verticalCenter: parent.verticalCenter
+                text: addOneJobPanel.discoveredJobListViewModel.leadStatusText
+                color: addOneJobPanel.isBusy
+                    ? JobCrushTheme.accentColor : JobCrushTheme.secondaryTextColor
+                font.pixelSize: JobCrushTheme.smallFontSize
+                wrapMode: Text.WordWrap
+            }
+
+            GoButton {
+                id: showMeButton
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                // Only while there is somewhere to go. A button that lands on
+                // nothing is worse than no button.
+                visible: !addOneJobPanel.isBusy
+                         && addOneJobPanel.discoveredJobListViewModel.hasSomewhereToJumpTo
+                labelText: "Show me"
+                onPressed: addOneJobPanel.showTheJobJustAddedRequested()
+            }
         }
 
         // The plain truth about which boards this can reach, so nobody thinks

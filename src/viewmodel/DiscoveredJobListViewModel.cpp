@@ -8,6 +8,7 @@
 #include <QUrl>
 
 #include "../modelview/jobscout/JobPostingTextCleanup.h"
+#include "../modelview/jobscout/AtsBoardIdentity.h"
 #include "../modelview/jobscout/JobSourceDescriptor.h"
 
 namespace {
@@ -35,12 +36,32 @@ QString postedDayTextFor(const JobPosting &jobPosting)
     return QLocale().toString(postedDate, QStringLiteral("MMMM d"));
 }
 
+// The reserved tab name. Not a real source storage name, and it never can be
+// one: every real source name is a plain word, and this one carries a hyphen
+// and a prefix nothing else uses.
+const QString manualAddTabName = QStringLiteral("jobcrush-manual-add");
+
+// A posting's source is either one of the job SITES Job Crush sweeps, or one
+// of the employer BOARDS it reads. Two separate rosters, and asking only the
+// first one is how "ashby" reached the screen in lowercase, looking like a
+// bug in a row the user had just added.
 QString sourceDisplayNameFor(const QString &sourceStorageName)
 {
     bool descriptorFound = false;
     const JobSourceDescriptor descriptor =
         jobSourceDescriptorFor(sourceStorageName, descriptorFound);
-    return descriptorFound ? descriptor.displayName : sourceStorageName;
+    if (descriptorFound) {
+        return descriptor.displayName;
+    }
+
+    const QString boardDisplayName = AtsBoardName::displayNameFor(sourceStorageName);
+    if (!boardDisplayName.isEmpty()) {
+        return boardDisplayName;
+    }
+
+    // Unknown to both. Show what is stored rather than nothing — a blank
+    // where a source belongs looks like a fault.
+    return sourceStorageName;
 }
 
 } // namespace
@@ -95,10 +116,16 @@ void DiscoveredJobListViewModel::rebuildRowsFromJobScout()
         : SearchAreaScope::InsideSearchArea;
 
     beginResetModel();
-    displayedJobPostings = storedActiveTabSourceName.isEmpty()
-        ? discoveryJobScout.rankedTopProspects(searchAreaScope)
-        : discoveryJobScout.scoredJobPostingsFromSource(storedActiveTabSourceName,
-                                                        searchAreaScope);
+    if (storedActiveTabSourceName == manualAddTabName) {
+        // No search-area scope. These are the jobs the user asked for by
+        // name, and the location filter has no business hiding one.
+        displayedJobPostings = discoveryJobScout.handAddedJobPostings();
+    } else if (storedActiveTabSourceName.isEmpty()) {
+        displayedJobPostings = discoveryJobScout.rankedTopProspects(searchAreaScope);
+    } else {
+        displayedJobPostings = discoveryJobScout.scoredJobPostingsFromSource(
+            storedActiveTabSourceName, searchAreaScope);
+    }
     endResetModel();
 
     emit discoveredJobsChanged();
@@ -127,7 +154,14 @@ QVariant DiscoveredJobListViewModel::data(const QModelIndex &modelIndex, int rol
     case LocationTextRole:      return jobPosting.locationText;
     case SalaryTextRole:        return jobPosting.salaryText;
     case SummaryLineRole:       return oneLineSummaryFrom(jobPosting.fullDescriptionText);
-    case SourceDisplayNameRole: return sourceDisplayNameFor(jobPosting.discoverySource);
+    case SourceDisplayNameRole: return sourceDisplayNameFor(jobPosting.postingSource);
+    case PostingSourceDisplayNameRole:
+        return jobPosting.postingSource.trimmed().isEmpty()
+            ? QString()
+            : sourceDisplayNameFor(jobPosting.postingSource);
+    case WasAddedByHandRole:    return jobPosting.wasAddedByHand();
+    case IsManualAllTheWayRole: return jobPosting.isManualAllTheWay();
+    case JobPostingIdRole:      return jobPosting.jobPostingId;
     case PostedDayTextRole:     return postedDayTextFor(jobPosting);
     case MatchScoreRole:        return scoredJobPosting.matchResult.matchScoreOutOfOneHundred;
     case MatchReasonsTextRole:
@@ -150,6 +184,11 @@ QHash<int, QByteArray> DiscoveredJobListViewModel::roleNames() const
         { MatchScoreRole,        QByteArrayLiteral("matchScore") },
         { MatchReasonsTextRole,  QByteArrayLiteral("matchReasonsText") },
         { IsRemoteRoleRole,      QByteArrayLiteral("isRemoteRole") },
+        { PostingSourceDisplayNameRole,
+                                 QByteArrayLiteral("postingSourceDisplayName") },
+        { WasAddedByHandRole,    QByteArrayLiteral("wasAddedByHand") },
+        { IsManualAllTheWayRole, QByteArrayLiteral("isManualAllTheWay") },
+        { JobPostingIdRole,      QByteArrayLiteral("jobPostingId") },
     };
 }
 
@@ -166,6 +205,37 @@ void DiscoveredJobListViewModel::setActiveTabSourceName(const QString &sourceSto
     storedActiveTabSourceName = sourceStorageName;
     emit activeTabSourceNameChanged();
     rebuildRowsFromJobScout();
+}
+
+QString DiscoveredJobListViewModel::manualAddTabSourceName() const
+{
+    return manualAddTabName;
+}
+
+bool DiscoveredJobListViewModel::showingManualAdd() const
+{
+    return storedActiveTabSourceName == manualAddTabName;
+}
+
+bool DiscoveredJobListViewModel::hasSomewhereToJumpTo() const
+{
+    return discoveryJobScout.mostRecentlyHandAddedJobPostingId() != 0;
+}
+
+int DiscoveredJobListViewModel::rowOfMostRecentlyHandAddedJob() const
+{
+    const qint64 wantedJobPostingId =
+        discoveryJobScout.mostRecentlyHandAddedJobPostingId();
+    if (wantedJobPostingId == 0) {
+        return -1;
+    }
+    for (int rowIndex = 0; rowIndex < displayedJobPostings.count(); ++rowIndex) {
+        if (displayedJobPostings.at(rowIndex).jobPosting.jobPostingId
+                == wantedJobPostingId) {
+            return rowIndex;
+        }
+    }
+    return -1;
 }
 
 int DiscoveredJobListViewModel::rowCountForProperty() const

@@ -4,13 +4,16 @@
 
 #include "../../model/JobApplicationRepository.h"
 #include "../../model/JobPostingRepository.h"
+#include "../../model/PostingSourceRepository.h"
 
 JobPipelines::JobPipelines(JobApplicationRepository &applicationRepository,
                            JobPostingRepository &postingRepositoryToUse,
+                           PostingSourceRepository &postingSourceRepository,
                            QObject *parent)
     : QObject(parent)
     , campaignRepository(applicationRepository)
     , postingRepository(postingRepositoryToUse)
+    , jobRouteRepository(postingSourceRepository)
 {
 }
 
@@ -153,4 +156,9 @@ bool JobPipelines::removeFromBoard(qint64 jobApplicationId)
     }
     loadFromDatabase();
     return true;
+}
+
+QList<PostingSource> JobPipelines::routesToJobPosting(qint64 jobPostingId) const
+{
+    return jobRouteRepository.loadPostingSourcesFor(jobPostingId);
 }

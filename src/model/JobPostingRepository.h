@@ -31,9 +31,23 @@ public:
     // Every posting known to Job Crush, newest first.
     QList<JobPosting> loadAllJobPostings();
 
-    // Everything one JobScout source has delivered, newest posting first —
-    // this is what fills that source's tab on the Discoveries page.
-    QList<JobPosting> loadJobPostingsFromSource(const QString &discoverySource);
+    // Everything read off one board or site, newest posting first — this is
+    // what fills that source's tab on the Discoveries page.
+    QList<JobPosting> loadJobPostingsFromSource(const QString &postingSource);
+
+    // Moves a job Job Crush already had over to the hand-added list.
+    //
+    // A sweep often turns a job up before the user ever goes looking, and then
+    // the user pastes the same job in by hand. That paste is still them
+    // bringing it in — they went and got the link. Without this, the job stays
+    // filed as a sweep find and never appears on the tab they were told to
+    // look at, which is the same disappearing act this tab exists to end.
+    bool markJobPostingAsHandAdded(qint64 jobPostingId);
+
+    // Every job the user brought in by hand, newest ADDED first. This fills
+    // the Manual Add tab, and the ordering is deliberate: the job you just
+    // pasted has to be the first row, whatever date the employer posted it.
+    QList<JobPosting> loadHandAddedJobPostings();
 
     // Everything JobScout has ever found, from every source, newest first.
     // Top Prospects ranks this list rather than any single source's.

@@ -47,6 +47,17 @@ private:
                             const QString &columnName,
                             const QString &columnDefinition);
 
+    // Renames a column that is still under its old name, and does nothing at
+    // all once the new name is in place. Needed because CREATE TABLE IF NOT
+    // EXISTS cannot fix a table that already exists: a database written before
+    // a rename keeps the old column forever unless something moves it.
+    bool renameColumnIfNeeded(const QString &tableName,
+                              const QString &oldColumnName,
+                              const QString &newColumnName);
+
+    // Answers whether a table already has a column of this name.
+    bool tableHasColumn(const QString &tableName, const QString &columnName);
+
     QSqlDatabase databaseConnection;
     QString lastErrorDescription;
 };

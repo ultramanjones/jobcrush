@@ -22,7 +22,7 @@ JobPosting postingShapeOf(const JobLead &jobLead)
     leadAsPosting.locationText = jobLead.locationText;
     leadAsPosting.isRemoteRole = jobLead.isRemoteRole;
     leadAsPosting.sourceUrl = jobLead.discoveryUrl;
-    leadAsPosting.discoverySource = jobLead.discoverySource;
+    leadAsPosting.postingSource = jobLead.postingSource;
     return leadAsPosting;
 }
 

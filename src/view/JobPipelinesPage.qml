@@ -469,12 +469,67 @@ Rectangle {
                                                 }
                                             }
 
+                                            // Every way of reaching this job,
+                                            // one link each.
+                                            //
+                                            // The same opening often sits on
+                                            // the employer's own board AND on
+                                            // whatever carried it, and which
+                                            // one a person wants is not
+                                            // something this app can work out:
+                                            // one wants the employer's form,
+                                            // another already has an account
+                                            // somewhere, a third is checking
+                                            // whether the job is still open
+                                            // and needs a second opinion. So
+                                            // all of them are offered and the
+                                            // user picks.
+                                            //
                                             // Stacked rather than side by side.
                                             // A column is narrow, and two links
                                             // on one line means one of them is
                                             // always cut in half.
+                                            Repeater {
+                                                model: cardSlot.card.postingRoutes
+
+                                                delegate: Text {
+                                                    id: postingRouteLink
+
+                                                    required property var modelData
+
+                                                    width: parent.width
+                                                    text: "see this one on "
+                                                          + postingRouteLink.modelData.boardDisplayName
+                                                    textFormat: Text.PlainText
+                                                    color: postingRouteMouseArea.containsMouse
+                                                        ? JobCrushTheme.accentColor
+                                                        : JobCrushTheme.mutedTextColor
+                                                    font.pixelSize: JobCrushTheme.smallFontSize
+                                                    font.underline: postingRouteMouseArea.containsMouse
+                                                    elide: Text.ElideRight
+
+                                                    MouseArea {
+                                                        id: postingRouteMouseArea
+                                                        anchors.fill: parent
+                                                        anchors.margins: -3
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: jobPipelinesPage
+                                                            .jobPipelineBoardViewModel
+                                                            .openPostingRouteInBrowser(
+                                                                postingRouteLink.modelData.postingUrl)
+                                                    }
+                                                }
+                                            }
+
+                                            // The fallback, for every job
+                                            // saved before routes were kept.
+                                            // Without it those cards would
+                                            // lose their only link.
                                             Text {
                                                 width: parent.width
+                                                visible: cardSlot.card.postingRoutes === undefined
+                                                         || cardSlot.card.postingRoutes.length === 0
                                                 text: "open the posting"
                                                 color: openPostingMouseArea.containsMouse
                                                     ? JobCrushTheme.accentColor

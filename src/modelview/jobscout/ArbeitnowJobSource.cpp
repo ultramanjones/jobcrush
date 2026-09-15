@@ -118,7 +118,7 @@ JobScoutReply *ArbeitnowJobSource::searchForJobs(const JobSearchProfile &searchP
             const QJsonObject jobObject = jobValue.toObject();
 
             JobPosting jobPosting;
-            jobPosting.discoverySource = arbeitnowStorageName;
+            jobPosting.postingSource = arbeitnowStorageName;
             // Arbeitnow's slug is its stable per-job identity.
             jobPosting.externalSourceId = jobObject.value(QStringLiteral("slug")).toString();
             jobPosting.positionTitle = jobObject.value(QStringLiteral("title")).toString();

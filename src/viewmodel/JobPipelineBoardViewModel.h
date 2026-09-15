@@ -72,6 +72,10 @@ public:
     // pretends to host somebody else's listing.
     Q_INVOKABLE void openPostingInBrowser(qint64 jobApplicationId) const;
 
+    // Opens one particular route. The card lists every way of reaching a job
+    // and the user chooses; this opens the one they chose.
+    Q_INVOKABLE void openPostingRouteInBrowser(const QString &postingUrl) const;
+
     Q_INVOKABLE void clearLastAction();
 
 signals:

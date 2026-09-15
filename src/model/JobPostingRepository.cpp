@@ -19,7 +19,8 @@ JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
     jobPosting.salaryText          = row.value(QStringLiteral("salaryText")).toString();
     jobPosting.sourceUrl           = row.value(QStringLiteral("sourceUrl")).toString();
     jobPosting.fullDescriptionText = row.value(QStringLiteral("fullDescriptionText")).toString();
-    jobPosting.discoverySource     = row.value(QStringLiteral("discoverySource")).toString();
+    jobPosting.postingSource       = row.value(QStringLiteral("postingSource")).toString();
+    jobPosting.scoutSource         = row.value(QStringLiteral("scoutSource")).toString();
     jobPosting.discoveredTimestamp = QDateTime::fromString(
         row.value(QStringLiteral("discoveredTimestamp")).toString(), Qt::ISODate);
     jobPosting.externalSourceId    = row.value(QStringLiteral("externalSourceId")).toString();
@@ -63,11 +64,13 @@ bool JobPostingRepository::insertJobPosting(JobPosting &jobPosting)
     insertQuery.prepare(QStringLiteral(
         "INSERT INTO jobPosting "
         "  (companyName, positionTitle, locationText, salaryText,"
-        "   sourceUrl, fullDescriptionText, discoverySource, discoveredTimestamp,"
+        "   sourceUrl, fullDescriptionText, postingSource, scoutSource,"
+        "   discoveredTimestamp,"
         "   externalSourceId, postedTimestamp, isRemoteRole) "
         "VALUES "
         "  (:companyName, :positionTitle, :locationText, :salaryText,"
-        "   :sourceUrl, :fullDescriptionText, :discoverySource, :discoveredTimestamp,"
+        "   :sourceUrl, :fullDescriptionText, :postingSource, :scoutSource,"
+        "   :discoveredTimestamp,"
         "   :externalSourceId, :postedTimestamp, :isRemoteRole)"));
 
     insertQuery.bindValue(QStringLiteral(":companyName"),
@@ -82,8 +85,15 @@ bool JobPostingRepository::insertJobPosting(JobPosting &jobPosting)
                           textOrEmpty(jobPosting.sourceUrl));
     insertQuery.bindValue(QStringLiteral(":fullDescriptionText"),
                           textOrEmpty(jobPosting.fullDescriptionText));
-    insertQuery.bindValue(QStringLiteral(":discoverySource"),
-                          textOrEmpty(jobPosting.discoverySource));
+    insertQuery.bindValue(QStringLiteral(":postingSource"),
+                          textOrEmpty(jobPosting.postingSource));
+    // A posting that reached here without anyone saying who found it came off
+    // a sweep. Storing an empty string would put a row in the database that
+    // answers neither question.
+    insertQuery.bindValue(QStringLiteral(":scoutSource"),
+                          jobPosting.scoutSource.trimmed().isEmpty()
+                              ? ScoutSourceText::Scout
+                              : jobPosting.scoutSource);
     insertQuery.bindValue(QStringLiteral(":discoveredTimestamp"),
                           textOrEmpty(jobPosting.discoveredTimestamp.toString(Qt::ISODate)));
     insertQuery.bindValue(QStringLiteral(":externalSourceId"),
@@ -111,7 +121,7 @@ bool JobPostingRepository::insertDiscoveryIfNew(JobPosting &jobPosting, bool &wa
     QSqlQuery existingDiscoveryQuery(jobCrushDatabase.connection());
     existingDiscoveryQuery.prepare(QStringLiteral(
         "SELECT jobPostingId FROM jobPosting "
-        "WHERE discoverySource = :discoverySource "
+        "WHERE postingSource = :postingSource "
         "  AND externalSourceId = :externalSourceId"));
     // textOrEmpty on BOTH, same as the insert.
     //
@@ -120,8 +130,8 @@ bool JobPostingRepository::insertDiscoveryIfNew(JobPosting &jobPosting, bool &wa
     // every time, the insert would store "" instead, and the same job would
     // be stored again on every sweep, forever. The insert learned this lesson
     // already; the lookup beside it did not.
-    existingDiscoveryQuery.bindValue(QStringLiteral(":discoverySource"),
-                                     textOrEmpty(jobPosting.discoverySource));
+    existingDiscoveryQuery.bindValue(QStringLiteral(":postingSource"),
+                                     textOrEmpty(jobPosting.postingSource));
     existingDiscoveryQuery.bindValue(QStringLiteral(":externalSourceId"),
                                      textOrEmpty(jobPosting.externalSourceId));
 
@@ -156,21 +166,58 @@ QList<JobPosting> JobPostingRepository::loadAllJobPostings()
 }
 
 QList<JobPosting> JobPostingRepository::loadJobPostingsFromSource(
-    const QString &discoverySource)
+    const QString &postingSource)
 {
     QList<JobPosting> jobPostingsFromSource;
 
     QSqlQuery selectQuery(jobCrushDatabase.connection());
     selectQuery.prepare(QStringLiteral(
-        "SELECT * FROM jobPosting WHERE discoverySource = :discoverySource")
+        "SELECT * FROM jobPosting WHERE postingSource = :postingSource")
         + newestPostingFirstOrdering);
-    selectQuery.bindValue(QStringLiteral(":discoverySource"), discoverySource);
+    selectQuery.bindValue(QStringLiteral(":postingSource"), postingSource);
     selectQuery.exec();
 
     while (selectQuery.next()) {
         jobPostingsFromSource.append(jobPostingFromQueryRow(selectQuery));
     }
     return jobPostingsFromSource;
+}
+
+bool JobPostingRepository::markJobPostingAsHandAdded(qint64 jobPostingId)
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE jobPosting SET scoutSource = :scoutSource "
+        "WHERE jobPostingId = :jobPostingId"));
+    updateQuery.bindValue(QStringLiteral(":scoutSource"), ScoutSourceText::You);
+    updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
+
+    if (!updateQuery.exec()) {
+        lastErrorDescription = updateQuery.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+QList<JobPosting> JobPostingRepository::loadHandAddedJobPostings()
+{
+    QList<JobPosting> handAddedJobPostings;
+
+    // Ordered by when the USER added it, not by when the employer posted it.
+    // The whole point of this list is that the job you just added is the first
+    // thing on it, and an old posting you added a minute ago is still the one
+    // you are looking for.
+    QSqlQuery selectQuery(jobCrushDatabase.connection());
+    selectQuery.prepare(QStringLiteral(
+        "SELECT * FROM jobPosting WHERE scoutSource = :scoutSource "
+        "ORDER BY discoveredTimestamp DESC, jobPostingId DESC"));
+    selectQuery.bindValue(QStringLiteral(":scoutSource"), ScoutSourceText::You);
+    selectQuery.exec();
+
+    while (selectQuery.next()) {
+        handAddedJobPostings.append(jobPostingFromQueryRow(selectQuery));
+    }
+    return handAddedJobPostings;
 }
 
 QList<JobPosting> JobPostingRepository::loadAllDiscoveredJobPostings()

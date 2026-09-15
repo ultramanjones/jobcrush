@@ -130,7 +130,7 @@ JobScoutReply *RemotiveJobSource::searchForJobs(const JobSearchProfile &searchPr
             const QJsonObject jobObject = jobValue.toObject();
 
             JobPosting jobPosting;
-            jobPosting.discoverySource = remotiveStorageName;
+            jobPosting.postingSource = remotiveStorageName;
             jobPosting.externalSourceId =
                 QString::number(jobObject.value(QStringLiteral("id")).toVariant().toLongLong());
             jobPosting.positionTitle = jobObject.value(QStringLiteral("title")).toString();

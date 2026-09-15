@@ -70,7 +70,7 @@ JobPosting postingFromGreenhouseJob(const QJsonObject &jobObject, const QString 
                         || locationLowered.contains(QStringLiteral("anywhere"))
                         || locationLowered.contains(QStringLiteral("distributed"));
 
-    posting.discoverySource = AtsBoardName::Greenhouse;
+    posting.postingSource = AtsBoardName::Greenhouse;
     posting.discoveredTimestamp = QDateTime::currentDateTime();
     return posting;
 }

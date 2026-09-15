@@ -177,7 +177,7 @@ JobPosting postingFromUsaJobsItem(const QJsonObject &searchResultItem,
         searchResultItem.value(QStringLiteral("MatchedObjectDescriptor")).toObject();
 
     JobPosting jobPosting;
-    jobPosting.discoverySource = usaJobsStorageName;
+    jobPosting.postingSource = usaJobsStorageName;
 
     // MatchedObjectId is the announcement's control number. PositionID sits
     // right next to it and looks like an id, but it is the agency's own

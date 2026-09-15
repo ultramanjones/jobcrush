@@ -16,6 +16,7 @@
 #include "modelview/AppPreferences.h"
 #include "modelview/aibrain/AiBrain.h"
 #include "modelview/aibrain/AiBrainSoul.h"
+#include "model/PostingSourceRepository.h"
 #include "modelview/pipelines/JobPipelines.h"
 #include "modelview/aibrain/AiCredentialRoster.h"
 #include "modelview/brainchat/BrainChatSession.h"
@@ -77,6 +78,7 @@ int main(int argc, char *argv[])
 
     // --- Model layer: repositories ----------------------------------------
     JobPostingRepository jobPostingRepository(jobCrushDatabase);
+    PostingSourceRepository postingSourceRepository(jobCrushDatabase);
     JobApplicationRepository jobApplicationRepository(jobCrushDatabase);
     ProfessionalDocumentRepository professionalDocumentRepository(jobCrushDatabase);
     CareerHistoryRepository careerHistoryRepository(jobCrushDatabase);
@@ -128,13 +130,15 @@ int main(int argc, char *argv[])
     FollowedEmployerRoster followedEmployerRoster;
     followedEmployerRoster.loadFromSettings();
 
-    JobScout jobScout(jobPostingRepository, jobSourceRoster, followedEmployerRoster,
+    JobScout jobScout(jobPostingRepository, postingSourceRepository,
+                      jobSourceRoster, followedEmployerRoster,
                       jobSearchProfile,
                       applicationDataFolderPath);
 
     // The board. Loaded now so every screen that asks "is this job already on
     // my board?" gets a straight answer from the first frame.
-    JobPipelines jobPipelines(jobApplicationRepository, jobPostingRepository);
+    JobPipelines jobPipelines(jobApplicationRepository, jobPostingRepository,
+                              postingSourceRepository);
     jobPipelines.loadFromDatabase();
 
     AiBrain aiBrain(aiCredentialRoster, aiBrainSoul);

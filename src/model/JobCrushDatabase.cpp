@@ -84,8 +84,20 @@ bool JobCrushDatabase::createSchemaIfMissing()
             "  salaryText          TEXT NOT NULL DEFAULT '',"
             "  sourceUrl           TEXT NOT NULL DEFAULT '',"
             "  fullDescriptionText TEXT NOT NULL DEFAULT '',"
-            "  discoverySource     TEXT NOT NULL DEFAULT 'manual',"
+            "  postingSource       TEXT NOT NULL DEFAULT '',"
+            "  scoutSource         TEXT NOT NULL DEFAULT 'scout',"
             "  discoveredTimestamp TEXT NOT NULL"
+            ")"),
+
+        // Every place one job can be read or applied to (see PostingSource.h).
+        // A job is usually reachable in more than one, and the user picks.
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS jobPostingSource ("
+            "  postingSourceId INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  jobPostingId    INTEGER NOT NULL REFERENCES jobPosting(jobPostingId),"
+            "  boardName       TEXT NOT NULL,"
+            "  externalId      TEXT NOT NULL DEFAULT '',"
+            "  postingUrl      TEXT NOT NULL"
             ")"),
 
         // The user's campaign for one posting (see JobApplication.h).
@@ -229,18 +241,71 @@ bool JobCrushDatabase::createSchemaIfMissing()
         return false;
     }
 
-    // The same job must never land twice. A source's own id, paired with the
-    // source name, is the only identity Job Crush trusts — titles and company
+    // discoverySource was always the wrong name: it held the BOARD the posting
+    // was read off, never who found it. Move it to postingSource, and give
+    // every database written before this the same two columns a fresh one gets.
+    //
+    // Order matters. The rename has to happen before the unique index below is
+    // built on the new name, and the old index has to go first because it
+    // still names the old column.
+    if (tableHasColumn(QStringLiteral("jobPosting"), QStringLiteral("discoverySource"))
+            && !tableHasColumn(QStringLiteral("jobPosting"),
+                               QStringLiteral("postingSource"))) {
+        QSqlQuery dropOldIndexQuery(databaseConnection);
+        if (!dropOldIndexQuery.exec(QStringLiteral(
+                "DROP INDEX IF EXISTS uniqueDiscoveryPerSource"))) {
+            lastErrorDescription = dropOldIndexQuery.lastError().text();
+            return false;
+        }
+        if (!renameColumnIfNeeded(QStringLiteral("jobPosting"),
+                                  QStringLiteral("discoverySource"),
+                                  QStringLiteral("postingSource"))) {
+            return false;
+        }
+
+        // The old column said 'manual' for a hand-entered posting. That was
+        // an answer to the other question, so it does not belong in
+        // postingSource: a hand-entered job was read off no board at all.
+        QSqlQuery clearManualQuery(databaseConnection);
+        if (!clearManualQuery.exec(QStringLiteral(
+                "UPDATE jobPosting SET postingSource = '' "
+                "WHERE postingSource = 'manual'"))) {
+            lastErrorDescription = clearManualQuery.lastError().text();
+            return false;
+        }
+    }
+
+    // Who brought the job in. Older rows all default to 'scout': the app had
+    // no way to tell a hand-added job from a swept one before this column
+    // existed, and claiming otherwise would be inventing history.
+    if (!addColumnIfMissing(QStringLiteral("jobPosting"),
+                            QStringLiteral("scoutSource"),
+                            QStringLiteral("TEXT NOT NULL DEFAULT 'scout'"))) {
+        return false;
+    }
+
+    // The same job must never land twice. A board's own id, paired with the
+    // board name, is the only identity Job Crush trusts — titles and company
     // names are written by humans and vary between boards.
     //
     // Partial index: rows with no external id (hand-entered postings) are
-    // exempt, because they have no source identity to collide on.
+    // exempt, because they have no board identity to collide on.
     QSqlQuery uniqueDiscoveryIndexQuery(databaseConnection);
     if (!uniqueDiscoveryIndexQuery.exec(QStringLiteral(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uniqueDiscoveryPerSource "
-            "ON jobPosting (discoverySource, externalSourceId) "
+            "CREATE UNIQUE INDEX IF NOT EXISTS uniquePostingPerBoard "
+            "ON jobPosting (postingSource, externalSourceId) "
             "WHERE externalSourceId <> ''"))) {
         lastErrorDescription = uniqueDiscoveryIndexQuery.lastError().text();
+        return false;
+    }
+
+    // One route per board per job. Two rows for the same job on Ashby would
+    // put the same link on the card twice.
+    QSqlQuery uniqueRouteIndexQuery(databaseConnection);
+    if (!uniqueRouteIndexQuery.exec(QStringLiteral(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uniqueRoutePerBoard "
+            "ON jobPostingSource (jobPostingId, boardName)"))) {
+        lastErrorDescription = uniqueRouteIndexQuery.lastError().text();
         return false;
     }
 
@@ -279,6 +344,43 @@ bool JobCrushDatabase::addColumnIfMissing(const QString &tableName,
     if (!addColumnQuery.exec(QStringLiteral("ALTER TABLE %1 ADD COLUMN %2 %3")
                                  .arg(tableName, columnName, columnDefinition))) {
         lastErrorDescription = addColumnQuery.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool JobCrushDatabase::tableHasColumn(const QString &tableName,
+                                      const QString &columnName)
+{
+    QSqlQuery existingColumnsQuery(databaseConnection);
+    if (!existingColumnsQuery.exec(
+            QStringLiteral("PRAGMA table_info(%1)").arg(tableName))) {
+        return false;
+    }
+    while (existingColumnsQuery.next()) {
+        // Column 1 of table_info is the column's name.
+        if (existingColumnsQuery.value(1).toString() == columnName) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool JobCrushDatabase::renameColumnIfNeeded(const QString &tableName,
+                                            const QString &oldColumnName,
+                                            const QString &newColumnName)
+{
+    if (tableHasColumn(tableName, newColumnName)) {
+        return true; // already moved; nothing to do
+    }
+    if (!tableHasColumn(tableName, oldColumnName)) {
+        return true; // nothing to move; a fresh database is already right
+    }
+
+    QSqlQuery renameQuery(databaseConnection);
+    if (!renameQuery.exec(QStringLiteral("ALTER TABLE %1 RENAME COLUMN %2 TO %3")
+                              .arg(tableName, oldColumnName, newColumnName))) {
+        lastErrorDescription = renameQuery.lastError().text();
         return false;
     }
     return true;

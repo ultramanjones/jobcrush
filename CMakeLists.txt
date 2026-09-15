@@ -27,6 +27,9 @@ qt_add_executable(jobcrush
     src/model/JobCrushDatabase.cpp
     src/model/JobPostingRepository.h
     src/model/JobPostingRepository.cpp
+    src/model/PostingSource.h
+    src/model/PostingSourceRepository.h
+    src/model/PostingSourceRepository.cpp
     src/model/JobApplicationRepository.h
     src/model/JobApplicationRepository.cpp
     src/model/ProfessionalDocumentRepository.h

@@ -48,7 +48,7 @@ public:
         // 3. The same id from the same source.
         if (!left.externalSourceId.isEmpty()
                 && left.externalSourceId == right.externalSourceId
-                && left.discoverySource == right.discoverySource) {
+                && left.postingSource == right.postingSource) {
             return true;
         }
 

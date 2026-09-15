@@ -25,9 +25,18 @@ class DiscoveredJobListViewModel : public QAbstractListModel {
     Q_OBJECT
 
     // Which tab is showing. Empty string means Top Prospects — the ranked
-    // list across every site — and any other value is a site's storage name.
+    // list across every site. The Manual Add name below means the jobs the
+    // user brought in by hand. Any other value is a site's storage name.
     Q_PROPERTY(QString activeTabSourceName READ activeTabSourceName
                    WRITE setActiveTabSourceName NOTIFY activeTabSourceNameChanged)
+
+    // The reserved name for the Manual Add tab, so the page never has to
+    // spell the string itself and the two can never drift apart.
+    Q_PROPERTY(QString manualAddTabSourceName READ manualAddTabSourceName CONSTANT)
+
+    // True while the Manual Add tab is the one showing.
+    Q_PROPERTY(bool showingManualAdd READ showingManualAdd
+                   NOTIFY activeTabSourceNameChanged)
 
     Q_PROPERTY(int discoveredJobCount READ rowCountForProperty NOTIFY discoveredJobsChanged)
 
@@ -78,7 +87,23 @@ public:
         PostedDayTextRole,      // the section header: "Today", "Aug 21"
         MatchScoreRole,         // 0-100
         MatchReasonsTextRole,   // why it scored that, in plain words
-        IsRemoteRoleRole
+        IsRemoteRoleRole,
+
+        // Which board the posting was read off, ready to show: "Ashby",
+        // "Lever". Empty when nothing was read off any board.
+        PostingSourceDisplayNameRole,
+
+        // True when the user added this one by hand.
+        WasAddedByHandRole,
+
+        // True when the user added it AND no board had it. These rows are the
+        // ones that still need the user to fill in the rest, and the page
+        // marks them so nobody mistakes a stub for a whole posting.
+        IsManualAllTheWayRole,
+
+        // The database id, so a row can be found again by something that only
+        // knows which job it wants.
+        JobPostingIdRole
     };
 
     // Takes the board as well as the scout: a discovery's whole purpose is to
@@ -93,6 +118,20 @@ public:
 
     QString activeTabSourceName() const;
     void setActiveTabSourceName(const QString &sourceStorageName);
+    QString manualAddTabSourceName() const;
+    bool showingManualAdd() const;
+
+    // Where the job the user added most recently sits in the rows showing
+    // now, or -1 when it is not among them. The page scrolls to it and
+    // highlights it, instead of announcing that the job is somewhere in a
+    // list of a thousand.
+    Q_INVOKABLE int rowOfMostRecentlyHandAddedJob() const;
+
+    // True when there is a hand-added job to go to at all, so the button that
+    // offers the trip only exists when the trip does.
+    Q_PROPERTY(bool hasSomewhereToJumpTo READ hasSomewhereToJumpTo
+                   NOTIFY leadStatusChanged)
+    bool hasSomewhereToJumpTo() const;
 
     int rowCountForProperty() const;
     bool sweepIsRunning() const;

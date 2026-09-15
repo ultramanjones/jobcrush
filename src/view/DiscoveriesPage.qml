@@ -35,9 +35,48 @@ Rectangle {
 
     onActiveTabSourceNameChanged: {
         discoveredJobListViewModel.activeTabSourceName = activeTabSourceName
+        // The row numbers belong to the tab that was showing. Keeping the
+        // highlight would mark whichever unrelated job now sits at that spot.
+        discoveriesPage.highlightedRowIndex = -1
+        highlightFadeTimer.stop()
     }
 
     readonly property bool showingTopProspects: activeTabSourceName === ""
+
+    readonly property string manualAddTabSourceName:
+        discoveredJobListViewModel.manualAddTabSourceName
+
+    readonly property bool showingManualAdd:
+        activeTabSourceName === manualAddTabSourceName
+
+    // The row to point at after a jump. -1 means point at nothing. It clears
+    // itself after a few seconds: a highlight that never goes away stops
+    // meaning "here it is" and starts meaning nothing at all.
+    property int highlightedRowIndex: -1
+
+    Timer {
+        id: highlightFadeTimer
+        interval: 6000
+        onTriggered: discoveriesPage.highlightedRowIndex = -1
+    }
+
+    // Takes the user to the job they just added. Switches to the tab that
+    // holds it, finds the row, scrolls it into view and marks it.
+    //
+    // Everything here is ordered on purpose. The tab has to change before the
+    // row can be looked up, because the rows are rebuilt when it changes and
+    // the job is not among the old ones.
+    function showTheJobJustAdded() {
+        discoveriesPage.activeTabSourceName = discoveriesPage.manualAddTabSourceName
+
+        const rowIndex = discoveredJobListViewModel.rowOfMostRecentlyHandAddedJob()
+        if (rowIndex < 0) {
+            return
+        }
+        discoveredJobListView.positionViewAtIndex(rowIndex, ListView.Beginning)
+        discoveriesPage.highlightedRowIndex = rowIndex
+        highlightFadeTimer.restart()
+    }
 
     // Whether the "add one job by hand" panel is showing. Closed by default:
     // most jobs arrive from a sweep, and a panel that is always open would
@@ -274,6 +313,39 @@ Rectangle {
             }
         }
 
+        // Manual Add sits second, ahead of every site, because these are the
+        // jobs the user went and fetched themselves. A job you had to go and
+        // get is worth more of your attention than one a sweep turned up, and
+        // it must never be something you have to hunt for.
+        Rectangle {
+            readonly property bool isActiveTab: discoveriesPage.showingManualAdd
+
+            width: manualAddTabLabel.implicitWidth + 28
+            height: 32
+            radius: 16
+            color: isActiveTab ? JobCrushTheme.cardBackgroundColor : "transparent"
+            border.color: isActiveTab
+                ? JobCrushTheme.callToActionColor : JobCrushTheme.hairlineBorderColor
+            border.width: isActiveTab ? 2 : 1
+
+            Text {
+                id: manualAddTabLabel
+                anchors.centerIn: parent
+                text: "Manual Add"
+                color: parent.isActiveTab
+                    ? JobCrushTheme.primaryTextColor : JobCrushTheme.secondaryTextColor
+                font.pixelSize: JobCrushTheme.smallFontSize
+                font.weight: parent.isActiveTab ? Font.DemiBold : Font.Normal
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: discoveriesPage.activeTabSourceName
+                    = discoveriesPage.manualAddTabSourceName
+            }
+        }
+
         Repeater {
             model: discoveriesPage.jobSourceRosterViewModel.enabledJobSourceTabs
 
@@ -330,6 +402,7 @@ Rectangle {
 
         visible: discoveriesPage.addOneJobPanelIsOpen
         discoveredJobListViewModel: discoveriesPage.discoveredJobListViewModel
+        onShowTheJobJustAddedRequested: discoveriesPage.showTheJobJustAdded()
     }
 
     Rectangle {
@@ -348,7 +421,10 @@ Rectangle {
         readonly property bool showingOutside:
             discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
 
+        // Never on the Manual Add tab. That list ignores the location filter
+        // entirely, so a bar saying jobs are being held back would be a lie.
         visible: discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
+                 && !discoveriesPage.showingManualAdd
                  && (heldBackCount > 0 || showingOutside)
 
         height: visible ? 46 : 0
@@ -503,6 +579,12 @@ Rectangle {
             required property int matchScore
             required property string matchReasonsText
             required property bool isRemoteRole
+            required property string postingSourceDisplayName
+            required property bool wasAddedByHand
+            required property bool isManualAllTheWay
+
+            readonly property bool isTheJobJustAdded:
+                discoveriesPage.highlightedRowIndex === discoveredJobRow.index
 
             width: ListView.view.width
 
@@ -511,7 +593,7 @@ Rectangle {
             // cleaner should be able to make a row look wrong, never to make
             // it a screen tall. The ceiling is the real fix's second lock:
             // nothing a source sends can push a row past this.
-            readonly property int tallestARowMayEver: 138
+            readonly property int tallestARowMayEver: 162
             height: Math.min(tallestARowMayEver,
                              Math.max(rowRightLane.implicitHeight + 24,
                                       discoveredJobRowColumn.implicitHeight + 24))
@@ -519,8 +601,19 @@ Rectangle {
             radius: 8
             color: discoveredJobRowMouseArea.containsMouse
                 ? JobCrushTheme.cardBackgroundColor : JobCrushTheme.panelBackgroundColor
-            border.color: JobCrushTheme.hairlineBorderColor
-            border.width: 1
+            // Three outlines, and each one says something different.
+            //
+            // The job you just added is marked so you can find it without
+            // reading. A job you added that no board had is marked because it
+            // is a stub and applying from it would mean applying from half a
+            // posting. Everything else gets the ordinary hairline.
+            border.color: discoveredJobRow.isTheJobJustAdded
+                ? JobCrushTheme.callToActionColor
+                : (discoveredJobRow.isManualAllTheWay
+                       ? JobCrushTheme.pendingColor
+                       : JobCrushTheme.hairlineBorderColor)
+            border.width: (discoveredJobRow.isTheJobJustAdded
+                           || discoveredJobRow.isManualAllTheWay) ? 2 : 1
 
             // The right-hand lane: the score, and the button that acts on it.
             //
@@ -604,10 +697,31 @@ Rectangle {
                           + (discoveredJobRow.isRemoteRole ? "   ·   Remote" : "")
                           + (discoveredJobRow.salaryText.length > 0
                                  ? "   ·   " + discoveredJobRow.salaryText : "")
-                          + "   ·   via " + discoveredJobRow.sourceDisplayName
+                          + (discoveredJobRow.postingSourceDisplayName.length > 0
+                                 ? "   ·   via " + discoveredJobRow.postingSourceDisplayName
+                                 : "")
                     textFormat: Text.PlainText
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
+                    elide: Text.ElideRight
+                }
+
+                // What happened when you added this one, in plain words.
+                //
+                // Two different facts, and the row says which it is rather
+                // than making the user work it out from what is missing.
+                Text {
+                    width: parent.width
+                    visible: discoveredJobRow.wasAddedByHand
+                    text: discoveredJobRow.isManualAllTheWay
+                        ? "You added this. No board had it — fill in the rest yourself."
+                        : "You added this. Job Crush found the posting on "
+                          + discoveredJobRow.postingSourceDisplayName + "."
+                    textFormat: Text.PlainText
+                    color: discoveredJobRow.isManualAllTheWay
+                        ? JobCrushTheme.pendingColor : JobCrushTheme.positiveColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
 
