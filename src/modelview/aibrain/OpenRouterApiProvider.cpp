@@ -42,7 +42,8 @@ QString OpenRouterApiProvider::providerDisplayName() const
 
 QByteArray OpenRouterApiProvider::buildRequestBody(
     const QString &soulText,
-    const QList<AiBrainConversationMessage> &conversation) const
+    const QList<AiBrainConversationMessage> &conversation,
+    const AiBrainRequestOptions &requestOptions) const
 {
     // OpenAI wire format: the soul rides as a leading system message;
     // turns alternate user/assistant after it.
@@ -72,6 +73,17 @@ QByteArray OpenRouterApiProvider::buildRequestBody(
     requestBodyObject.insert(QStringLiteral("stream"), true);
     requestBodyObject.insert(QStringLiteral("messages"), messagesArray);
 
+    // OpenRouter's web search is a plugin named "web". It adds search results
+    // to the prompt before the model answers, whatever model is picked, and
+    // the answer arrives as ordinary content deltas.
+    if (requestOptions.letTheBrainSearchTheWeb) {
+        QJsonObject webPlugin;
+        webPlugin.insert(QStringLiteral("id"), QStringLiteral("web"));
+        QJsonArray pluginsArray;
+        pluginsArray.append(webPlugin);
+        requestBodyObject.insert(QStringLiteral("plugins"), pluginsArray);
+    }
+
     return QJsonDocument(requestBodyObject).toJson(QJsonDocument::Compact);
 }
 
@@ -79,7 +91,8 @@ AiBrainReply *OpenRouterApiProvider::streamConversation(
     const QString &soulText,
     const QList<AiBrainConversationMessage> &conversation,
     const AiCredential &credential,
-    QObject *replyParent)
+    QObject *replyParent,
+    const AiBrainRequestOptions &requestOptions)
 {
     AiBrainReply *brainReply = new AiBrainReply(replyParent);
 
@@ -95,7 +108,7 @@ AiBrainReply *OpenRouterApiProvider::streamConversation(
                                 QByteArrayLiteral("Job Crush"));
 
     QNetworkReply *networkReply = networkAccessManager.post(
-        networkRequest, buildRequestBody(soulText, conversation));
+        networkRequest, buildRequestBody(soulText, conversation, requestOptions));
     networkReply->setParent(brainReply); // dies with the brain reply
 
     // --- OpenAI-style SSE parsing ----------------------------------------

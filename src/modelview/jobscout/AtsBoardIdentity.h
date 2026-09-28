@@ -17,6 +17,12 @@ inline const QString Workable       = QStringLiteral("workable");
 inline const QString Recruitee      = QStringLiteral("recruitee");
 inline const QString Personio       = QStringLiteral("personio");
 
+// Not a hiring system. This is the name a posting carries when Job Crush read
+// it straight off the employer's own web page instead of a board. It lives
+// here because it sits in the same field as the board names and shows up in
+// the same sentences ("Found it on …").
+inline const QString EmployerWebsite = QStringLiteral("employer-website");
+
 inline QString displayNameFor(const QString &boardName)
 {
     if (boardName == Greenhouse)      return QStringLiteral("Greenhouse");
@@ -26,6 +32,7 @@ inline QString displayNameFor(const QString &boardName)
     if (boardName == Workable)        return QStringLiteral("Workable");
     if (boardName == Recruitee)       return QStringLiteral("Recruitee");
     if (boardName == Personio)        return QStringLiteral("Personio");
+    if (boardName == EmployerWebsite) return QStringLiteral("the employer's website");
     return QString();
 }
 

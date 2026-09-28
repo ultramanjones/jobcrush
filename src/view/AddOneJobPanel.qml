@@ -71,6 +71,10 @@ Rectangle {
             selectedTextColor: JobCrushTheme.onAccentTextColor
             selectByMouse: true
 
+            // Tab moves to the next box. A plain TextInput stays out of the
+            // Tab order unless it is told to join it, and it was never told.
+            activeFocusOnTab: true
+
             Keys.onReturnPressed: oneLineBox.returnPressed()
             Keys.onEnterPressed: oneLineBox.returnPressed()
         }
@@ -166,7 +170,7 @@ Rectangle {
                 anchors.right: findByLinkButton.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                hintText: "Greenhouse, Lever or Ashby link"
+                hintText: "Paste the job's link"
                 onReturnPressed: findByLinkButton.press()
             }
 
@@ -284,10 +288,12 @@ Rectangle {
         // it is broken when a company is not on one of them.
         Text {
             width: parent.width
-            text: "A LinkedIn link on its own tells Job Crush nothing — type the "
-                  + "company and the title off the alert instead. Either way it looks "
-                  + "on Greenhouse, Lever and Ashby, and saves what you gave it when "
-                  + "the company isn't on one of those."
+            text: "Paste the job's own page and Job Crush reads the job off it. "
+                  + "A LinkedIn or Indeed link tells it nothing — type the company "
+                  + "and the title off the alert instead. Either way it checks "
+                  + "Greenhouse, Lever and Ashby, then the page, then asks your AI "
+                  + "brain to search the web if one is connected. What you gave it "
+                  + "is saved even when nothing is found."
             color: JobCrushTheme.mutedTextColor
             font.pixelSize: JobCrushTheme.smallFontSize
             wrapMode: Text.WordWrap

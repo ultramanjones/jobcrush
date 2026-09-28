@@ -11,6 +11,8 @@
 #include "../../model/JobPosting.h"
 #include "ProspectScorer.h"
 
+class AiBrain;
+class BrainJobFinder;
 class CanonicalPostingResolver;
 class FollowedEmployerRoster;
 struct JobLead;
@@ -19,6 +21,7 @@ class PostingSourceRepository;
 class JobSearchProfile;
 class JobSourceProvider;
 class JobSourceRoster;
+class PostedJobPageReader;
 
 // ScoredJobPosting
 //
@@ -71,6 +74,7 @@ public:
              JobSourceRoster &sourceRoster,
              FollowedEmployerRoster &followedEmployerRoster,
              JobSearchProfile &searchProfile,
+             AiBrain &aiBrain,
              const QString &diagnosticsFolderPath,
              QObject *parent = nullptr);
     ~JobScout() override;
@@ -106,9 +110,9 @@ public:
     //
     // This is the way around the sites Job Crush is not allowed to read. The
     // user pastes a link, or types the company and the job title straight off
-    // a LinkedIn alert, and Job Crush goes and finds that same job on the
-    // employer's own board — where it is allowed to look, and where the
-    // posting is the real one instead of somebody's copy of it.
+    // a LinkedIn alert, and Job Crush goes and finds that same job: on the
+    // employer's own board first, then by reading the pasted page itself,
+    // then by asking the AI brain to search the web when one is connected.
     //
     // When the job cannot be found, what the user typed is saved anyway. A
     // paste that appears to do nothing is worse than a plain no.
@@ -182,10 +186,19 @@ private:
     // Wires up one site's reply and folds its results into the sweep.
     void beginSweepOfSource(const QString &sourceStorageName);
 
-    // Goes looking for one lead on the employer's own board, then stores
-    // whatever comes back — the real posting when it is found, and what the
-    // user gave us when it is not.
-    void goLookForOneLead(const JobLead &jobLead);
+    // The hunt for one hand-added job, one step per method. Each step either
+    // saves the job or hands the lead to the next step. brainWasAlreadyAsked
+    // stops the brain being asked twice for one job.
+    void beginHuntForOneLead(const JobLead &jobLead);
+    void huntTheEmployerBoards(const JobLead &jobLead, bool brainWasAlreadyAsked);
+    void readThePostedPage(const JobLead &jobLead, bool brainWasAlreadyAsked);
+    void whenTheHuntCameUpEmpty(const JobLead &jobLead, const QString &whyNothingWasFound,
+                                bool brainWasAlreadyAsked);
+    void askTheBrainToFindIt(const JobLead &jobLead, const QString &whyEarlierStepsMissed);
+
+    // Saves the posting a step found and tells the user where it came from.
+    void keepTheRealPosting(const JobLead &jobLead, const JobPosting &realPosting,
+                            bool theBrainFoundTheLink, bool onlyThePageTitleWasRead);
 
     // Saves one posting and returns the sentence to show the user. An empty
     // board name means the user handed this job over rather than a board
@@ -249,6 +262,12 @@ private:
     // Built once and kept, same as the site clients. Held by pointer so this
     // header does not have to drag in all three board readers.
     std::unique_ptr<CanonicalPostingResolver> employerBoardResolver;
+
+    // Reads a job off a pasted web page. Same lifetime as the resolver.
+    std::unique_ptr<PostedJobPageReader> postedPageReader;
+
+    // Asks the connected brain to search the web. Same lifetime.
+    std::unique_ptr<BrainJobFinder> webSearchingBrain;
 
     // Live bookkeeping for one pasted job.
     bool aLeadIsBeingResolved = false;

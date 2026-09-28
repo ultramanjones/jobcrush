@@ -23,6 +23,19 @@ struct AiBrainConversationMessage {
     QString messageText;
 };
 
+// AiBrainRequestOptions
+//
+// The few switches a caller can set on one request. Plain chat sets none of
+// them.
+//
+// letTheBrainSearchTheWeb turns on the vendor's own web search tool for this
+// one request. Each vendor has one (Anthropic, Google and OpenRouter all do)
+// and each spells it differently, so the provider translates. It is off by
+// default because a search costs extra and a chat message rarely needs one.
+struct AiBrainRequestOptions {
+    bool letTheBrainSearchTheWeb = false;
+};
+
 // AiBrainProvider
 //
 // The interface every concrete provider implements (Anthropic, OpenAI,
@@ -46,7 +59,9 @@ public:
     virtual AiBrainReply *streamConversation(const QString &soulText,
                                              const QList<AiBrainConversationMessage> &conversation,
                                              const AiCredential &credential,
-                                             QObject *replyParent) = 0;
+                                             QObject *replyParent,
+                                             const AiBrainRequestOptions &requestOptions
+                                                 = AiBrainRequestOptions()) = 0;
 
     // Asks the vendor, as cheaply as possible, whether this credential
     // actually works right now — the plumbing behind "connected and active".

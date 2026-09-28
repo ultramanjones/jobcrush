@@ -39,7 +39,8 @@ QString AnthropicApiProvider::providerDisplayName() const
 
 QByteArray AnthropicApiProvider::buildRequestBody(
     const QString &soulText,
-    const QList<AiBrainConversationMessage> &conversation) const
+    const QList<AiBrainConversationMessage> &conversation,
+    const AiBrainRequestOptions &requestOptions) const
 {
     // Translate the vendor-neutral conversation into Anthropic's wire format:
     // the soul rides as the system prompt; turns alternate user/assistant.
@@ -64,6 +65,21 @@ QByteArray AnthropicApiProvider::buildRequestBody(
     }
     requestBodyObject.insert(QStringLiteral("messages"), messagesArray);
 
+    // Anthropic's own web search. It runs on their side: the model searches,
+    // reads, and answers in one request, and the answer still arrives as
+    // text_delta events, so the stream parser below needs no change. The
+    // search blocks it also sends (server_tool_use, web_search_tool_result)
+    // are not text deltas and fall through untouched.
+    if (requestOptions.letTheBrainSearchTheWeb) {
+        QJsonObject webSearchTool;
+        webSearchTool.insert(QStringLiteral("type"), QStringLiteral("web_search_20250305"));
+        webSearchTool.insert(QStringLiteral("name"), QStringLiteral("web_search"));
+        webSearchTool.insert(QStringLiteral("max_uses"), 5);
+        QJsonArray toolsArray;
+        toolsArray.append(webSearchTool);
+        requestBodyObject.insert(QStringLiteral("tools"), toolsArray);
+    }
+
     return QJsonDocument(requestBodyObject).toJson(QJsonDocument::Compact);
 }
 
@@ -71,7 +87,8 @@ AiBrainReply *AnthropicApiProvider::streamConversation(
     const QString &soulText,
     const QList<AiBrainConversationMessage> &conversation,
     const AiCredential &credential,
-    QObject *replyParent)
+    QObject *replyParent,
+    const AiBrainRequestOptions &requestOptions)
 {
     AiBrainReply *brainReply = new AiBrainReply(replyParent);
 
@@ -84,7 +101,7 @@ AiBrainReply *AnthropicApiProvider::streamConversation(
                                 anthropicApiVersionHeaderValue);
 
     QNetworkReply *networkReply = networkAccessManager.post(
-        networkRequest, buildRequestBody(soulText, conversation));
+        networkRequest, buildRequestBody(soulText, conversation, requestOptions));
     networkReply->setParent(brainReply); // dies with the brain reply
 
     // --- Server-sent event parsing --------------------------------------

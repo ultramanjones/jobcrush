@@ -10,7 +10,9 @@
 #include "../../model/JobPostingRepository.h"
 #include "../../model/PostingSourceRepository.h"
 #include "ArbeitnowJobSource.h"
+#include "../aibrain/AiBrain.h"
 #include "AtsBoardDetector.h"
+#include "BrainJobFinder.h"
 #include "CanonicalPostingResolver.h"
 #include "FollowedEmployerJobSource.h"
 #include "FollowedEmployerRoster.h"
@@ -21,6 +23,7 @@
 #include "JobSearchProfile.h"
 #include "JobSourceProvider.h"
 #include "JobSourceRoster.h"
+#include "PostedJobPageReader.h"
 #include "RemotiveJobSource.h"
 
 namespace {
@@ -46,6 +49,7 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
                    JobSourceRoster &sourceRoster,
                    FollowedEmployerRoster &followedEmployerRoster,
                    JobSearchProfile &searchProfile,
+                   AiBrain &aiBrain,
                    const QString &diagnosticsFolderPath,
                    QObject *parent)
     : QObject(parent)
@@ -66,6 +70,8 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
     builtJobSourceProviders.push_back(std::make_unique<UsaJobsJobSource>(registeredSourceRoster));
 
     employerBoardResolver = std::make_unique<CanonicalPostingResolver>(this);
+    postedPageReader = std::make_unique<PostedJobPageReader>(this);
+    webSearchingBrain = std::make_unique<BrainJobFinder>(aiBrain, this);
 
     // Editing the profile re-ranks everything already stored — instantly and
     // for free, because the scorer is arithmetic rather than a paid call.
@@ -516,7 +522,18 @@ void JobScout::addJobFromLink(const QString &pastedLink)
         ? jobLead.boardIdentity.boardName
         : QString();
 
-    goLookForOneLead(jobLead);
+    // A LinkedIn or Indeed link is the one kind Job Crush will not open, and
+    // it carries nothing readable in the address itself. Say so now rather
+    // than after a search that was never going to start.
+    if (!jobLead.boardIdentity.isKnown() && boardDetector.isWalledGarden(trimmedLink)) {
+        finishLeadWith(QStringLiteral(
+            "Job Crush isn't allowed to read that site, and the link alone doesn't "
+            "say which job it is. Type the company name and the job title off the "
+            "page instead and Job Crush will go find the employer's own posting."));
+        return;
+    }
+
+    beginHuntForOneLead(jobLead);
 }
 
 void JobScout::addJobFromCompanyAndTitle(const QString &companyName,
@@ -545,60 +562,205 @@ void JobScout::addJobFromCompanyAndTitle(const QString &companyName,
     jobLead.positionTitle = trimmedTitle;
     // No link, so no board is known yet. A resolver may fill this in.
 
-    goLookForOneLead(jobLead);
+    beginHuntForOneLead(jobLead);
 }
 
-void JobScout::goLookForOneLead(const JobLead &jobLead)
+// The hunt for one hand-added job, in the order the steps are tried:
+//
+//   1. The employer's board, when the link names one or the company name
+//      can be guessed into one. This is the best answer: the employer's own
+//      words, and a job that disappears when it is filled.
+//   2. The page the user pasted, read straight off the web. Most job pages
+//      carry the job in a labeled block; the reader knows how to find it.
+//   3. The AI brain, asked to search the web. Only after 1 and 2 came up
+//      empty, and only when a brain is connected, because it costs money.
+//      What the brain finds is a link, and Job Crush goes back to step 1 or
+//      2 to read it, so the saved posting is the employer's and not the
+//      brain's summary.
+//
+// When every step misses, what the user gave is saved anyway. A paste that
+// appears to do nothing is worse than a plain no.
+void JobScout::beginHuntForOneLead(const JobLead &jobLead)
 {
     aLeadIsBeingResolved = true;
     // The last job's row is not this job's row. Forget it now rather than
     // leaving a button that quietly jumps to the wrong place.
     lastHandAddedJobPostingId = 0;
-    storedLeadStatusText = jobLead.companyName.isEmpty()
+
+    if (jobLead.boardIdentity.isKnown()
+            || (!jobLead.companyName.trimmed().isEmpty()
+                && !jobLead.positionTitle.trimmed().isEmpty())) {
+        huntTheEmployerBoards(jobLead, false);
+        return;
+    }
+    readThePostedPage(jobLead, false);
+}
+
+void JobScout::huntTheEmployerBoards(const JobLead &jobLead, bool brainWasAlreadyAsked)
+{
+    sayThisAboutTheLead(jobLead.companyName.isEmpty()
         ? QStringLiteral("Looking for that job on the employer's own board…")
-        : QStringLiteral("Looking for that job on %1's own board…").arg(jobLead.companyName);
-    emit leadStatusChanged();
+        : QStringLiteral("Looking for that job on %1's own board…").arg(jobLead.companyName));
 
     JobScoutReply *resolverReply = employerBoardResolver->resolve(jobLead, this);
 
     connect(resolverReply, &JobScoutReply::finished, this,
-            [this, resolverReply, jobLead](const QList<JobPosting> &foundPostings) {
+            [this, resolverReply, jobLead, brainWasAlreadyAsked](
+                const QList<JobPosting> &foundPostings) {
         resolverReply->deleteLater();
-
         if (!foundPostings.isEmpty()) {
-            const JobPosting realPosting = foundPostings.first();
-            const QString whatHappened = storeOnePostingAndSayWhatHappened(
-                realPosting,
-                AtsBoardName::displayNameFor(realPosting.postingSource));
-
-            // The link the user pasted is a real way of reaching this job, and
-            // it is often not the one the resolver settled on: paste a Lever
-            // link for a company that is also on Ashby and the search answers
-            // from Ashby. Both work. Throwing one away would be the app
-            // deciding for the user which door they walk through.
-            if (jobLead.boardIdentity.isKnown()
-                    && jobLead.boardIdentity.boardName != realPosting.postingSource) {
-                rememberRouteToThisJob(lastHandAddedJobPostingId,
-                                       jobLead.boardIdentity.boardName,
-                                       jobLead.boardIdentity.jobId,
-                                       jobLead.discoveryUrl);
-            }
-
-            finishLeadWith(whatHappened);
+            keepTheRealPosting(jobLead, foundPostings.first(), brainWasAlreadyAsked, false);
             return;
         }
-
-        // Nobody's board had it.
-        finishLeadWith(keepWhatTheUserGaveUs(jobLead, QStringLiteral(
-            "%1 isn't on Greenhouse, Lever or Ashby, so open the link to read the "
-            "whole posting.").arg(jobLead.companyName)));
+        whenTheHuntCameUpEmpty(jobLead, QStringLiteral(
+            "%1 isn't on Greenhouse, Lever or Ashby.").arg(
+                jobLead.companyName.isEmpty() ? QStringLiteral("That company")
+                                              : jobLead.companyName),
+            brainWasAlreadyAsked);
     });
 
     connect(resolverReply, &JobScoutReply::failed, this,
-            [this, resolverReply, jobLead](const QString &whyItFailed) {
+            [this, resolverReply, jobLead, brainWasAlreadyAsked](const QString &whyItFailed) {
         resolverReply->deleteLater();
-        finishLeadWith(keepWhatTheUserGaveUs(jobLead, whyItFailed));
+        whenTheHuntCameUpEmpty(jobLead, whyItFailed, brainWasAlreadyAsked);
     });
+}
+
+void JobScout::readThePostedPage(const JobLead &jobLead, bool brainWasAlreadyAsked)
+{
+    sayThisAboutTheLead(QStringLiteral("Reading that page…"));
+
+    JobScoutReply *pageReply = postedPageReader->readJobFromPage(jobLead.discoveryUrl, this);
+
+    connect(pageReply, &JobScoutReply::finished, this,
+            [this, pageReply, jobLead, brainWasAlreadyAsked](
+                const QList<JobPosting> &foundPostings) {
+        pageReply->deleteLater();
+        if (!foundPostings.isEmpty()) {
+            keepTheRealPosting(jobLead, foundPostings.first(), brainWasAlreadyAsked,
+                               postedPageReader->lastReadUsedThePageTitleOnly());
+            return;
+        }
+        whenTheHuntCameUpEmpty(jobLead, QStringLiteral(
+            "That page had no job Job Crush could read — some sites only show the "
+            "job after a browser runs their scripts."), brainWasAlreadyAsked);
+    });
+
+    connect(pageReply, &JobScoutReply::failed, this,
+            [this, pageReply, jobLead, brainWasAlreadyAsked](const QString &whyItFailed) {
+        pageReply->deleteLater();
+        whenTheHuntCameUpEmpty(jobLead, whyItFailed, brainWasAlreadyAsked);
+    });
+}
+
+void JobScout::whenTheHuntCameUpEmpty(const JobLead &jobLead,
+                                      const QString &whyNothingWasFound,
+                                      bool brainWasAlreadyAsked)
+{
+    if (!brainWasAlreadyAsked && webSearchingBrain->aBrainIsAvailable()) {
+        askTheBrainToFindIt(jobLead, whyNothingWasFound);
+        return;
+    }
+
+    QString whatToSay = whyNothingWasFound;
+    if (brainWasAlreadyAsked) {
+        // The brain handed over a link and Job Crush could not read it.
+        // What the brain said is still worth keeping; the user can open the
+        // link and see for themselves.
+        whatToSay = QStringLiteral("%1 found a link but Job Crush couldn't read the "
+                                   "page: %2 Open the link to check it.")
+            .arg(webSearchingBrain->brainDisplayName(), whyNothingWasFound);
+    } else if (!webSearchingBrain->aBrainIsAvailable()) {
+        whatToSay += QStringLiteral(" Connect an AI brain in Settings and Job Crush "
+                                    "will search the web for it next time.");
+    }
+    finishLeadWith(keepWhatTheUserGaveUs(jobLead, whatToSay));
+}
+
+void JobScout::askTheBrainToFindIt(const JobLead &jobLead,
+                                   const QString &whyEarlierStepsMissed)
+{
+    const QString brainName = webSearchingBrain->brainDisplayName();
+    sayThisAboutTheLead(QStringLiteral("%1 Asking %2 to search the web for it…")
+                            .arg(whyEarlierStepsMissed, brainName));
+
+    JobScoutReply *brainReply = webSearchingBrain->findTheJob(jobLead, this);
+
+    connect(brainReply, &JobScoutReply::finished, this,
+            [this, brainReply, jobLead](const QList<JobPosting> &foundLeads) {
+        brainReply->deleteLater();
+        if (foundLeads.isEmpty()) {
+            whenTheHuntCameUpEmpty(jobLead, QStringLiteral("nothing came back."), true);
+            return;
+        }
+        const JobPosting &brainsAnswer = foundLeads.first();
+
+        // The brain's answer is a lead, not a posting. Job Crush reads the
+        // page it points at, the same way it would have read a pasted link,
+        // so what gets saved is the employer's words. What the user typed
+        // stays when the brain left a field blank.
+        JobLead foundLead;
+        foundLead.discoveryUrl = brainsAnswer.sourceUrl;
+        foundLead.positionTitle = brainsAnswer.positionTitle.isEmpty()
+            ? jobLead.positionTitle : brainsAnswer.positionTitle;
+        foundLead.companyName = brainsAnswer.companyName.isEmpty()
+            ? jobLead.companyName : brainsAnswer.companyName;
+        foundLead.locationText = brainsAnswer.locationText;
+        foundLead.isRemoteRole = brainsAnswer.isRemoteRole;
+        foundLead.rawText = brainsAnswer.fullDescriptionText;
+
+        AtsBoardDetector boardDetector;
+        foundLead.boardIdentity = boardDetector.identify(foundLead.discoveryUrl);
+        foundLead.postingSource = foundLead.boardIdentity.isKnown()
+            ? foundLead.boardIdentity.boardName : QString();
+
+        if (foundLead.boardIdentity.namesOneJob()) {
+            huntTheEmployerBoards(foundLead, true);
+        } else {
+            readThePostedPage(foundLead, true);
+        }
+    });
+
+    connect(brainReply, &JobScoutReply::failed, this,
+            [this, brainReply, jobLead, whyEarlierStepsMissed](const QString &whyItFailed) {
+        brainReply->deleteLater();
+        finishLeadWith(keepWhatTheUserGaveUs(jobLead,
+            QStringLiteral("%1 %2 searched the web too — %3")
+                .arg(whyEarlierStepsMissed, webSearchingBrain->brainDisplayName(),
+                     whyItFailed)));
+    });
+}
+
+void JobScout::keepTheRealPosting(const JobLead &jobLead, const JobPosting &realPosting,
+                                  bool theBrainFoundTheLink, bool onlyThePageTitleWasRead)
+{
+    QString whatHappened = storeOnePostingAndSayWhatHappened(
+        realPosting, AtsBoardName::displayNameFor(realPosting.postingSource));
+
+    if (lastHandAddedJobPostingId != 0) {
+        // The link the user pasted is a real way of reaching this job, and
+        // it is often not the one the search settled on: paste a Lever link
+        // for a company that is also on Ashby and the search answers from
+        // Ashby. Both work. Throwing one away would be the app deciding for
+        // the user which door they walk through.
+        if (jobLead.boardIdentity.isKnown()
+                && jobLead.boardIdentity.boardName != realPosting.postingSource) {
+            rememberRouteToThisJob(lastHandAddedJobPostingId,
+                                   jobLead.boardIdentity.boardName,
+                                   jobLead.boardIdentity.jobId,
+                                   jobLead.discoveryUrl);
+        }
+    }
+
+    if (theBrainFoundTheLink) {
+        whatHappened = QStringLiteral("%1 found the link and Job Crush read the posting. %2")
+            .arg(webSearchingBrain->brainDisplayName(), whatHappened);
+    }
+    if (onlyThePageTitleWasRead) {
+        whatHappened += QStringLiteral(" Only the page title could be read, so open the "
+                                       "job and check the details.");
+    }
+    finishLeadWith(whatHappened);
 }
 
 // Saves the job exactly as the user handed it over, because the search for the
@@ -609,10 +771,11 @@ QString JobScout::keepWhatTheUserGaveUs(const JobLead &jobLead,
 {
     if (jobLead.positionTitle.trimmed().isEmpty()
             || jobLead.companyName.trimmed().isEmpty()) {
+        // Nothing to save: a link with no title and no company is not a job.
         return QStringLiteral(
-            "Job Crush couldn't read that link, and it isn't on Greenhouse, Lever or "
-            "Ashby. Type the company name and the job title instead and it will go "
-            "look again.");
+            "Job Crush couldn't get the job off that link. %1 Type the company name "
+            "and the job title instead and it will go look again.")
+            .arg(whyTheRealOneIsMissing);
     }
 
     JobPosting leadAsPosting;

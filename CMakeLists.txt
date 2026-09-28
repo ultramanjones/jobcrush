@@ -84,6 +84,10 @@ qt_add_executable(jobcrush
     src/modelview/jobscout/EmployerTenantGuesser.h
     src/modelview/jobscout/CanonicalPostingResolver.h
     src/modelview/jobscout/CanonicalPostingResolver.cpp
+    src/modelview/jobscout/PostedJobPageReader.h
+    src/modelview/jobscout/PostedJobPageReader.cpp
+    src/modelview/jobscout/BrainJobFinder.h
+    src/modelview/jobscout/BrainJobFinder.cpp
     src/modelview/jobscout/RemotiveJobSource.h
     src/modelview/jobscout/RemotiveJobSource.cpp
     src/modelview/jobscout/ArbeitnowJobSource.h

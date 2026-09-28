@@ -400,7 +400,8 @@ void AiBrain::checkConnectionNow()
 
 AiBrainReply *AiBrain::streamConversation(
     const QList<AiBrainConversationMessage> &conversation,
-    QObject *replyParent)
+    QObject *replyParent,
+    const AiBrainRequestOptions &requestOptions)
 {
     bool found = false;
     const AiProviderKind selectedKind = effectivelySelectedProviderKind(found);
@@ -416,5 +417,6 @@ AiBrainReply *AiBrain::streamConversation(
     }
 
     return providerFor(selectedKind)->streamConversation(
-        brainSoul.assembledSoulText(), conversation, selectedCredential, replyParent);
+        brainSoul.assembledSoulText(), conversation, selectedCredential, replyParent,
+        requestOptions);
 }

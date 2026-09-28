@@ -130,9 +130,14 @@ int main(int argc, char *argv[])
     FollowedEmployerRoster followedEmployerRoster;
     followedEmployerRoster.loadFromSettings();
 
+    AiBrain aiBrain(aiCredentialRoster, aiBrainSoul);
+    aiBrain.loadFromSettings(); // which brain the user chose last time
+
+    // Built after the brain because Manual Add asks it to search the web
+    // when the boards and the pasted page come up empty.
     JobScout jobScout(jobPostingRepository, postingSourceRepository,
                       jobSourceRoster, followedEmployerRoster,
-                      jobSearchProfile,
+                      jobSearchProfile, aiBrain,
                       applicationDataFolderPath);
 
     // The board. Loaded now so every screen that asks "is this job already on
@@ -140,9 +145,6 @@ int main(int argc, char *argv[])
     JobPipelines jobPipelines(jobApplicationRepository, jobPostingRepository,
                               postingSourceRepository);
     jobPipelines.loadFromDatabase();
-
-    AiBrain aiBrain(aiCredentialRoster, aiBrainSoul);
-    aiBrain.loadFromSettings(); // which brain the user chose last time
 
     BrainChatSession brainChatSession(aiBrain);
 

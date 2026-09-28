@@ -112,7 +112,9 @@ public:
     // failed. Returns nullptr when no usable brain is selected — callers
     // must check.
     AiBrainReply *streamConversation(const QList<AiBrainConversationMessage> &conversation,
-                                     QObject *replyParent);
+                                     QObject *replyParent,
+                                     const AiBrainRequestOptions &requestOptions
+                                         = AiBrainRequestOptions());
 
 signals:
     // The selected brain changed, or the roster changed underneath it.

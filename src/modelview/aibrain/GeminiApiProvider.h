@@ -24,14 +24,17 @@ public:
     AiBrainReply *streamConversation(const QString &soulText,
                                      const QList<AiBrainConversationMessage> &conversation,
                                      const AiCredential &credential,
-                                     QObject *replyParent) override;
+                                     QObject *replyParent,
+                                     const AiBrainRequestOptions &requestOptions
+                                         = AiBrainRequestOptions()) override;
 
     AiBrainReply *verifyCredentialConnection(const AiCredential &credential,
                                              QObject *replyParent) override;
 
 private:
     QByteArray buildRequestBody(const QString &soulText,
-                                const QList<AiBrainConversationMessage> &conversation) const;
+                                const QList<AiBrainConversationMessage> &conversation,
+                                const AiBrainRequestOptions &requestOptions) const;
 
     QNetworkAccessManager networkAccessManager;
 };

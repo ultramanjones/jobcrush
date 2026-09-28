@@ -277,6 +277,18 @@ Rectangle {
                                 Rectangle {
                                     id: targetedJobCard
 
+                                    // The page, held by value from the start.
+                                    // Dropping a card into another column
+                                    // reloads the list and destroys this
+                                    // card's delegate, and the release
+                                    // handler below still runs after that.
+                                    // By then the name jobPipelinesPage can
+                                    // no longer be looked up from in here
+                                    // ("ReferenceError: jobPipelinesPage is
+                                    // not defined"). A property set at
+                                    // creation keeps its value.
+                                    readonly property Item boardPage: jobPipelinesPage
+
                                     // Width comes from the SLOT, not from the
                                     // parent, because this card leaves its
                                     // parent while it is being dragged (see
@@ -362,7 +374,7 @@ Rectangle {
                                             targetedJobCard.parent = cardSlot
                                             targetedJobCard.x = 0
                                             targetedJobCard.y = 0
-                                            jobPipelinesPage.draggingJobApplicationId = -1
+                                            targetedJobCard.boardPage.draggingJobApplicationId = -1
                                         }
                                     }
 

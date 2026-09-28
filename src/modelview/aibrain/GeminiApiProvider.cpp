@@ -38,7 +38,8 @@ QString GeminiApiProvider::providerDisplayName() const
 
 QByteArray GeminiApiProvider::buildRequestBody(
     const QString &soulText,
-    const QList<AiBrainConversationMessage> &conversation) const
+    const QList<AiBrainConversationMessage> &conversation,
+    const AiBrainRequestOptions &requestOptions) const
 {
     // Google's shape: every turn is an object with a role and a list of
     // "parts". The soul goes in systemInstruction rather than in the turns,
@@ -79,6 +80,17 @@ QByteArray GeminiApiProvider::buildRequestBody(
     generationConfigObject.insert(QStringLiteral("maxOutputTokens"), geminiMaxResponseTokens);
     requestBodyObject.insert(QStringLiteral("generationConfig"), generationConfigObject);
 
+    // Google's own web search, which they call grounding. The model searches
+    // on their side and the answer still comes back as text parts, so the
+    // stream parser needs no change.
+    if (requestOptions.letTheBrainSearchTheWeb) {
+        QJsonObject googleSearchTool;
+        googleSearchTool.insert(QStringLiteral("google_search"), QJsonObject());
+        QJsonArray toolsArray;
+        toolsArray.append(googleSearchTool);
+        requestBodyObject.insert(QStringLiteral("tools"), toolsArray);
+    }
+
     return QJsonDocument(requestBodyObject).toJson(QJsonDocument::Compact);
 }
 
@@ -86,7 +98,8 @@ AiBrainReply *GeminiApiProvider::streamConversation(
     const QString &soulText,
     const QList<AiBrainConversationMessage> &conversation,
     const AiCredential &credential,
-    QObject *replyParent)
+    QObject *replyParent,
+    const AiBrainRequestOptions &requestOptions)
 {
     AiBrainReply *brainReply = new AiBrainReply(replyParent);
 
@@ -103,7 +116,7 @@ AiBrainReply *GeminiApiProvider::streamConversation(
     networkRequest.setRawHeader(geminiApiKeyHeaderName, credential.secretKey.toUtf8());
 
     QNetworkReply *networkReply = networkAccessManager.post(
-        networkRequest, buildRequestBody(soulText, conversation));
+        networkRequest, buildRequestBody(soulText, conversation, requestOptions));
     networkReply->setParent(brainReply); // dies with the brain reply
 
     // --- Google's server-sent events -------------------------------------
