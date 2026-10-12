@@ -54,7 +54,8 @@ public:
     // The cards in one column, oldest crush first. Each is a plain object the
     // QML delegate reads by name: jobApplicationId, positionTitle,
     // companyName, locationText, salaryText, sourceUrl, isRemoteRole,
-    // stageName, notesText, targetedText, appliedText.
+    // stageName, notesText, targetedText, appliedText, appliedDateEditText,
+    // appliedDateIsEditable.
     Q_INVOKABLE QVariantList cardsInStage(const QString &stageName) const;
 
     Q_INVOKABLE int countInStage(const QString &stageName) const;
@@ -65,6 +66,12 @@ public:
     Q_INVOKABLE void moveCardToStage(qint64 jobApplicationId, const QString &stageName);
 
     Q_INVOKABLE void setNotesFor(qint64 jobApplicationId, const QString &notesText);
+
+    // Sets the applied date from what the user typed on the open card:
+    // "10/8", "8 Oct", "yesterday", "3 days ago". Empty text clears the date.
+    // The sentence at the top of the page says what happened either way.
+    // Returns false when the date was refused and nothing changed.
+    Q_INVOKABLE bool setAppliedDateFor(qint64 jobApplicationId, const QString &typedDateText);
 
     Q_INVOKABLE void removeCardFromBoard(qint64 jobApplicationId);
 

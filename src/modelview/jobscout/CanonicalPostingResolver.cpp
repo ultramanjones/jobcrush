@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <QDebug>
 #include <QList>
 #include <QStringList>
 
@@ -59,6 +60,7 @@ const JobPosting *findTheLeadIn(const QList<JobPosting> &boardPostings,
 struct BoardBeingSearched {
     EmployerBoardProvider *boardReader = nullptr;
     QStringList tenantsLeftToTry;
+    QString tenantBeingTried;
     bool givenUp = false;
 };
 
@@ -92,6 +94,64 @@ struct EmployerBoardHunt {
 
 void tryTheNextAccountName(const std::shared_ptr<EmployerBoardHunt> &hunt, int boardIndex);
 
+// Some boards do not send the company's real name. Workday sends an internal
+// office name instead ("0090 CORP-Corporate Office"), so the name the user
+// gave is better than anything the board says.
+JobPosting withTheLeadsCompanyNameIfTheBoardHasNone(JobPosting boardPosting,
+                                                    const JobPosting &leadAsPosting)
+{
+    if (boardPosting.postingSource == AtsBoardName::Workday
+            && !leadAsPosting.companyName.trimmed().isEmpty()) {
+        boardPosting.companyName = leadAsPosting.companyName.trimmed();
+    }
+    return boardPosting;
+}
+
+// The job was found on a board. Some boards (Workday) find jobs with a search
+// that sends no description, so the full posting is fetched before answering.
+// The user should get the employer's whole posting, not a title and a link.
+void answerWithTheFoundPosting(const std::shared_ptr<EmployerBoardHunt> &hunt,
+                               int boardIndex,
+                               const JobPosting &foundPosting)
+{
+    hunt->alreadyAnswered = true;
+    const BoardBeingSearched &board = hunt->boards.at(boardIndex);
+
+    if (!foundPosting.fullDescriptionText.trimmed().isEmpty()
+            || foundPosting.externalSourceId.isEmpty()) {
+        hunt->scoutReply->markFinished(
+            { withTheLeadsCompanyNameIfTheBoardHasNone(foundPosting, hunt->leadAsPosting) });
+        return;
+    }
+
+    AtsBoardIdentity jobIdentity;
+    jobIdentity.boardName = board.boardReader->boardName();
+    jobIdentity.tenant = board.tenantBeingTried;
+    jobIdentity.jobId = foundPosting.externalSourceId;
+
+    JobScoutReply *oneJobReply = board.boardReader->fetchOneJob(jobIdentity, hunt->scoutReply);
+    QObject::connect(oneJobReply, &JobScoutReply::finished, hunt->scoutReply,
+                     [hunt, oneJobReply, foundPosting](const QList<JobPosting> &fullPostings) {
+        oneJobReply->deleteLater();
+        // If the full posting did not come back, the search row is still the
+        // right job. Keep it rather than throwing the find away.
+        const JobPosting bestPosting = fullPostings.isEmpty() ? foundPosting
+                                                              : fullPostings.first();
+        hunt->scoutReply->markFinished(
+            { withTheLeadsCompanyNameIfTheBoardHasNone(bestPosting, hunt->leadAsPosting) });
+    });
+    QObject::connect(oneJobReply, &JobScoutReply::failed, hunt->scoutReply,
+                     [hunt, oneJobReply, foundPosting](const QString &whyItFailed) {
+        oneJobReply->deleteLater();
+        qWarning().noquote() << QStringLiteral(
+            "CanonicalPostingResolver::answerWithTheFoundPosting: full posting for \"%1\" "
+            "did not come back, keeping the search row — %2")
+            .arg(foundPosting.positionTitle, whyItFailed);
+        hunt->scoutReply->markFinished(
+            { withTheLeadsCompanyNameIfTheBoardHasNone(foundPosting, hunt->leadAsPosting) });
+    });
+}
+
 // Every board has given up. Whether that means "not there" or "couldn't
 // check" depends on what went wrong along the way, and the difference matters
 // to whoever reads the message.
@@ -121,8 +181,7 @@ void handleOneBoardAnswer(const std::shared_ptr<EmployerBoardHunt> &hunt,
     }
 
     if (const JobPosting *foundPosting = findTheLeadIn(boardPostings, hunt->leadAsPosting)) {
-        hunt->alreadyAnswered = true;
-        hunt->scoutReply->markFinished({ *foundPosting });
+        answerWithTheFoundPosting(hunt, boardIndex, *foundPosting);
         return;
     }
 
@@ -159,8 +218,9 @@ void tryTheNextAccountName(const std::shared_ptr<EmployerBoardHunt> &hunt, int b
     }
 
     const QString tenantToTry = board.tenantsLeftToTry.takeFirst();
-    JobScoutReply *boardReply =
-        board.boardReader->fetchEveryJobForEmployer(tenantToTry, hunt->scoutReply);
+    board.tenantBeingTried = tenantToTry;
+    JobScoutReply *boardReply = board.boardReader->fetchJobsLikeTitle(
+        tenantToTry, hunt->leadAsPosting.positionTitle, hunt->scoutReply);
 
     QObject::connect(boardReply, &JobScoutReply::finished, hunt->scoutReply,
                      [hunt, boardIndex, boardReply](const QList<JobPosting> &boardPostings) {
@@ -201,6 +261,7 @@ EmployerBoardProvider *CanonicalPostingResolver::boardReaderFor(const QString &b
     if (boardName == AtsBoardName::Greenhouse) return &greenhouseBoard;
     if (boardName == AtsBoardName::Lever)      return &leverBoard;
     if (boardName == AtsBoardName::Ashby)      return &ashbyBoard;
+    if (boardName == AtsBoardName::Workday)    return &workdayBoard;
     return nullptr;
 }
 
@@ -230,9 +291,15 @@ JobScoutReply *CanonicalPostingResolver::resolve(const JobLead &jobLead, QObject
         if (EmployerBoardProvider *boardReader = boardReaderFor(boardIdentity.boardName)) {
             JobScoutReply *boardReply = boardReader->fetchOneJob(boardIdentity, scoutReply);
             QObject::connect(boardReply, &JobScoutReply::finished, scoutReply,
-                             [scoutReply, boardReply](const QList<JobPosting> &boardPostings) {
+                             [scoutReply, boardReply, leadAsPosting](
+                                 const QList<JobPosting> &boardPostings) {
                 boardReply->deleteLater();
-                scoutReply->markFinished(boardPostings);
+                QList<JobPosting> namedPostings;
+                for (const JobPosting &boardPosting : boardPostings) {
+                    namedPostings.append(
+                        withTheLeadsCompanyNameIfTheBoardHasNone(boardPosting, leadAsPosting));
+                }
+                scoutReply->markFinished(namedPostings);
             });
             QObject::connect(boardReply, &JobScoutReply::failed, scoutReply,
                              [scoutReply, boardReply](const QString &whyItFailed,

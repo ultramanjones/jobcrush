@@ -81,6 +81,8 @@ qt_add_executable(jobcrush
     src/modelview/jobscout/LeverBoardSource.cpp
     src/modelview/jobscout/AshbyBoardSource.h
     src/modelview/jobscout/AshbyBoardSource.cpp
+    src/modelview/jobscout/WorkdayBoardSource.h
+    src/modelview/jobscout/WorkdayBoardSource.cpp
     src/modelview/jobscout/EmployerTenantGuesser.h
     src/modelview/jobscout/CanonicalPostingResolver.h
     src/modelview/jobscout/CanonicalPostingResolver.cpp
@@ -123,6 +125,8 @@ qt_add_executable(jobcrush
     src/modelview/prodocs/WordDocumentReader.cpp
     src/modelview/pipelines/JobPipelines.h
     src/modelview/pipelines/JobPipelines.cpp
+    src/modelview/pipelines/TypedDateReader.h
+    src/modelview/pipelines/TypedDateReader.cpp
     src/modelview/prodocs/PlainTextNormalizer.h
     src/modelview/prodocs/InstitutionWords.h
     src/modelview/prodocs/ResumeInsightParser.h

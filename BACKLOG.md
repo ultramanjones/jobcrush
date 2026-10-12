@@ -16,72 +16,29 @@ section before starting anything here.
 
 ## Next up
 
-**1. The applied date has to be editable.** Ultra, 2026-09-15: "If they do not
-drag and drop into Applied on the exact day they apply, they need an option to
-edit the apply date (or estimate). Let's not hold them to remembering that
-mechanic."
-
-Right now the date is stamped when the card reaches Applied, and that is the
-only way it is ever set. Drag the card three days after you actually sent the
-application and the board says you applied today. The user is not told, so the
-number is wrong and looks right — and every count on the Stats page is built on
-it. Nobody should have to remember to move a card on the correct day for their
-own records to be true.
-
-The date already exists as `JobApplication::appliedTimestamp` and the card
-already has an editable field pattern in `InlineEditField` (the Notes box), so
-this is a setter through `JobPipelines`, an invokable on
-`JobPipelineBoardViewModel`, and a field on the open card. Let the user type an
-estimate; an estimate they chose beats a date the app invented.
-
-**3. Transcripts produce nothing.** A resume has an EDUCATION heading; a
-transcript does not. All three transcripts in testing were stored, read, and
-yielded zero entries, while the resume yielded everything — so the schools a
-transcript proves are the ones Job Crush cannot see. A document already
-classified as a transcript should be read as schooling whether or not it
-announces itself with a heading.
-
 **2. Job source coverage.** The source interface and the roster are done;
 Remotive and Arbeitnow are wired. Every other free board is a class that
 implements `JobSourceProvider` and a row in the roster. No scraping — APIs and
 published feeds only.
 
-**3a. Workday and Taleo. This one is worth more than the rest of item 3 put
-together.** Job Crush reads three boards: Greenhouse, Lever and Ashby. Those
-are startup boards. Defense and medical-device employers — L3Harris, Lockheed,
-Northrop, RTX, Boeing, GE — run Workday or Taleo almost without exception. So
-pasting a link from the employers that matter most here fails, and no amount of
-polish on the Add panel fixes that.
+**3a. Taleo, and the rest of Workday.** Reading a pasted Workday link shipped
+on 2026-10-11 (see Shipped). What is left:
 
-Workday has a JSON API. Two documented sources agree on its shape:
-
-```
-list   POST https://{tenant}.wd{N}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
-       Content-Type: application/json, Accept-Language: en-US
-       {"appliedFacets":{},"limit":20,"offset":0,"searchText":""}
-       -> total, jobPostings[] with title, externalPath, locationsText, postedOn
-
-one    GET  https://{tenant}.wd{N}.myworkdayjobs.com/wday/cxs/{tenant}/{site}{externalPath}
-       -> jobDescription (HTML), jobReqId, startDate, timeType, country
-```
-
-A public URL is `https://{tenant}.wd{N}.myworkdayjobs.com/{locale}/{site}/job/...`,
-so the tenant is the first host label, the shard is the second, the site is the
-path segment after the locale, and the locale is dropped.
-
-Two traps are already reported: asking for a limit above 20 returns zero rows
-with no error, and `postedOn` is localized display text, not a parseable date.
-
-**NONE OF THIS IS VERIFIED AGAINST A LIVE RESPONSE**, which is the standard
-every other entry in `jobsource_notes` was held to. The cloud sandbox this was
-researched in cannot reach job boards at all — its egress proxy refuses
-myworkdayjobs.com and, for that matter, Greenhouse. So the first step is to run
-the two calls above from a machine with a normal network and read the real
-field names off the answer. Do not write the source class from the block above.
-
-Taleo is the harder half and should be costed separately. There is no
-consistent public JSON endpoint across Taleo instances the way there is for
-Workday.
+- **Check it from a real install.** The Workday calls were checked live in a
+  browser against Northrop Grumman's site. They were NOT run from the app
+  itself, because the cloud machine that wrote the code cannot reach Workday.
+  If Workday refuses requests that do not come from a browser, the first pasted
+  link will say so in the message, with the status code.
+- **Following a Workday employer** in Settings. Workday sites list thousands of
+  jobs, so following one needs a search, not a full read. Settings says
+  "Job Crush can't read Workday yet" for now, which is still true for this part.
+- **Company and title only, no link.** Greenhouse, Lever and Ashby account
+  names can be guessed from a company name. Workday's cannot: they need the
+  server and the site name too. Item 16's company list is the fix. It records
+  each company's Workday site once.
+- **Workday's other link shape**, `wd3.myworkdaysite.com/recruiting/{tenant}/{site}/...`,
+  is not read yet. No example has turned up to check it against.
+- **Taleo** has no common JSON answer across companies. Cost it separately.
 
 **4. OAuth for OpenAI (Sign in with ChatGPT).** Launched 2 August 2026 as a
 closed beta: six partners, no open enrollment. The flow gets built against the
@@ -255,9 +212,128 @@ and I will fill the form in". Rotates, and dismissible. Written last, once the
 features it advertises exist, because a hint pointing at something that is not
 there is worse than no hint.
 
+**16. A list of companies, kept as data.** Ultra, 2026-10-11. Job Crush checks
+the companies a person wants to work for, instead of waiting for their jobs to
+show up on a board. Employers want their jobs found. Most post through a hiring
+system with a public feed, so the feed is the place to look.
+
+The list lives in a data file or table, never in code, so a user can add and
+remove companies. Each entry holds: company name, sector, hiring system, feed
+link, and the date it was last checked.
+
+The first list is C++/Qt in med tech and tech. It is a default, not a limit.
+The starter companies are in `docs/job-crush-handoff.md` (2026-10-11). That list was
+written from memory. For each company, find its hiring system and feed link,
+and confirm it still hires C++/Qt people.
+
+**17. Career presets, built from what the user gives us.** The C++/Qt list is
+just the first preset. Other careers get their own. When the user puts in their
+documents, Moonlight reads them, works out the line of work, and goes and finds
+companies in that line. This only happens when a brain is attached. Without
+one, the user picks a preset or builds a list by hand.
+
+Each preset also carries keywords for matching jobs. For C++/Qt:
+strong match is Qt, QML, Qt Quick, C++ with a GUI, embedded UI, HMI. Good match
+is C++, real-time, embedded Linux, simulation, telemetry, medical device
+software, IEC 62304. "Security clearance required" is flagged, never hidden.
+The user can edit every list.
+
+**18. Warn when a posting disappears.** When a job drops out of the employer's
+feed, do NOT delete it. Flag it and say so plainly: "This posting seems to be
+gone. Check whether it is still listed somewhere else." Then offer to look.
+Jobs on the board get this warning too. The user decides what to do with it.
+
+**19. More feeds.** SmartRecruiters has an official public API. Many employer
+careers pages carry `JobPosting` data for Google; `PostedJobPageReader` already
+reads it from a pasted page, so a company with no hiring system feed can still
+be checked from its careers page. Workday is item 3a.
+
+**20. A web version of Job Crush.** Ultra, 2026-10-11. A portfolio piece that
+shows web work on top of desktop work, built on Qt 6's newer server-side tools
+(Qt HTTP Server, Qt WebChannel), not on Qt for WebAssembly. Users pay a small
+subscription for the gathering work. It shows only publicly listed jobs.
+
+The web version and the desktop version run under different rules. One flag
+says which one is running. On the web: no full copied job descriptions, only
+key facts or a short summary in our own words, plus a link to the employer's
+posting. The desktop app keeps its full behavior. The web version tells users
+the desktop app does more, and offers it.
+
+Both versions read from one shared job collector, so the collecting is written
+once. The full plan is in `docs/job-crush-handoff.md`: how the layers split between
+browser and server, one database with a user ID on every row, logins through an
+existing login service, and the risks. Get one hour with a lawyer on the terms
+of use before charging anyone.
+
+Test first. Qt HTTP Server is new and basic. Before building anything else,
+build a small server that answers one job search as JSON through the real
+Logic and Model layers, and load-test it. If it falls short, keep Logic and
+Model in C++ and put a common web server in front. The HTML front end does
+not change either way.
+
+Expect thin web ViewModels. The desktop ViewModels hold state and send
+signals to QML. The web needs ViewModels that turn one request into one JSON
+answer and keep nothing. Logic and Model are shared as they are, but Logic
+must work when two users ask at once: one database connection per request,
+and every row filtered by user ID.
+
+**21. Many users, one login.** Ultra, 2026-10-11. Job Crush is multi-user
+from here on, on the desktop too. Each person logs in and the app knows who
+they are. Use a standard login service (Log in with Google first). The desktop
+opens the same web login in the browser and gets the user back. Job Crush needs
+the internet to find jobs anyway, so an online login costs nothing.
+
+The rule for all new Logic code: every call takes the user ID as an input.
+A user's data lives in the database under their user ID, never in a Logic
+object's memory. On the web, one running program serves many people at the
+same moment. A Logic object that remembers "the current user" will hand one
+person's search to another.
+
+Store each job once, shared by everyone. A separate small table says which
+user saw it, saved it, or put it on their board. Index the user ID column from
+day one. Clear out jobs that have been gone for months and sit on nobody's board.
+
+
+**22. Bring in the applications already sent.** Ultra, 2026-10-12. His
+"Make Money Now" project kept one folder per application, and the sent ones sit
+in `Make Money Now\Job Applications\Application Complete` (14 jobs as of
+today). Do NOT read `1 - Send These`: those are not sent.
+
+Each folder name is "Company - Title". Its `HOW TO APPLY.txt` has the link
+(the line starting `HOW:`), the pay (`PAY:`) and the place (`WHERE:`). Each job
+goes on the board in Applied. The applied date is the folder's date modified.
+Ultra's call: close enough, and he can fix any one with the Applied on box.
+Shield AI (R5189 Staff Engineer GCS) goes in Closed: two interviews, then
+turned down.
+
+Open question: a one-time load into Ultra's board, or an "Import a folder"
+button any user can use?
+
 ---
 
 ## Shipped
+
+The applied date can be edited. Open a card on Job Pipelines and type the day
+you sent it in "Applied on": 10/8, 8 Oct, Oct 8 2026, 2026-10-08, yesterday,
+or 3 days ago. A date with no year means the most recent one. A date in the
+future is refused and the old date stays, with a sentence saying why. Clearing
+the box clears the date, for a card dragged to Applied by mistake. The Stats
+page follows the new date. Dragging a card to Applied still stamps today, and
+the sentence now says you can change it.
+
+Pasted Workday links work. Most defense, aerospace and medical-device
+employers post on Workday, so this is the board that matters most for a
+C++/Qt job search in those fields. Job Crush reads the job from Workday's own
+service and saves the employer's full posting. Workday sends an internal
+office name where the company name should be ("0090 CORP-Corporate Office"),
+so the company name comes from what you typed or from the site name in the
+link. The calls and five traps are written at the top of
+`WorkdayBoardSource.h`. What is left is item 3a.
+
+Transcripts are read as schooling. A document filed as a transcript goes to
+its own reader, which does not need an EDUCATION heading. It reads the school,
+the credential, the subject, and the first and last term, and skips the course
+lines on purpose.
 
 The Manual Add tab. Jobs you add by hand get their own tab on Discoveries,
 newest added first, and the location filter never touches it. Each row says

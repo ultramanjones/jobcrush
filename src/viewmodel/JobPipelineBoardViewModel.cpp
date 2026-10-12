@@ -8,6 +8,7 @@
 #include "../modelview/jobscout/AtsBoardIdentity.h"
 #include "../modelview/jobscout/JobSourceDescriptor.h"
 #include "../modelview/pipelines/JobPipelines.h"
+#include "../modelview/pipelines/TypedDateReader.h"
 
 namespace {
 
@@ -168,6 +169,20 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
         card.insert(QStringLiteral("appliedText"),
                     shortDateTextFor(targetedJob.campaign.appliedTimestamp));
 
+        // The applied date as the open card shows it for editing: "8 Oct 2026".
+        // The year is in it, unlike the short text on the shut card, because
+        // somebody correcting a date needs to see the whole date.
+        card.insert(QStringLiteral("appliedDateEditText"),
+                    TypedDateReader::editableDateTextFor(
+                        targetedJob.campaign.appliedTimestamp.date()));
+
+        // The date can be set on any card that has left Crushed, and on any
+        // card that already has a date. A card still in Crushed with no date
+        // has not been sent, and a date box there would invite a mistake.
+        card.insert(QStringLiteral("appliedDateIsEditable"),
+                    wantedStage != PipelineStage::Saved
+                        || targetedJob.campaign.appliedTimestamp.isValid());
+
         // Every way of reaching this job, ready for the card to list. The
         // board name is put in front of the user already spelled properly —
         // a link reading "see this one on ashby" looks like a bug.
@@ -222,7 +237,9 @@ void JobPipelineBoardViewModel::moveCardToStage(qint64 jobApplicationId,
     }
 
     if (newStage == PipelineStage::Applied) {
-        setLastActionText(QStringLiteral("%1 moved to Applied — today's date is on the card.")
+        setLastActionText(QStringLiteral("%1 moved to Applied with today's date. "
+                                         "If you sent it on another day, open the card "
+                                         "and change it.")
                               .arg(positionTitle));
         return;
     }
@@ -233,6 +250,49 @@ void JobPipelineBoardViewModel::moveCardToStage(qint64 jobApplicationId,
 void JobPipelineBoardViewModel::setNotesFor(qint64 jobApplicationId, const QString &notesText)
 {
     board.setNotesText(jobApplicationId, notesText);
+}
+
+bool JobPipelineBoardViewModel::setAppliedDateFor(qint64 jobApplicationId,
+                                                  const QString &typedDateText)
+{
+    QString positionTitle;
+    for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
+        if (targetedJob.campaign.jobApplicationId == jobApplicationId) {
+            positionTitle = targetedJob.posting.positionTitle;
+            break;
+        }
+    }
+
+    QString reasonText;
+
+    // An empty box means "there is no applied date". That is the way back
+    // for a card dragged to Applied by mistake.
+    if (typedDateText.trimmed().isEmpty()) {
+        if (!board.setAppliedDate(jobApplicationId, QDate(), reasonText)) {
+            setLastActionText(reasonText);
+            return false;
+        }
+        setLastActionText(QStringLiteral("%1 has no applied date now.").arg(positionTitle));
+        return true;
+    }
+
+    QDate appliedDate;
+    if (!TypedDateReader::readTypedDate(typedDateText, QDate::currentDate(), QLocale(),
+                                        appliedDate)) {
+        setLastActionText(QStringLiteral(
+            "Job Crush couldn't read \"%1\" as a date, so the old one stays. "
+            "Try 10/8, 8 Oct, yesterday, or 3 days ago.").arg(typedDateText.trimmed()));
+        return false;
+    }
+
+    if (!board.setAppliedDate(jobApplicationId, appliedDate, reasonText)) {
+        setLastActionText(reasonText);
+        return false;
+    }
+    setLastActionText(QStringLiteral("%1: applied on %2.")
+                          .arg(positionTitle,
+                               TypedDateReader::editableDateTextFor(appliedDate)));
+    return true;
 }
 
 void JobPipelineBoardViewModel::removeCardFromBoard(qint64 jobApplicationId)

@@ -17,6 +17,10 @@ inline const QString Workable       = QStringLiteral("workable");
 inline const QString Recruitee      = QStringLiteral("recruitee");
 inline const QString Personio       = QStringLiteral("personio");
 
+// Workday keeps three parts in the tenant: "{tenant}.{shard}/{site}", for
+// example "ngc.wd1/Northrop_Grumman_External_Site". See WorkdayBoardSource.
+inline const QString Workday        = QStringLiteral("workday");
+
 // Not a hiring system. This is the name a posting carries when Job Crush read
 // it straight off the employer's own web page instead of a board. It lives
 // here because it sits in the same field as the board names and shows up in
@@ -32,6 +36,7 @@ inline QString displayNameFor(const QString &boardName)
     if (boardName == Workable)        return QStringLiteral("Workable");
     if (boardName == Recruitee)       return QStringLiteral("Recruitee");
     if (boardName == Personio)        return QStringLiteral("Personio");
+    if (boardName == Workday)         return QStringLiteral("Workday");
     if (boardName == EmployerWebsite) return QStringLiteral("the employer's website");
     return QString();
 }

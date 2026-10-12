@@ -149,6 +149,32 @@ bool JobPipelines::setNotesText(qint64 jobApplicationId, const QString &notesTex
     return true;
 }
 
+bool JobPipelines::setAppliedDate(qint64 jobApplicationId, const QDate &appliedDate,
+                                  QString &reasonText)
+{
+    if (appliedDate.isValid() && appliedDate > QDate::currentDate()) {
+        reasonText = QStringLiteral("That date is in the future, so Job Crush kept the "
+                                    "old one. Type the day you sent it.");
+        return false;
+    }
+
+    // Noon, not midnight. A date stored at midnight can slide to the day
+    // before when it is read back in another time zone. Noon has twelve hours
+    // of room either way.
+    const QDateTime appliedTimestamp = appliedDate.isValid()
+        ? QDateTime(appliedDate, QTime(12, 0))
+        : QDateTime();
+
+    if (!campaignRepository.updateAppliedTimestamp(jobApplicationId, appliedTimestamp)) {
+        reasonText = QStringLiteral("The date did not save. Nothing has changed. "
+                                    "Try typing it again.");
+        return false;
+    }
+
+    loadFromDatabase();
+    return true;
+}
+
 bool JobPipelines::removeFromBoard(qint64 jobApplicationId)
 {
     if (!campaignRepository.removeJobApplication(jobApplicationId)) {

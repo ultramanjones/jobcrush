@@ -1,5 +1,6 @@
 #include "JobApplicationRepository.h"
 
+#include <QDebug>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QVariant>
@@ -126,7 +127,14 @@ bool JobApplicationRepository::updateAppliedTimestamp(qint64 jobApplicationId,
                               ? appliedTimestamp.toString(Qt::ISODate)
                               : QString::fromLatin1(""));
     updateQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
-    return updateQuery.exec();
+    if (!updateQuery.exec()) {
+        lastErrorDescription = updateQuery.lastError().text();
+        qWarning().noquote() << QStringLiteral(
+            "JobApplicationRepository::updateAppliedTimestamp: update failed for job "
+            "application %1 — %2").arg(jobApplicationId).arg(lastErrorDescription);
+        return false;
+    }
+    return true;
 }
 
 bool JobApplicationRepository::updateFitScorePercent(qint64 jobApplicationId,

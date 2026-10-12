@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDate>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -92,6 +93,18 @@ public:
 
     // The user's own running notes on one campaign.
     bool setNotesText(qint64 jobApplicationId, const QString &notesText);
+
+    // Sets the day the user applied, by hand. People do not always drag the
+    // card on the day they send the application, and the date the board
+    // stamped is then wrong. The user knows better than the app, so their date
+    // replaces it. An invalid date clears it, for a card that reached Applied
+    // by mistake.
+    //
+    // Refuses a date in the future and says why in reasonText. Nobody has
+    // applied tomorrow, so a future date is a typo, and every count on the
+    // Stats page would be built on it.
+    bool setAppliedDate(qint64 jobApplicationId, const QDate &appliedDate,
+                        QString &reasonText);
 
     // Takes a campaign off the board entirely. The POSTING stays — it was
     // never Job Crush's to delete, and it belongs in Discoveries either way.

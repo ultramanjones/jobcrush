@@ -160,6 +160,45 @@ public:
             return identity;
         }
 
+        // --- Workday -----------------------------------------------------
+        // ngc.wd1.myworkdayjobs.com/en-US/Northrop_Grumman_External_Site/job/
+        //     United-States-Georgia-Warner-Robins/Embedded---Principal-Software-Engineer_R10252946
+        // ngc.wd1.myworkdayjobs.com/Northrop_Grumman_External_Site/job/...   (no language)
+        //
+        // Workday needs three parts to find a job: the account (ngc), the
+        // server it lives on (wd1), and the careers site (the path part after
+        // the optional language). They are kept together in the tenant as
+        // "ngc.wd1/Northrop_Grumman_External_Site". The job id is the rest of
+        // the path from "job" on, because that whole path is how Workday
+        // finds one job.
+        if (host.endsWith(QStringLiteral(".myworkdayjobs.com"))) {
+            const QStringList hostParts = host.split(QLatin1Char('.'));
+            if (hostParts.count() < 4) {
+                return identity;
+            }
+            int pathIndex = 0;
+            static const QRegularExpression languagePattern(
+                QStringLiteral("^[a-z]{2}-[A-Za-z]{2}$"));
+            if (pathIndex < pathParts.count()
+                    && languagePattern.match(pathParts.at(pathIndex)).hasMatch()) {
+                ++pathIndex;
+            }
+            if (pathIndex >= pathParts.count()) {
+                return identity;
+            }
+            identity.boardName = AtsBoardName::Workday;
+            identity.tenant = QStringLiteral("%1.%2/%3")
+                .arg(hostParts.at(0), hostParts.at(1), pathParts.at(pathIndex));
+            ++pathIndex;
+            if (pathIndex < pathParts.count()
+                    && pathParts.at(pathIndex).compare(QStringLiteral("job"),
+                                                       Qt::CaseInsensitive) == 0
+                    && pathIndex + 1 < pathParts.count()) {
+                identity.jobId = pathParts.mid(pathIndex).join(QLatin1Char('/'));
+            }
+            return identity;
+        }
+
         return identity;   // not a board Job Crush knows
     }
 

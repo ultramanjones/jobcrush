@@ -481,6 +481,38 @@ Rectangle {
                                                 }
                                             }
 
+                                            // The day it was sent. Dragging to
+                                            // Applied stamps today, and people
+                                            // do not always drag on the day
+                                            // they apply. Their date beats the
+                                            // one the app guessed.
+                                            InlineEditField {
+                                                id: appliedDateField
+                                                width: parent.width
+                                                visible: cardSlot.card.appliedDateIsEditable
+                                                labelText: "Applied on"
+                                                placeholderText: "10/8, 8 Oct, yesterday…"
+                                                fieldText: cardSlot.card.appliedDateEditText
+                                                onEditingCommitted: function(newText) {
+                                                    // Refused: the box goes back to
+                                                    // the stored date, and the
+                                                    // sentence at the top says why.
+                                                    //
+                                                    // Accepted: do not touch the box.
+                                                    // The board has reloaded and this
+                                                    // card may already be gone, with a
+                                                    // fresh one showing the new date.
+                                                    const dateWasSaved =
+                                                        jobPipelinesPage.jobPipelineBoardViewModel
+                                                            .setAppliedDateFor(
+                                                                cardSlot.card.jobApplicationId,
+                                                                newText)
+                                                    if (!dateWasSaved) {
+                                                        appliedDateField.showStoredText()
+                                                    }
+                                                }
+                                            }
+
                                             // Every way of reaching this job,
                                             // one link each.
                                             //

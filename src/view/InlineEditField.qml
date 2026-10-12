@@ -34,6 +34,13 @@ Item {
     // Emitted when the user has finished with the box and the value changed.
     signal editingCommitted(string newText)
 
+    // Shows what is really stored again, throwing away what was typed. Called
+    // when the typed text was refused, so the box never shows a value that
+    // did not save.
+    function showStoredText() {
+        fieldInput.text = inlineEditField.fieldText
+    }
+
     implicitHeight: fieldLabel.height + fieldFrame.height + 4
 
     Text {

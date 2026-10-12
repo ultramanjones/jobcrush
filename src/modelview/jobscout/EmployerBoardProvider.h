@@ -44,6 +44,20 @@ public:
     virtual JobScoutReply *fetchEveryJobForEmployer(const QString &tenant,
                                                     QObject *replyParent) = 0;
 
+    // Jobs at one employer that might be this title. Used when Job Crush
+    // knows the employer and the title and is looking for the one posting.
+    //
+    // Most boards send every job in one answer, so the default is simply that.
+    // A board with thousands of jobs and its own search (Workday) overrides
+    // this to ask its search instead of reading everything.
+    virtual JobScoutReply *fetchJobsLikeTitle(const QString &tenant,
+                                              const QString &positionTitle,
+                                              QObject *replyParent)
+    {
+        Q_UNUSED(positionTitle);
+        return fetchEveryJobForEmployer(tenant, replyParent);
+    }
+
     // One job. The reply carries a list so the shape matches the sweep above;
     // it holds one posting on success and none when that job is gone, which is
     // itself worth knowing — a job that has closed should stop looking open.
