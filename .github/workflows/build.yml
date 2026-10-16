@@ -30,6 +30,7 @@ jobs:
         with:
           version: '6.8.*'
           cache: true
+          modules: 'qtpdf'
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
