@@ -127,6 +127,8 @@ qt_add_executable(jobcrush
     src/modelview/pipelines/JobPipelines.cpp
     src/modelview/pipelines/TypedDateReader.h
     src/modelview/pipelines/TypedDateReader.cpp
+    src/modelview/pipelines/PostingStillListedChecker.h
+    src/modelview/pipelines/PostingStillListedChecker.cpp
     src/modelview/prodocs/PlainTextNormalizer.h
     src/modelview/prodocs/InstitutionWords.h
     src/modelview/prodocs/ResumeInsightParser.h
@@ -246,3 +248,11 @@ qt_add_resources(jobcrush "applicationIcon"
 )
 
 target_link_libraries(jobcrush PRIVATE Qt6::Quick Qt6::Sql Qt6::Network Qt6::Pdf)
+
+# Tests. On by default, so the claim that the core runs without a window is
+# checked on every build. Turn off with -DJOBCRUSH_BUILD_TESTS=OFF.
+option(JOBCRUSH_BUILD_TESTS "Build the Job Crush tests" ON)
+if (JOBCRUSH_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

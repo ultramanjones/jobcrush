@@ -121,6 +121,16 @@ cmake --build build
 
 Or open `CMakeLists.txt` in Qt Creator and hit Run.
 
+## Testing
+
+The tests in `tests/` build the Logic classes on their own, with no window,
+no database file and no network. They cover the job scorer, the search
+profile, the date reader and the Workday reader. CI runs them on every push.
+
+```
+ctest --test-dir build --output-on-failure
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

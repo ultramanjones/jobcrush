@@ -3,11 +3,13 @@
 #include <QDesktopServices>
 #include <QLocale>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVariantMap>
 
 #include "../modelview/jobscout/AtsBoardIdentity.h"
 #include "../modelview/jobscout/JobSourceDescriptor.h"
 #include "../modelview/pipelines/JobPipelines.h"
+#include "../modelview/pipelines/PostingStillListedChecker.h"
 #include "../modelview/pipelines/TypedDateReader.h"
 
 namespace {
@@ -70,10 +72,16 @@ QString shortDateTextFor(const QDateTime &timestamp)
 
 } // namespace
 
-JobPipelineBoardViewModel::JobPipelineBoardViewModel(JobPipelines &pipelines, QObject *parent)
+JobPipelineBoardViewModel::JobPipelineBoardViewModel(JobPipelines &pipelines,
+                                                     PostingStillListedChecker &stillListedChecker,
+                                                     QObject *parent)
     : QObject(parent)
     , board(pipelines)
+    , postingChecker(stillListedChecker)
 {
+    connect(&postingChecker, &PostingStillListedChecker::checkStatusChanged,
+            this, &JobPipelineBoardViewModel::stillListedCheckChanged);
+
     connect(&board, &JobPipelines::boardChanged, this, [this]() {
         ++boardChangeCounter;
         emit boardChanged();
@@ -88,6 +96,39 @@ int JobPipelineBoardViewModel::boardRevision() const
 int JobPipelineBoardViewModel::totalCardCount() const
 {
     return board.everyTargetedJob().count();
+}
+
+bool JobPipelineBoardViewModel::stillListedCheckIsRunning() const
+{
+    return postingChecker.checkIsRunning();
+}
+
+QString JobPipelineBoardViewModel::stillListedCheckText() const
+{
+    return postingChecker.checkStatusText();
+}
+
+void JobPipelineBoardViewModel::checkWhichJobsAreStillListed()
+{
+    postingChecker.checkEveryOpenCard();
+}
+
+void JobPipelineBoardViewModel::searchTheWebForJob(qint64 jobApplicationId) const
+{
+    for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
+        if (targetedJob.campaign.jobApplicationId != jobApplicationId) {
+            continue;
+        }
+        QUrl searchUrl(QStringLiteral("https://www.google.com/search"));
+        QUrlQuery searchQuery;
+        searchQuery.addQueryItem(QStringLiteral("q"),
+                                 QStringLiteral("\"%1\" \"%2\" job")
+                                     .arg(targetedJob.posting.companyName,
+                                          targetedJob.posting.positionTitle));
+        searchUrl.setQuery(searchQuery);
+        QDesktopServices::openUrl(searchUrl);
+        return;
+    }
 }
 
 QString JobPipelineBoardViewModel::lastActionText() const
@@ -179,6 +220,18 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
         // The date can be set on any card that has left Crushed, and on any
         // card that already has a date. A card still in Crushed with no date
         // has not been sent, and a date box there would invite a mistake.
+        // A posting that has gone from the employer's board. The card says
+        // so in plain words and offers a search. It is not removed: the job
+        // may be listed somewhere else, and that is the user's call.
+        const QDateTime goneSince = targetedJob.posting.postingGoneSinceTimestamp;
+        card.insert(QStringLiteral("postingSeemsGone"), goneSince.isValid());
+        card.insert(QStringLiteral("postingGoneText"),
+                    goneSince.isValid()
+                        ? QStringLiteral("This posting seems to be gone since %1. Check "
+                                         "whether it's still listed somewhere else.")
+                              .arg(shortDateTextFor(goneSince))
+                        : QString());
+
         card.insert(QStringLiteral("appliedDateIsEditable"),
                     wantedStage != PipelineStage::Saved
                         || targetedJob.campaign.appliedTimestamp.isValid());

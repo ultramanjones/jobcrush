@@ -16,6 +16,68 @@ section before starting anything here.
 
 ## Next up
 
+**22. Import a folder of applications.** Ultra, 2026-10-12; settled
+2026-10-16. Job Crush cannot see FlexJobs, ZipRecruiter and many other boards.
+People find and apply to those jobs with an AI or on their own. Job Crush
+should still track them. This is the answer to the old open question: an
+"Import a folder" button any user can use, not a one-time load.
+
+How it works. Job Crush decides where the **Active Jobs** folder lives and
+tells the user where it is. Each job is a subfolder inside it. Each subfolder
+holds one required file, `JobQuest.txt`. Resumes and cover letters go in the
+same subfolder, whether an outside AI made them or Job Crush did. The user
+always knows where to find them.
+
+`JobQuest.txt` is plain lines of "Name: value". Only Company and Title are
+required.
+
+```
+Quest created by: Claude
+Company: Acme Robotics
+Title: Senior Qt Developer
+Link: https://...
+Found on: FlexJobs
+Status: Applied
+Applied on: 10/14/2026
+Pay: $140k
+Where: Remote
+Notes: Recruiter is Jane, follow up Friday
+```
+
+"Quest created by" says who made the job: Job Crush, ChatGPT, Claude, and so
+on. The AI forgets it made the job; the file remembers. This widens the
+existing `scoutSource` field ("you" or "scout") to hold these names.
+
+Status is one of the board's columns: Saved, Applied, Interview, Offer, Closed.
+
+Watching for changes. Use `QFileSystemWatcher` so Windows tells Job Crush when
+a file changes. Wait about a second after the last change before reading, so a
+half-written file is never read. On launch, compare each file's last-changed
+time to the one saved, to catch changes made while Job Crush was closed.
+
+Keep the file and the board the same. When the user moves a card or edits a
+job in Job Crush, Job Crush writes the change into `JobQuest.txt`. If both
+change at once, the newest change wins.
+
+AI Buddy Mode. A short blurb in the app, with a Copy instructions button. The
+instructions tell any outside AI where the Active Jobs folder is, and list
+every line of `JobQuest.txt` and every Status value. Draft blurb:
+
+> Job Crush finds jobs on many sites, but not all of them. If you use an
+> outside AI to find jobs or help you apply, it can keep Job Crush up to date
+> for you. Copy these instructions and paste them into your AI once. After
+> that, every job it helps you with shows up on your board.
+
+First real test: Ultra's own folders. They sit in `Make Money Now\Job
+Applications\Application Complete` (14 jobs as of 2026-10-12). Do NOT read
+`1 - Send These`: those are not sent. Each folder name is "Company - Title".
+Its `HOW TO APPLY.txt` has the link (the line starting `HOW:`), the pay
+(`PAY:`) and the place (`WHERE:`). Each job goes on the board in Applied. The
+applied date is the folder's date modified. Ultra's call: close enough, and he
+can fix any one with the Applied on box. Shield AI (R5189 Staff Engineer GCS)
+goes in Closed: two interviews, then turned down. So the importer reads this
+older layout too, not just the new text file.
+
 **2. Job source coverage.** The source interface and the roster are done;
 Remotive and Arbeitnow are wired. Every other free board is a class that
 implements `JobSourceProvider` and a row in the roster. No scraping — APIs and
@@ -64,16 +126,8 @@ what Job Crush can DO stays current while the user's own edits to `soul.txt`
 stay theirs. Today a stale soul file means a brain that describes an app that
 no longer exists.
 
-**8. Tests.** `ProspectScorer` and `JobSearchProfile` under QTest, wired into
-CI. The README says the core is testable without a window; nothing currently
-proves it, and that is the sort of claim a reader checks first.
-
 **9. Trace On glow.** `glowStrength` exists as a theme token, sits at 1.0 for
 the two Trace On palettes and 0.0 everywhere else, and nothing reads it yet.
-
-**10. "Outside your search area" as its own tab.** `SearchAreaScope` already
-carries the idea; the Discoveries bar already flips between held-back and
-shown. The tab is the tidier home for it.
 
 **11. OCR for scanned documents.** People scan real-world paper and find it
 useless in the digital world — the transcript that started this was a photo of
@@ -238,10 +292,11 @@ is C++, real-time, embedded Linux, simulation, telemetry, medical device
 software, IEC 62304. "Security clearance required" is flagged, never hidden.
 The user can edit every list.
 
-**18. Warn when a posting disappears.** When a job drops out of the employer's
-feed, do NOT delete it. Flag it and say so plainly: "This posting seems to be
-gone. Check whether it is still listed somewhere else." Then offer to look.
-Jobs on the board get this warning too. The user decides what to do with it.
+**18. Warn when a posting disappears — the rest.** The board half shipped
+2026-10-12 (see Shipped). Still to do: Discoveries rows. A followed employer's
+sweep reads their whole board, so a job missing from it is gone, and the row
+could say so the same way the card does. Jobs that came from search sites
+(Remotive, Arbeitnow) cannot be checked this way.
 
 **19. More feeds.** SmartRecruiters has an official public API. Many employer
 careers pages carry `JobPosting` data for Google; `PostedJobPageReader` already
@@ -294,24 +349,65 @@ user saw it, saved it, or put it on their board. Index the user ID column from
 day one. Clear out jobs that have been gone for months and sit on nobody's board.
 
 
-**22. Bring in the applications already sent.** Ultra, 2026-10-12. His
-"Make Money Now" project kept one folder per application, and the sent ones sit
-in `Make Money Now\Job Applications\Application Complete` (14 jobs as of
-today). Do NOT read `1 - Send These`: those are not sent.
+**23. Let AI apps work Job Crush directly.** Ultra, 2026-10-16. Claude
+desktop, ChatGPT and Gemini can connect to other programs through a shared
+standard called MCP (Model Context Protocol). Job Crush should offer a short
+list of actions through it: add a job, mark it applied on a date, move it to
+another column, list what is waiting on the user. Then a user can tell their AI
+"I applied to the FlexJobs one yesterday" and the board updates.
 
-Each folder name is "Company - Title". Its `HOW TO APPLY.txt` has the link
-(the line starting `HOW:`), the pay (`PAY:`) and the place (`WHERE:`). Each job
-goes on the board in Applied. The applied date is the folder's date modified.
-Ultra's call: close enough, and he can fix any one with the Applied on box.
-Shield AI (R5189 Staff Engineer GCS) goes in Closed: two interviews, then
-turned down.
+Why: AI is good at finding jobs and helping apply. It is poor at tracking them
+over weeks. Job Crush does the tracking. This is how most people will use it.
 
-Open question: a one-time load into Ultra's board, or an "Import a folder"
-button any user can use?
+Rule: Job Crush is the only program that writes to its database. The AI asks
+and Job Crush does the work, through the same Logic code the screens use. Two
+programs writing the same database at once would lose changes.
+
+Do this after item 22.
+
+**24. Say what each board column means.** Ultra, 2026-10-16. Hovering over a
+column title on Job Pipelines shows one plain line:
+
+- Crushed: "You picked this job but have not applied yet."
+- Applied: "You sent the application. It waits here until they set up an interview."
+- Interview: "Move the job here only once you have a scheduled interview. It stays here through every round until an offer or a no."
+- Offer: "They made you an offer."
+- Closed: "It is over: they said no, you withdrew, or you turned it down."
+
+Small. Can go in with any other board work.
+
+**25. A Windows installer.** Ultra, 2026-10-16. Needed before the public can
+use Job Crush. A stranger must be able to download one file, run it, and have
+Job Crush start, with Qt and everything else it needs included. Planned in an
+earlier handoff and never started.
+
+**26. A website with short videos.** Ultra, 2026-10-16. Do this once the app
+is feature ready. One very fast video: set up Job Crush and get started. Then
+a few short optional ones: AI Buddy Mode, and making resumes and cover letters
+with Job Crush. Short and quick, each one.
 
 ---
 
 ## Shipped
+
+Tests. `tests/` holds QtTest programs for the job scorer, the search profile,
+the date reader and the Workday reader: 4 programs, about 50 checks. They build
+the Logic classes on their own and need no window, database file or network.
+CI runs them after the build on Windows and Linux. The README says how to run
+them. Settings are written to a temporary INI file, never the real registry.
+
+"Outside your area" is its own tab on Discoveries. It sits after Manual Add,
+shows how many jobs it holds, and only exists while you have named a place.
+It lists every held-back job from every site, ranked like Top Prospects. The
+bar's "Show me" button goes to it and "Back to my area" leaves it. The site
+tabs now always show only jobs inside your area.
+
+Cards say when a posting is gone. "Are these still open?" on Job Pipelines
+asks each employer's board about every open card (not Closed) that has a
+Greenhouse, Lever, Ashby or Workday link. A gone job gets an amber edge, a
+line saying so, and on the open card the date it went missing and a "search
+the web for it" link. Nothing is deleted. A job that comes back loses the
+flag. It only runs when pressed, never on its own.
 
 The applied date can be edited. Open a card on Job Pipelines and type the day
 you sent it in "Applied on": 10/8, 8 Oct, Oct 8 2026, 2026-10-08, yesterday,

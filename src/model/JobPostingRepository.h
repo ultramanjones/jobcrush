@@ -44,6 +44,10 @@ public:
     // look at, which is the same disappearing act this tab exists to end.
     bool markJobPostingAsHandAdded(qint64 jobPostingId);
 
+    // Records when the posting was found missing from the employer's board.
+    // An invalid timestamp clears it, for a posting that is listed again.
+    bool updatePostingGoneSince(qint64 jobPostingId, const QDateTime &goneSinceTimestamp);
+
     // Every job the user brought in by hand, newest ADDED first. This fills
     // the Manual Add tab, and the ordering is deliberate: the job you just
     // pasted has to be the first row, whatever date the employer posted it.

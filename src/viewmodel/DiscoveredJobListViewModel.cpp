@@ -41,6 +41,9 @@ QString postedDayTextFor(const JobPosting &jobPosting)
 // and a prefix nothing else uses.
 const QString manualAddTabName = QStringLiteral("jobcrush-manual-add");
 
+// The reserved name for the "Outside your area" tab. Same rule as above.
+const QString outsideSearchAreaTabName = QStringLiteral("jobcrush-outside-area");
+
 // A posting's source is either one of the job SITES Job Crush sweeps, or one
 // of the employer BOARDS it reads. Two separate rosters, and asking only the
 // first one is how "ashby" reached the screen in lowercase, looking like a
@@ -98,33 +101,35 @@ DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
 
 void DiscoveredJobListViewModel::rebuildRowsFromJobScout()
 {
-    // The "outside your area" view has one way out, and it is a button on a
-    // bar that only exists while a location filter exists. Clear the last
-    // location in Settings while that view is showing and the bar goes with
-    // it, taking the way back — and every tab reads empty forever after.
-    // Nothing is being held back any more, so there is nothing to look at.
-    if (storedShowingOutsideSearchArea && !discoveryJobScout.searchAreaIsNarrowed()) {
-        storedShowingOutsideSearchArea = false;
-        emit showingOutsideSearchAreaChanged();
+    // The "Outside your area" tab only exists while a location filter does.
+    // Clear the last place in Settings while it is showing and the tab
+    // disappears. Leaving it selected would show an empty list with no tab
+    // to explain it, so the page goes back to Top Prospects.
+    if (storedActiveTabSourceName == outsideSearchAreaTabName
+            && !discoveryJobScout.searchAreaIsNarrowed()) {
+        storedActiveTabSourceName.clear();
+        emit activeTabSourceNameChanged();
     }
 
     // The lists are small and rebuilt only when something genuinely changed
     // (a sweep finished, a tab switched, the profile was edited), so a full
     // reset keeps this translation layer honest and simple.
-    const SearchAreaScope searchAreaScope = storedShowingOutsideSearchArea
-        ? SearchAreaScope::OutsideSearchArea
-        : SearchAreaScope::InsideSearchArea;
-
     beginResetModel();
     if (storedActiveTabSourceName == manualAddTabName) {
         // No search-area scope. These are the jobs the user asked for by
         // name, and the location filter has no business hiding one.
         displayedJobPostings = discoveryJobScout.handAddedJobPostings();
+    } else if (storedActiveTabSourceName == outsideSearchAreaTabName) {
+        // Every held-back job from every site, ranked the same way as Top
+        // Prospects, so the best of them is still at the top.
+        displayedJobPostings =
+            discoveryJobScout.rankedTopProspects(SearchAreaScope::OutsideSearchArea);
     } else if (storedActiveTabSourceName.isEmpty()) {
-        displayedJobPostings = discoveryJobScout.rankedTopProspects(searchAreaScope);
+        displayedJobPostings =
+            discoveryJobScout.rankedTopProspects(SearchAreaScope::InsideSearchArea);
     } else {
         displayedJobPostings = discoveryJobScout.scoredJobPostingsFromSource(
-            storedActiveTabSourceName, searchAreaScope);
+            storedActiveTabSourceName, SearchAreaScope::InsideSearchArea);
     }
     endResetModel();
 
@@ -285,17 +290,12 @@ bool DiscoveredJobListViewModel::searchAreaIsNarrowed() const
 
 bool DiscoveredJobListViewModel::showingOutsideSearchArea() const
 {
-    return storedShowingOutsideSearchArea;
+    return storedActiveTabSourceName == outsideSearchAreaTabName;
 }
 
-void DiscoveredJobListViewModel::setShowingOutsideSearchArea(bool showOutside)
+QString DiscoveredJobListViewModel::outsideSearchAreaTabSourceName() const
 {
-    if (showOutside == storedShowingOutsideSearchArea) {
-        return;
-    }
-    storedShowingOutsideSearchArea = showOutside;
-    emit showingOutsideSearchAreaChanged();
-    rebuildRowsFromJobScout();
+    return outsideSearchAreaTabName;
 }
 
 void DiscoveredJobListViewModel::startSweep()

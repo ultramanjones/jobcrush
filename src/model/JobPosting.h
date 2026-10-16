@@ -59,6 +59,12 @@ struct JobPosting {
     // is too unreliable to answer this by parsing.
     bool isRemoteRole = false;
 
+    // When Job Crush last found this posting MISSING from the employer's own
+    // board. Invalid means it was still listed the last time anyone checked,
+    // or it has never been checked. Nothing is deleted when a posting goes
+    // missing: the user is told, and decides what to do.
+    QDateTime postingGoneSinceTimestamp;
+
     // True when the user brought this job in by hand. The Manual Add tab shows
     // exactly these.
     bool wasAddedByHand() const;

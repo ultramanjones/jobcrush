@@ -5,6 +5,7 @@
 #include <QVariantList>
 
 class JobPipelines;
+class PostingStillListedChecker;
 
 // JobPipelineBoardViewModel
 //
@@ -31,12 +32,23 @@ class JobPipelineBoardViewModel : public QObject {
     // page. Empty when there is nothing to say.
     Q_PROPERTY(QString lastActionText READ lastActionText NOTIFY lastActionChanged)
 
+    // The "are these still open?" check. True while employers are answering,
+    // and the sentence says what is happening in real numbers.
+    Q_PROPERTY(bool stillListedCheckIsRunning READ stillListedCheckIsRunning
+                   NOTIFY stillListedCheckChanged)
+    Q_PROPERTY(QString stillListedCheckText READ stillListedCheckText
+                   NOTIFY stillListedCheckChanged)
+
 public:
-    explicit JobPipelineBoardViewModel(JobPipelines &pipelines, QObject *parent = nullptr);
+    JobPipelineBoardViewModel(JobPipelines &pipelines,
+                              PostingStillListedChecker &stillListedChecker,
+                              QObject *parent = nullptr);
 
     int boardRevision() const;
     int totalCardCount() const;
     QString lastActionText() const;
+    bool stillListedCheckIsRunning() const;
+    QString stillListedCheckText() const;
 
     // The stages, in board order, as storage names: "saved", "applied", … The
     // view asks rather than hardcoding the list, so adding a stage one day
@@ -55,7 +67,7 @@ public:
     // QML delegate reads by name: jobApplicationId, positionTitle,
     // companyName, locationText, salaryText, sourceUrl, isRemoteRole,
     // stageName, notesText, targetedText, appliedText, appliedDateEditText,
-    // appliedDateIsEditable.
+    // appliedDateIsEditable, postingSeemsGone, postingGoneText.
     Q_INVOKABLE QVariantList cardsInStage(const QString &stageName) const;
 
     Q_INVOKABLE int countInStage(const QString &stageName) const;
@@ -85,14 +97,24 @@ public:
 
     Q_INVOKABLE void clearLastAction();
 
+    // Asks each employer's board whether the jobs on this board are still
+    // listed. Cards whose job is gone get a note. Nothing is removed.
+    Q_INVOKABLE void checkWhichJobsAreStillListed();
+
+    // Opens a web search for this job by company and title, for a posting
+    // that has gone from the employer's board. It may be listed somewhere else.
+    Q_INVOKABLE void searchTheWebForJob(qint64 jobApplicationId) const;
+
 signals:
     void boardChanged();
     void lastActionChanged();
+    void stillListedCheckChanged();
 
 private:
     void setLastActionText(const QString &text);
 
     JobPipelines &board;
+    PostingStillListedChecker &postingChecker;
     int boardChangeCounter = 0;
     QString lastActionSentence;
 };

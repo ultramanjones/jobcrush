@@ -18,6 +18,7 @@
 #include "modelview/aibrain/AiBrainSoul.h"
 #include "model/PostingSourceRepository.h"
 #include "modelview/pipelines/JobPipelines.h"
+#include "modelview/pipelines/PostingStillListedChecker.h"
 #include "modelview/aibrain/AiCredentialRoster.h"
 #include "modelview/brainchat/BrainChatSession.h"
 #include "modelview/jobscout/JobScout.h"
@@ -146,6 +147,10 @@ int main(int argc, char *argv[])
                               postingSourceRepository);
     jobPipelines.loadFromDatabase();
 
+    // Asks employers whether the jobs on the board are still listed. Only
+    // when the user presses the button; never on its own.
+    PostingStillListedChecker postingStillListedChecker(jobPipelines, jobPostingRepository);
+
     BrainChatSession brainChatSession(aiBrain);
 
     // The packet bench. Built after AIBrain because it asks the brain to do
@@ -170,7 +175,8 @@ int main(int argc, char *argv[])
     AppPreferencesViewModel appPreferencesViewModel(appPreferences, aiBrainSoul);
     SelectedBrainConnectionViewModel selectedBrainConnectionViewModel(aiBrain);
     DiscoveredJobListViewModel discoveredJobListViewModel(jobScout, jobPipelines);
-    JobPipelineBoardViewModel jobPipelineBoardViewModel(jobPipelines);
+    JobPipelineBoardViewModel jobPipelineBoardViewModel(jobPipelines,
+                                                        postingStillListedChecker);
     JobSourceRosterViewModel jobSourceRosterViewModel(jobSourceRoster);
     FollowedEmployerListViewModel followedEmployerListViewModel(followedEmployerRoster);
     JobSearchProfileViewModel jobSearchProfileViewModel(jobSearchProfile);

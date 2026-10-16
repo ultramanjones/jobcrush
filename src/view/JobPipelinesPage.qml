@@ -72,6 +72,58 @@ Rectangle {
                 color: JobCrushTheme.secondaryTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize
             }
+
+            // Asks each employer whether these jobs are still listed. Only
+            // when pressed: Job Crush never calls other people's servers on
+            // its own.
+            Rectangle {
+                id: stillListedCheckButton
+
+                readonly property bool checkIsRunning:
+                    jobPipelinesPage.jobPipelineBoardViewModel.stillListedCheckIsRunning
+
+                anchors.verticalCenter: parent.verticalCenter
+                visible: jobPipelinesPage.jobPipelineBoardViewModel.totalCardCount > 0
+                width: stillListedCheckLabel.implicitWidth + 24
+                height: 30
+                radius: 8
+                color: stillListedCheckMouseArea.containsMouse && !checkIsRunning
+                    ? JobCrushTheme.panelBackgroundColor : "transparent"
+                border.width: 1
+                border.color: JobCrushTheme.hairlineBorderColor
+
+                Text {
+                    id: stillListedCheckLabel
+                    anchors.centerIn: parent
+                    text: "Are these still open?"
+                    color: stillListedCheckButton.checkIsRunning
+                        ? JobCrushTheme.mutedTextColor : JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                }
+
+                MouseArea {
+                    id: stillListedCheckMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: !stillListedCheckButton.checkIsRunning
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: jobPipelinesPage.jobPipelineBoardViewModel
+                        .checkWhichJobsAreStillListed()
+                }
+            }
+
+            // What the check is doing, or what it found. Real numbers, no
+            // spinner.
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: text.length > 0
+                width: Math.min(implicitWidth, 460)
+                text: jobPipelinesPage.jobPipelineBoardViewModel.stillListedCheckText
+                textFormat: Text.PlainText
+                color: JobCrushTheme.secondaryTextColor
+                font.pixelSize: JobCrushTheme.smallFontSize
+                elide: Text.ElideRight
+            }
         }
 
         // What just happened. Sits up here rather than popping over the board,
@@ -299,10 +351,16 @@ Rectangle {
                                     height: cardBody.implicitHeight + 22
                                     radius: 8
                                     color: JobCrushTheme.cardBackgroundColor
-                                    border.width: cardDragHandler.active ? 2 : 1
+                                    // An amber edge marks a job whose
+                                    // posting is gone from the employer's
+                                    // board, so it shows from across the room.
+                                    border.width: cardDragHandler.active
+                                                  || cardSlot.card.postingSeemsGone ? 2 : 1
                                     border.color: cardDragHandler.active
                                         ? jobPipelinesPage.stageColorFor(stageColumn.stageName)
-                                        : JobCrushTheme.hairlineBorderColor
+                                        : (cardSlot.card.postingSeemsGone
+                                               ? JobCrushTheme.noticeTextColor
+                                               : JobCrushTheme.hairlineBorderColor)
 
                                     // Lifts while it is in the air, so it
                                     // reads as picked up rather than stuck.
@@ -439,6 +497,48 @@ Rectangle {
                                             color: JobCrushTheme.mutedTextColor
                                             font.pixelSize: JobCrushTheme.smallFontSize
                                             elide: Text.ElideRight
+                                        }
+
+                                        // The posting has gone from the
+                                        // employer's board. One line shut;
+                                        // the full sentence and a search when
+                                        // the card is open.
+                                        Text {
+                                            width: parent.width
+                                            visible: cardSlot.card.postingSeemsGone
+                                            text: targetedJobCard.isOpen
+                                                ? cardSlot.card.postingGoneText
+                                                : "Posting seems to be gone"
+                                            textFormat: Text.PlainText
+                                            color: JobCrushTheme.noticeTextColor
+                                            font.pixelSize: JobCrushTheme.smallFontSize
+                                            wrapMode: targetedJobCard.isOpen
+                                                ? Text.Wrap : Text.NoWrap
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            width: parent.width
+                                            visible: cardSlot.card.postingSeemsGone
+                                                     && targetedJobCard.isOpen
+                                            text: "search the web for it"
+                                            color: searchTheWebMouseArea.containsMouse
+                                                ? JobCrushTheme.accentColor
+                                                : JobCrushTheme.noticeTextColor
+                                            font.pixelSize: JobCrushTheme.smallFontSize
+                                            font.underline: searchTheWebMouseArea.containsMouse
+
+                                            MouseArea {
+                                                id: searchTheWebMouseArea
+                                                anchors.fill: parent
+                                                anchors.margins: -3
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: jobPipelinesPage
+                                                    .jobPipelineBoardViewModel
+                                                    .searchTheWebForJob(
+                                                        cardSlot.card.jobApplicationId)
+                                            }
                                         }
 
                                         // Shut, a note announces itself in one

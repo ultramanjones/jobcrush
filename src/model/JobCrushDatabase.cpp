@@ -284,6 +284,14 @@ bool JobCrushDatabase::createSchemaIfMissing()
         return false;
     }
 
+    // When the posting was last found missing from the employer's board.
+    // Empty means it was still there, or has never been checked.
+    if (!addColumnIfMissing(QStringLiteral("jobPosting"),
+                            QStringLiteral("postingGoneSinceTimestamp"),
+                            QStringLiteral("TEXT NOT NULL DEFAULT ''"))) {
+        return false;
+    }
+
     // The same job must never land twice. A board's own id, paired with the
     // board name, is the only identity Job Crush trusts — titles and company
     // names are written by humans and vary between boards.

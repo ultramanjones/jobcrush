@@ -38,6 +38,12 @@ class DiscoveredJobListViewModel : public QAbstractListModel {
     Q_PROPERTY(bool showingManualAdd READ showingManualAdd
                    NOTIFY activeTabSourceNameChanged)
 
+    // The reserved name for the "Outside your area" tab: every job the
+    // location filter holds back, from every site, ranked. The tab only
+    // exists while the user has named at least one place.
+    Q_PROPERTY(QString outsideSearchAreaTabSourceName READ outsideSearchAreaTabSourceName
+                   CONSTANT)
+
     Q_PROPERTY(int discoveredJobCount READ rowCountForProperty NOTIFY discoveredJobsChanged)
 
     // True while sites are still answering. The page shows real numbers off
@@ -71,10 +77,10 @@ class DiscoveredJobListViewModel : public QAbstractListModel {
     Q_PROPERTY(bool searchAreaIsNarrowed READ searchAreaIsNarrowed
                    NOTIFY discoveredJobsChanged)
 
-    // Which side of the filter this list is showing. False is the normal
-    // view; true is the "Outside your search area" look at what was held back.
+    // True while the "Outside your area" tab is the one showing. Every other
+    // tab shows only jobs inside the area.
     Q_PROPERTY(bool showingOutsideSearchArea READ showingOutsideSearchArea
-                   WRITE setShowingOutsideSearchArea NOTIFY showingOutsideSearchAreaChanged)
+                   NOTIFY activeTabSourceNameChanged)
 
 public:
     enum DiscoveredJobRole {
@@ -143,7 +149,7 @@ public:
     int jobCountOutsideSearchArea() const;
     bool searchAreaIsNarrowed() const;
     bool showingOutsideSearchArea() const;
-    void setShowingOutsideSearchArea(bool showOutside);
+    QString outsideSearchAreaTabSourceName() const;
 
     // The "scout now" action. Discovery is on demand by design — Job Crush
     // does not sit in the background hammering other people's free APIs.
@@ -196,7 +202,6 @@ signals:
     void boardChanged();
 
     void activeTabSourceNameChanged();
-    void showingOutsideSearchAreaChanged();
     void discoveredJobsChanged();
     void sweepProgressChanged();
     void leadStatusChanged();
@@ -208,6 +213,5 @@ private:
     JobPipelines &board;
     int boardChangeCounter = 0;
     QString storedActiveTabSourceName;   // empty = Top Prospects
-    bool storedShowingOutsideSearchArea = false;
     QList<ScoredJobPosting> displayedJobPostings;
 };

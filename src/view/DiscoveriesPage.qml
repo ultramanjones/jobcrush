@@ -49,6 +49,24 @@ Rectangle {
     readonly property bool showingManualAdd:
         activeTabSourceName === manualAddTabSourceName
 
+    readonly property string outsideSearchAreaTabSourceName:
+        discoveredJobListViewModel.outsideSearchAreaTabSourceName
+
+    readonly property bool showingOutsideSearchArea:
+        activeTabSourceName === outsideSearchAreaTabSourceName
+
+    // The viewmodel can change the tab itself: when the last place is cleared
+    // in Settings, the "Outside your area" tab goes away and the list goes
+    // back to Top Prospects. The page follows, so the tab that looks chosen
+    // is the one being shown.
+    Connections {
+        target: discoveriesPage.discoveredJobListViewModel
+        function onActiveTabSourceNameChanged() {
+            discoveriesPage.activeTabSourceName =
+                discoveriesPage.discoveredJobListViewModel.activeTabSourceName
+        }
+    }
+
     // The row to point at after a jump. -1 means point at nothing. It clears
     // itself after a few seconds: a highlight that never goes away stops
     // meaning "here it is" and starts meaning nothing at all.
@@ -87,7 +105,11 @@ Rectangle {
     Connections {
         target: discoveriesPage.jobSourceRosterViewModel
         function onEnabledSourcesChanged() {
-            if (discoveriesPage.activeTabSourceName === "") {
+            // Only a site tab can go away when a site is unticked. Top
+            // Prospects, Manual Add and Outside your area are not sites.
+            if (discoveriesPage.showingTopProspects
+                    || discoveriesPage.showingManualAdd
+                    || discoveriesPage.showingOutsideSearchArea) {
                 return
             }
             const stillEnabled = discoveriesPage.jobSourceRosterViewModel
@@ -346,6 +368,42 @@ Rectangle {
             }
         }
 
+        // The jobs the location filter holds back, from every site. Third,
+        // after Manual Add, and only while the user has named a place. With
+        // no place named nothing is held back, and an empty tab would be a
+        // question with no answer.
+        Rectangle {
+            readonly property bool isActiveTab: discoveriesPage.showingOutsideSearchArea
+            readonly property int heldBackCount:
+                discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea
+
+            visible: discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
+            width: visible ? outsideSearchAreaTabLabel.implicitWidth + 28 : 0
+            height: 32
+            radius: 16
+            color: isActiveTab ? JobCrushTheme.cardBackgroundColor : "transparent"
+            border.color: isActiveTab
+                ? JobCrushTheme.callToActionColor : JobCrushTheme.noticeTextColor
+            border.width: isActiveTab ? 2 : 1
+
+            Text {
+                id: outsideSearchAreaTabLabel
+                anchors.centerIn: parent
+                text: "Outside your area (" + parent.heldBackCount + ")"
+                color: parent.isActiveTab
+                    ? JobCrushTheme.primaryTextColor : JobCrushTheme.noticeTextColor
+                font.pixelSize: JobCrushTheme.smallFontSize
+                font.weight: parent.isActiveTab ? Font.DemiBold : Font.Normal
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: discoveriesPage.activeTabSourceName
+                    = discoveriesPage.outsideSearchAreaTabSourceName
+            }
+        }
+
         Repeater {
             model: discoveriesPage.jobSourceRosterViewModel.enabledJobSourceTabs
 
@@ -418,8 +476,7 @@ Rectangle {
 
         readonly property int heldBackCount:
             discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea
-        readonly property bool showingOutside:
-            discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+        readonly property bool showingOutside: discoveriesPage.showingOutsideSearchArea
 
         // Never on the Manual Add tab. That list ignores the location filter
         // entirely, so a bar saying jobs are being held back would be a lie.
@@ -497,8 +554,11 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
-                    = !discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+                // "Show me" goes to the Outside your area tab. "Back to my
+                // area" goes to Top Prospects.
+                onClicked: discoveriesPage.activeTabSourceName =
+                    outsideSearchAreaBar.showingOutside
+                        ? "" : discoveriesPage.outsideSearchAreaTabSourceName
             }
         }
     }
@@ -901,7 +961,7 @@ Rectangle {
             !noSitesTicked
             && discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
             && discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea > 0
-            && !discoveriesPage.discoveredJobListViewModel.showingOutsideSearchArea
+            && !discoveriesPage.showingOutsideSearchArea
 
         Column {
             id: emptyStateColumn

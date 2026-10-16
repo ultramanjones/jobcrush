@@ -1,5 +1,6 @@
 #include "JobPostingRepository.h"
 
+#include <QDebug>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QVariant>
@@ -27,6 +28,8 @@ JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
     jobPosting.postedTimestamp     = QDateTime::fromString(
         row.value(QStringLiteral("postedTimestamp")).toString(), Qt::ISODate);
     jobPosting.isRemoteRole        = row.value(QStringLiteral("isRemoteRole")).toInt() != 0;
+    jobPosting.postingGoneSinceTimestamp = QDateTime::fromString(
+        row.value(QStringLiteral("postingGoneSinceTimestamp")).toString(), Qt::ISODate);
     return jobPosting;
 }
 
@@ -194,6 +197,29 @@ bool JobPostingRepository::markJobPostingAsHandAdded(qint64 jobPostingId)
 
     if (!updateQuery.exec()) {
         lastErrorDescription = updateQuery.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool JobPostingRepository::updatePostingGoneSince(qint64 jobPostingId,
+                                                  const QDateTime &goneSinceTimestamp)
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE jobPosting SET postingGoneSinceTimestamp = :goneSince "
+        "WHERE jobPostingId = :jobPostingId"));
+    updateQuery.bindValue(QStringLiteral(":goneSince"),
+                          goneSinceTimestamp.isValid()
+                              ? goneSinceTimestamp.toString(Qt::ISODate)
+                              : QString::fromLatin1(""));
+    updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
+
+    if (!updateQuery.exec()) {
+        lastErrorDescription = updateQuery.lastError().text();
+        qWarning().noquote() << QStringLiteral(
+            "JobPostingRepository::updatePostingGoneSince: update failed for job posting "
+            "%1 — %2").arg(jobPostingId).arg(lastErrorDescription);
         return false;
     }
     return true;
