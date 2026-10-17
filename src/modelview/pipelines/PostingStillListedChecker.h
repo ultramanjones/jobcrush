@@ -7,6 +7,7 @@
 #include "../jobscout/AtsBoardIdentity.h"
 #include "../jobscout/GreenhouseBoardSource.h"
 #include "../jobscout/LeverBoardSource.h"
+#include "../jobscout/SmartRecruitersBoardSource.h"
 #include "../jobscout/WorkdayBoardSource.h"
 
 class JobPipelines;
@@ -67,6 +68,7 @@ private:
     LeverBoardSource leverBoard;
     AshbyBoardSource ashbyBoard;
     WorkdayBoardSource workdayBoard;
+    SmartRecruitersBoardSource smartRecruitersBoard;
 
     bool checkRunning = false;
     int checksStarted = 0;

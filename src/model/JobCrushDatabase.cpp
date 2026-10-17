@@ -156,6 +156,20 @@ bool JobCrushDatabase::createSchemaIfMissing()
             "  lastEditedTimestamp TEXT NOT NULL DEFAULT ''"
             ")"),
 
+        // One job folder in the Active Jobs folder, tied to one card on the
+        // board (see ActiveJobFolder.h). Folder names are compared without
+        // case, the way Windows compares them.
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS activeJobFolder ("
+            "  activeJobFolderId      INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  folderName             TEXT NOT NULL UNIQUE COLLATE NOCASE,"
+            "  jobApplicationId       INTEGER NOT NULL,"
+            "  fileChangedTimestamp   TEXT NOT NULL DEFAULT '',"
+            "  syncedStage            TEXT NOT NULL DEFAULT '',"
+            "  syncedAppliedTimestamp TEXT NOT NULL DEFAULT '',"
+            "  syncedNotesText        TEXT NOT NULL DEFAULT ''"
+            ")"),
+
         // One ProDocs item (see ProfessionalDocument.h).
         QStringLiteral(
             "CREATE TABLE IF NOT EXISTS professionalDocument ("

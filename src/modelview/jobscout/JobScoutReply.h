@@ -3,6 +3,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include "../../model/JobPosting.h"
 
@@ -46,6 +47,24 @@ public:
         emit failed(humanReadableReason, sourceHadTrouble);
     }
 
+    // The employers whose WHOLE board was read in this sweep, as
+    // "board/tenant" keys such as "greenhouse/acme". Only the companies-you-
+    // follow source fills this in. A job from one of these employers that is
+    // missing from the answer has been taken down, and JobScout marks it.
+    // Set by the source before markFinished. Empty for every other source,
+    // because a search site only ever shows a slice of a company's jobs.
+    void setEmployersReadInFull(const QStringList &employerKeys)
+    {
+        employersReadInFullKeys = employerKeys;
+    }
+    QStringList employersReadInFull() const { return employersReadInFullKeys; }
+
+    // True when a board reader stopped before the end of a company's board,
+    // or only searched it. Then a job missing from the answer may simply not
+    // have been read, so it must never be taken for gone.
+    void setReadOnlyPartOfTheBoard(bool readOnlyPart) { onlyPartOfTheBoardWasRead = readOnlyPart; }
+    bool readOnlyPartOfTheBoard() const { return onlyPartOfTheBoardWasRead; }
+
 signals:
     // The sweep of this one source succeeded. The postings are raw finds:
     // not yet deduplicated against what Job Crush already has, and not yet
@@ -60,4 +79,6 @@ signals:
 
 private:
     bool replyHasFinished = false;
+    QStringList employersReadInFullKeys;
+    bool onlyPartOfTheBoardWasRead = false;
 };

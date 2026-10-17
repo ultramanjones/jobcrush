@@ -45,13 +45,18 @@ Rectangle {
         property alias typedText: boxInput.text
         property string hintText: ""
 
+        // Marks a box Moonlight left empty because the text did not say.
+        property bool needsTheUser: false
+
         signal returnPressed
 
         height: 34
         radius: 6
         color: JobCrushTheme.appBackgroundColor
         border.color: boxInput.activeFocus
-            ? JobCrushTheme.accentColor : JobCrushTheme.hairlineBorderColor
+            ? JobCrushTheme.accentColor
+            : (needsTheUser && boxInput.text.length === 0
+                   ? JobCrushTheme.noticeTextColor : JobCrushTheme.hairlineBorderColor)
         border.width: boxInput.activeFocus ? 2 : 1
         clip: true
 
@@ -246,6 +251,265 @@ Rectangle {
             }
         }
 
+        // --- Or paste the text: an email, an alert, a posting ---
+        //
+        // Moonlight reads it and fills in a form. The user checks the form
+        // and adds the job. With no brain connected the button is off and the
+        // line under it says why and what to do.
+        Item {
+            width: parent.width
+            height: 90
+
+            Text {
+                id: pasteRowLabel
+                anchors.top: parent.top
+                anchors.topMargin: 8
+                anchors.left: parent.left
+                width: 128
+                text: "Or paste the text"
+                color: JobCrushTheme.secondaryTextColor
+                font.pixelSize: JobCrushTheme.smallFontSize
+            }
+
+            Rectangle {
+                id: pastedTextFrame
+                anchors.left: pasteRowLabel.right
+                anchors.leftMargin: 8
+                anchors.right: readPastedTextButton.left
+                anchors.rightMargin: 8
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                radius: 6
+                color: JobCrushTheme.appBackgroundColor
+                border.color: pastedTextInput.activeFocus
+                    ? JobCrushTheme.accentColor : JobCrushTheme.hairlineBorderColor
+                border.width: pastedTextInput.activeFocus ? 2 : 1
+                clip: true
+
+                Flickable {
+                    id: pastedTextScroller
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    contentWidth: width
+                    contentHeight: pastedTextInput.height
+                    clip: true
+
+                    TextEdit {
+                        id: pastedTextInput
+                        width: pastedTextScroller.width
+                        // At least the whole box, so a click anywhere in it
+                        // lands in the text.
+                        height: Math.max(pastedTextScroller.height, implicitHeight)
+                        wrapMode: TextEdit.Wrap
+                        color: JobCrushTheme.primaryTextColor
+                        font.pixelSize: JobCrushTheme.smallFontSize
+                        selectionColor: JobCrushTheme.accentColor
+                        selectedTextColor: JobCrushTheme.onAccentTextColor
+                        selectByMouse: true
+                        activeFocusOnTab: true
+                    }
+                }
+
+                Text {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.margins: 9
+                    visible: pastedTextInput.text.length === 0 && !pastedTextInput.activeFocus
+                    text: "Paste a job email, a job alert, a recruiter message, or a "
+                          + "posting copied off a page"
+                    color: JobCrushTheme.mutedTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    wrapMode: Text.Wrap
+                }
+            }
+
+            GoButton {
+                id: readPastedTextButton
+                anchors.right: parent.right
+                anchors.top: parent.top
+                labelText: addOneJobPanel.discoveredJobListViewModel.pastedTextIsBeingRead
+                    ? "reading…" : "Have Moonlight fill it in"
+                canBePressed: addOneJobPanel.discoveredJobListViewModel.aBrainCanReadPastedText
+                              && !addOneJobPanel.discoveredJobListViewModel.pastedTextIsBeingRead
+                              && pastedTextInput.text.trim().length > 0
+                onPressed: addOneJobPanel.discoveredJobListViewModel
+                               .readPastedText(pastedTextInput.text)
+            }
+        }
+
+        Text {
+            width: parent.width
+            visible: !addOneJobPanel.discoveredJobListViewModel.aBrainCanReadPastedText
+            text: "Connect an AI brain in Settings and Moonlight can read pasted text "
+                  + "and fill the job in for you. It costs a few cents of your AI "
+                  + "credits each time. Without one, type the company and the title "
+                  + "above."
+            color: JobCrushTheme.mutedTextColor
+            font.pixelSize: JobCrushTheme.smallFontSize
+            wrapMode: Text.Wrap
+        }
+
+        Text {
+            width: parent.width
+            visible: text.length > 0
+            text: addOneJobPanel.discoveredJobListViewModel.pastedTextStatusText
+            color: addOneJobPanel.discoveredJobListViewModel.pastedTextIsBeingRead
+                ? JobCrushTheme.accentColor : JobCrushTheme.secondaryTextColor
+            font.pixelSize: JobCrushTheme.smallFontSize
+            wrapMode: Text.Wrap
+        }
+
+        // --- The form Moonlight filled in ---
+        Column {
+            id: filledFormColumn
+            width: parent.width
+            spacing: 6
+            visible: addOneJobPanel.discoveredJobListViewModel.filledForm.hasForm === true
+
+            readonly property string emptyHint: "not in the text. Type it if you know it"
+
+            // Fills the boxes each time Moonlight answers. Set by hand, not by
+            // binding, so what the user types is never overwritten while
+            // they are typing.
+            Connections {
+                target: addOneJobPanel.discoveredJobListViewModel
+                function onPastedTextFormChanged() {
+                    const form = addOneJobPanel.discoveredJobListViewModel.filledForm
+                    if (form.hasForm !== true) {
+                        return
+                    }
+                    formCompanyBox.typedText = form.companyName
+                    formTitleBox.typedText = form.positionTitle
+                    formLinkBox.typedText = form.sourceUrl
+                    formWhereBox.typedText = form.locationText
+                    formPayBox.typedText = form.salaryText
+                    formPostedBox.typedText = form.postedText
+                    formRemoteToggle.isRemote = form.isRemoteRole
+                }
+            }
+
+            component FormRow: Item {
+                property string labelText: ""
+                default property alias boxSlot: boxHolder.data
+                width: filledFormColumn.width
+                height: 34
+
+                Text {
+                    id: formRowLabel
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    width: 128
+                    text: parent.labelText
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                }
+
+                Item {
+                    id: boxHolder
+                    anchors.left: formRowLabel.right
+                    anchors.leftMargin: 8
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                }
+            }
+
+            FormRow {
+                labelText: "Company"
+                OneLineBox { id: formCompanyBox; anchors.fill: parent; needsTheUser: true
+                             hintText: "Company " + filledFormColumn.emptyHint }
+            }
+            FormRow {
+                labelText: "Job title"
+                OneLineBox { id: formTitleBox; anchors.fill: parent; needsTheUser: true
+                             hintText: "Job title " + filledFormColumn.emptyHint }
+            }
+            FormRow {
+                labelText: "Link"
+                OneLineBox { id: formLinkBox; anchors.fill: parent; needsTheUser: true
+                             hintText: "Link " + filledFormColumn.emptyHint }
+            }
+            FormRow {
+                labelText: "Where"
+                OneLineBox { id: formWhereBox; anchors.fill: parent; needsTheUser: true
+                             hintText: "Place " + filledFormColumn.emptyHint }
+            }
+            FormRow {
+                labelText: "Pay"
+                OneLineBox { id: formPayBox; anchors.fill: parent; needsTheUser: true
+                             hintText: "Pay " + filledFormColumn.emptyHint }
+            }
+            FormRow {
+                labelText: "Posted on"
+                OneLineBox { id: formPostedBox; anchors.fill: parent; needsTheUser: true
+                             hintText: "Date " + filledFormColumn.emptyHint }
+            }
+
+            Row {
+                spacing: 10
+                x: 136
+
+                Rectangle {
+                    id: formRemoteToggle
+                    property bool isRemote: false
+                    width: 22
+                    height: 22
+                    radius: 5
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: isRemote ? JobCrushTheme.positiveColor : "transparent"
+                    border.width: 2
+                    border.color: isRemote ? JobCrushTheme.positiveColor
+                                           : JobCrushTheme.secondaryTextColor
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: formRemoteToggle.isRemote
+                        text: "\u2713"
+                        color: JobCrushTheme.onAccentTextColor
+                        font.pixelSize: 15
+                        font.weight: Font.Bold
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: formRemoteToggle.isRemote = !formRemoteToggle.isRemote
+                    }
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Remote"
+                    color: JobCrushTheme.primaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                }
+
+                GoButton {
+                    labelText: addOneJobPanel.isBusy ? "looking…" : "Add this job"
+                    canBePressed: !addOneJobPanel.isBusy
+                                  && formCompanyBox.typedText.trim().length > 0
+                                  && formTitleBox.typedText.trim().length > 0
+                    onPressed: {
+                        addOneJobPanel.discoveredJobListViewModel.addJobFromFilledForm(
+                            formCompanyBox.typedText, formTitleBox.typedText,
+                            formLinkBox.typedText, formWhereBox.typedText,
+                            formPayBox.typedText, formPostedBox.typedText,
+                            formRemoteToggle.isRemote)
+                        pastedTextInput.text = ""
+                    }
+                }
+
+                GoButton {
+                    labelText: "Clear"
+                    onPressed: {
+                        addOneJobPanel.discoveredJobListViewModel.clearFilledForm()
+                        pastedTextInput.text = ""
+                    }
+                }
+            }
+        }
+
         // What happened, in the app's own words, and the way to go see it.
         //
         // The sentence used to end here, and that was the whole complaint:
@@ -291,7 +555,7 @@ Rectangle {
             text: "Paste the job's own page and Job Crush reads the job off it. "
                   + "A LinkedIn or Indeed link tells it nothing — type the company "
                   + "and the title off the alert instead. Either way it checks "
-                  + "Greenhouse, Lever and Ashby, then the page, then asks your AI "
+                  + "Greenhouse, Lever, Ashby and SmartRecruiters, then the page, then asks your AI "
                   + "brain to search the web if one is connected. What you gave it "
                   + "is saved even when nothing is found."
             color: JobCrushTheme.mutedTextColor

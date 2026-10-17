@@ -5,6 +5,10 @@
 #include <QDate>
 #include <QDesktopServices>
 #include <QLocale>
+
+#include "../modelview/pipelines/TypedDateReader.h"
+
+#include "../modelview/jobscout/ClearanceDetector.h"
 #include <QUrl>
 
 #include "../modelview/jobscout/JobPostingTextCleanup.h"
@@ -83,6 +87,9 @@ DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
     connect(&discoveryJobScout, &JobScout::sweepProgressChanged, this, [this]() {
         emit sweepProgressChanged();
     });
+
+    connect(&discoveryJobScout, &JobScout::pastedTextFormChanged,
+            this, &DiscoveredJobListViewModel::pastedTextFormChanged);
 
     connect(&discoveryJobScout, &JobScout::leadStatusChanged, this, [this]() {
         emit leadStatusChanged();
@@ -167,6 +174,15 @@ QVariant DiscoveredJobListViewModel::data(const QModelIndex &modelIndex, int rol
     case WasAddedByHandRole:    return jobPosting.wasAddedByHand();
     case IsManualAllTheWayRole: return jobPosting.isManualAllTheWay();
     case JobPostingIdRole:      return jobPosting.jobPostingId;
+    case PostingSeemsGoneRole:  return jobPosting.postingGoneSinceTimestamp.isValid();
+    case AsksForClearanceRole:  return ClearanceDetector::asksForClearance(jobPosting);
+    case PostingGoneTextRole:
+        return jobPosting.postingGoneSinceTimestamp.isValid()
+            ? QStringLiteral("Gone from the company's own board since %1. It may be "
+                             "filled.")
+                  .arg(QLocale().toString(jobPosting.postingGoneSinceTimestamp.date(),
+                                          QStringLiteral("d MMM")))
+            : QString();
     case PostedDayTextRole:     return postedDayTextFor(jobPosting);
     case MatchScoreRole:        return scoredJobPosting.matchResult.matchScoreOutOfOneHundred;
     case MatchReasonsTextRole:
@@ -194,6 +210,9 @@ QHash<int, QByteArray> DiscoveredJobListViewModel::roleNames() const
         { WasAddedByHandRole,    QByteArrayLiteral("wasAddedByHand") },
         { IsManualAllTheWayRole, QByteArrayLiteral("isManualAllTheWay") },
         { JobPostingIdRole,      QByteArrayLiteral("jobPostingId") },
+        { PostingSeemsGoneRole,  QByteArrayLiteral("postingSeemsGone") },
+        { PostingGoneTextRole,   QByteArrayLiteral("postingGoneText") },
+        { AsksForClearanceRole,  QByteArrayLiteral("asksForClearance") },
     };
 }
 
@@ -366,4 +385,73 @@ void DiscoveredJobListViewModel::addJobFromCompanyAndTitle(const QString &compan
                                                            const QString &positionTitle)
 {
     discoveryJobScout.addJobFromCompanyAndTitle(companyName, positionTitle);
+}
+
+bool DiscoveredJobListViewModel::pastedTextIsBeingRead() const
+{
+    return discoveryJobScout.pastedTextIsBeingRead();
+}
+
+QString DiscoveredJobListViewModel::pastedTextStatusText() const
+{
+    return discoveryJobScout.pastedTextStatusText();
+}
+
+bool DiscoveredJobListViewModel::aBrainCanReadPastedText() const
+{
+    return discoveryJobScout.aBrainCanReadPastedText();
+}
+
+QVariantMap DiscoveredJobListViewModel::filledForm() const
+{
+    const JobPosting form = discoveryJobScout.filledFormFromPastedText();
+    const bool hasForm = !form.companyName.isEmpty() || !form.positionTitle.isEmpty()
+                         || !form.fullDescriptionText.isEmpty();
+    QVariantMap formFields;
+    formFields.insert(QStringLiteral("hasForm"), hasForm);
+    formFields.insert(QStringLiteral("companyName"), form.companyName);
+    formFields.insert(QStringLiteral("positionTitle"), form.positionTitle);
+    formFields.insert(QStringLiteral("sourceUrl"), form.sourceUrl);
+    formFields.insert(QStringLiteral("locationText"), form.locationText);
+    formFields.insert(QStringLiteral("salaryText"), form.salaryText);
+    formFields.insert(QStringLiteral("postedText"),
+                      form.postedTimestamp.isValid()
+                          ? TypedDateReader::editableDateTextFor(form.postedTimestamp.date())
+                          : QString());
+    formFields.insert(QStringLiteral("isRemoteRole"), form.isRemoteRole);
+    formFields.insert(QStringLiteral("descriptionText"), form.fullDescriptionText);
+    return formFields;
+}
+
+void DiscoveredJobListViewModel::readPastedText(const QString &pastedText)
+{
+    discoveryJobScout.readPastedText(pastedText);
+}
+
+void DiscoveredJobListViewModel::clearFilledForm()
+{
+    discoveryJobScout.clearFilledForm();
+}
+
+void DiscoveredJobListViewModel::addJobFromFilledForm(const QString &companyName,
+                                                      const QString &positionTitle,
+                                                      const QString &sourceUrl,
+                                                      const QString &locationText,
+                                                      const QString &salaryText,
+                                                      const QString &postedText,
+                                                      bool isRemoteRole)
+{
+    JobPosting formFields = discoveryJobScout.filledFormFromPastedText();
+    formFields.companyName = companyName;
+    formFields.positionTitle = positionTitle;
+    formFields.sourceUrl = sourceUrl;
+    formFields.locationText = locationText;
+    formFields.salaryText = salaryText;
+    formFields.isRemoteRole = isRemoteRole;
+    QDate postedDate;
+    formFields.postedTimestamp =
+        TypedDateReader::readTypedDate(postedText, QDate::currentDate(), QLocale(), postedDate)
+            ? QDateTime(postedDate, QTime(12, 0))
+            : QDateTime();
+    discoveryJobScout.addJobFromFilledForm(formFields);
 }

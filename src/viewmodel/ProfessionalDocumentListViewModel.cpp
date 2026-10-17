@@ -1,5 +1,7 @@
 #include "ProfessionalDocumentListViewModel.h"
 
+#include "../modelview/prodocs/MoonlightDocumentCleanup.h"
+
 #include <QDate>
 #include <QDesktopServices>
 #include <QDir>
@@ -69,14 +71,24 @@ ProfessionalDocumentListViewModel::ProfessionalDocumentListViewModel(
     ProfessionalDocumentRepository &documentRepository,
     ProDocsIntake &intake,
     AppPreferences &preferences,
+    MoonlightDocumentCleanup &documentCleanup,
     const QString &dataFolderPath,
     QObject *parent)
     : QAbstractListModel(parent)
     , repository(documentRepository)
     , proDocsIntake(intake)
     , appPreferences(preferences)
+    , moonlightCleanup(documentCleanup)
     , applicationDataFolderPath(dataFolderPath)
 {
+    connect(&moonlightCleanup, &MoonlightDocumentCleanup::cleanupStatusChanged, this,
+            [this](const QString &outcomeText) {
+        reportOutcome(outcomeText);
+        emit cleanupChanged();
+    });
+    // The brain may have been connected since the page last asked.
+    connect(this, &ProfessionalDocumentListViewModel::documentsChanged,
+            this, &ProfessionalDocumentListViewModel::cleanupChanged);
     connect(&proDocsIntake, &ProDocsIntake::professionalDocumentsChanged,
             this, [this]() { reloadDocuments(); });
     reloadDocuments();
@@ -273,4 +285,35 @@ void ProfessionalDocumentListViewModel::saveCopyOfDocumentAt(int rowIndex,
     reportOutcome(QStringLiteral("Saved a %1 copy: %2")
                       .arg(ExportFormat::displayNameFor(format),
                            QDir::toNativeSeparators(outcome.writtenFilePath)));
+}
+
+bool ProfessionalDocumentListViewModel::brainCanCleanUp() const
+{
+    return moonlightCleanup.aBrainIsAvailable();
+}
+
+bool ProfessionalDocumentListViewModel::cleanupIsRunning() const
+{
+    return moonlightCleanup.cleanupIsRunning();
+}
+
+void ProfessionalDocumentListViewModel::cleanUpDocumentAt(int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= loadedDocuments.count()) {
+        return;
+    }
+    const ProfessionalDocument &document = loadedDocuments.at(rowIndex);
+    moonlightCleanup.cleanUpDocument(document.professionalDocumentId, document.displayName,
+                                     document.extractedText);
+}
+
+void ProfessionalDocumentListViewModel::layOutDocumentAt(int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= loadedDocuments.count()) {
+        return;
+    }
+    const ProfessionalDocument &document = loadedDocuments.at(rowIndex);
+    moonlightCleanup.layOutDocument(
+        document.displayName, document.extractedText,
+        ExportFolder::folderJobCrushWritesTo(appPreferences, applicationDataFolderPath));
 }

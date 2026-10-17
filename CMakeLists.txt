@@ -41,6 +41,9 @@ qt_add_executable(jobcrush
     src/model/StagedDocument.h
     src/model/StagedDocumentRepository.h
     src/model/StagedDocumentRepository.cpp
+    src/model/ActiveJobFolder.h
+    src/model/ActiveJobFolderRepository.h
+    src/model/ActiveJobFolderRepository.cpp
 
     # ModelView layer — the whole back end
     src/modelview/AppPreferences.h
@@ -54,6 +57,12 @@ qt_add_executable(jobcrush
     src/modelview/aibrain/OpenRouterApiProvider.cpp
     src/modelview/aibrain/GeminiApiProvider.h
     src/modelview/aibrain/GeminiApiProvider.cpp
+    src/modelview/aibrain/OpenAiStyleStream.h
+    src/modelview/aibrain/OpenAiStyleStream.cpp
+    src/modelview/aibrain/OpenAiApiProvider.h
+    src/modelview/aibrain/OpenAiApiProvider.cpp
+    src/modelview/aibrain/OllamaProvider.h
+    src/modelview/aibrain/OllamaProvider.cpp
     src/modelview/aibrain/AiCredentialRoster.h
     src/modelview/aibrain/AiCredentialRoster.cpp
     src/modelview/aibrain/AiBrainSoul.h
@@ -61,6 +70,7 @@ qt_add_executable(jobcrush
     src/modelview/aibrain/AiBrain.h
     src/modelview/aibrain/AiBrain.cpp
     src/modelview/brainchat/BrainChatMessage.h
+    src/modelview/brainchat/MoonlightHints.h
     src/modelview/brainchat/BrainChatSession.h
     src/modelview/brainchat/BrainChatSession.cpp
     src/modelview/jobscout/JobSourceDescriptor.h
@@ -83,6 +93,8 @@ qt_add_executable(jobcrush
     src/modelview/jobscout/AshbyBoardSource.cpp
     src/modelview/jobscout/WorkdayBoardSource.h
     src/modelview/jobscout/WorkdayBoardSource.cpp
+    src/modelview/jobscout/SmartRecruitersBoardSource.h
+    src/modelview/jobscout/SmartRecruitersBoardSource.cpp
     src/modelview/jobscout/EmployerTenantGuesser.h
     src/modelview/jobscout/CanonicalPostingResolver.h
     src/modelview/jobscout/CanonicalPostingResolver.cpp
@@ -90,6 +102,8 @@ qt_add_executable(jobcrush
     src/modelview/jobscout/PostedJobPageReader.cpp
     src/modelview/jobscout/BrainJobFinder.h
     src/modelview/jobscout/BrainJobFinder.cpp
+    src/modelview/jobscout/PastedTextJobReader.h
+    src/modelview/jobscout/PastedTextJobReader.cpp
     src/modelview/jobscout/RemotiveJobSource.h
     src/modelview/jobscout/RemotiveJobSource.cpp
     src/modelview/jobscout/ArbeitnowJobSource.h
@@ -99,6 +113,11 @@ qt_add_executable(jobcrush
     src/modelview/jobscout/UsaJobsJobSource.h
     src/modelview/jobscout/UsaJobsJobSource.cpp
     src/modelview/jobscout/FollowedEmployer.h
+    src/modelview/jobscout/CareerPreset.h
+    src/modelview/jobscout/CareerPreset.cpp
+    src/modelview/jobscout/ClearanceDetector.h
+    src/modelview/jobscout/CompanyList.h
+    src/modelview/jobscout/CompanyList.cpp
     src/modelview/jobscout/FollowedEmployerRoster.h
     src/modelview/jobscout/FollowedEmployerRoster.cpp
     src/modelview/jobscout/FollowedEmployerJobSource.h
@@ -135,6 +154,8 @@ qt_add_executable(jobcrush
     src/modelview/prodocs/ResumeInsightParser.cpp
     src/modelview/prodocs/AcademicTranscriptReader.h
     src/modelview/prodocs/AcademicTranscriptReader.cpp
+    src/modelview/prodocs/MoonlightDocumentCleanup.h
+    src/modelview/prodocs/MoonlightDocumentCleanup.cpp
     src/modelview/prodocs/ProDocsIntake.h
     src/modelview/prodocs/ProDocsIntake.cpp
     src/modelview/tasks/AiBrainTask.h
@@ -157,6 +178,18 @@ qt_add_executable(jobcrush
     src/modelview/exporting/PacketExporter.cpp
     src/modelview/stats/JobSearchStatistics.h
     src/modelview/stats/JobSearchStatistics.cpp
+    src/modelview/activejobs/JobQuestFile.h
+    src/modelview/activejobs/JobQuestFile.cpp
+    src/modelview/activejobs/OlderJobFolderReader.h
+    src/modelview/activejobs/OlderJobFolderReader.cpp
+    src/modelview/activejobs/AiBuddyInstructions.h
+    src/modelview/activejobs/ActiveJobsFolder.h
+    src/modelview/activejobs/ActiveJobsFolder.cpp
+    src/modelview/aiapps/AiAppTools.h
+    src/modelview/aiapps/AiAppRequests.h
+    src/modelview/aiapps/AiAppRequests.cpp
+    src/modelview/aiapps/AiAppConnection.h
+    src/modelview/aiapps/AiAppConnection.cpp
 
     # ViewModel layer — translation and organization only
     src/viewmodel/BrainChatConversationViewModel.h
@@ -189,6 +222,10 @@ qt_add_executable(jobcrush
     src/viewmodel/StagingPacketViewModel.cpp
     src/viewmodel/JobSearchStatsViewModel.h
     src/viewmodel/JobSearchStatsViewModel.cpp
+    src/viewmodel/ActiveJobsFolderViewModel.h
+    src/viewmodel/ActiveJobsFolderViewModel.cpp
+    src/viewmodel/AiAppConnectionViewModel.h
+    src/viewmodel/AiAppConnectionViewModel.cpp
 )
 
 target_include_directories(jobcrush PRIVATE src)
@@ -237,6 +274,15 @@ qt_add_qml_module(jobcrush
         src/view/InlineEditField.qml
         src/view/TokenEntryField.qml
         src/view/VerticalScrollBar.qml
+        src/view/GlowHalo.qml
+)
+
+# Lists of companies, kept as data so they can change without changing code.
+qt_add_resources(jobcrush "companyLists"
+    PREFIX "/"
+    FILES
+        data/company-lists/cpp-qt-medtech-tech.json
+        data/career-presets/cpp-qt.json
 )
 
 # The icon the app carries at RUNTIME — the one Windows shows in the taskbar
@@ -248,6 +294,46 @@ qt_add_resources(jobcrush "applicationIcon"
 )
 
 target_link_libraries(jobcrush PRIVATE Qt6::Quick Qt6::Sql Qt6::Network Qt6::Pdf)
+
+# The bridge an AI app starts to talk to Job Crush (see
+# tools/ai-app-bridge/main.cpp). A console program on purpose: AI apps talk to
+# it through its standard input and output, which a window program on Windows
+# does not reliably have. It sits next to jobcrush.exe, and Settings shows
+# the AI app where to find it.
+qt_add_executable(jobcrush-ai-bridge
+    tools/ai-app-bridge/main.cpp
+    src/modelview/aiapps/AiAppTools.h
+)
+set_target_properties(jobcrush-ai-bridge PROPERTIES
+    WIN32_EXECUTABLE FALSE
+    MACOSX_BUNDLE FALSE
+)
+target_include_directories(jobcrush-ai-bridge PRIVATE src)
+target_link_libraries(jobcrush-ai-bridge PRIVATE Qt6::Core Qt6::Network)
+
+# --- Installing ------------------------------------------------------------
+#
+# "cmake --install" puts Job Crush, the AI app bridge, and everything they need
+# to run into one folder. On Windows, Qt's own deployment step (windeployqt)
+# copies in the Qt files, the QML pieces the screens use, and the database
+# driver. That folder is what the Windows installer packs up; see
+# tools/installer/. A stranger's computer has no Qt, so nothing may be left out.
+include(GNUInstallDirs)
+install(TARGETS jobcrush jobcrush-ai-bridge
+    BUNDLE DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+qt_generate_deploy_qml_app_script(
+    TARGET jobcrush
+    OUTPUT_SCRIPT jobCrushDeployScript
+    NO_UNSUPPORTED_PLATFORM_ERROR
+)
+install(SCRIPT ${jobCrushDeployScript})
+
+# The Microsoft C++ runtime, when built with Visual Studio. A computer that has
+# never had it installed cannot start Job Crush without these files.
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+include(InstallRequiredSystemLibraries)
 
 # Tests. On by default, so the claim that the core runs without a window is
 # checked on every build. Turn off with -DJOBCRUSH_BUILD_TESTS=OFF.

@@ -111,6 +111,47 @@ bool JobPipelines::crushJobPosting(qint64 jobPostingId, QString &reasonText)
     return true;
 }
 
+qint64 JobPipelines::putOnBoardFromJobFolder(qint64 jobPostingId,
+                                             PipelineStage pipelineStage,
+                                             const QDateTime &appliedTimestamp,
+                                             const QString &notesText,
+                                             QString &reasonText)
+{
+    if (jobPostingIsOnTheBoard(jobPostingId)) {
+        reasonText = QStringLiteral("That job is already on your board.");
+        return 0;
+    }
+
+    JobApplication newCampaign;
+    newCampaign.jobPostingId = jobPostingId;
+    newCampaign.pipelineStage = pipelineStage;
+    newCampaign.targetedTimestamp = QDateTime::currentDateTime();
+    newCampaign.appliedTimestamp = appliedTimestamp;
+    newCampaign.notesText = notesText;
+
+    if (!campaignRepository.insertJobApplication(newCampaign)) {
+        reasonText = QStringLiteral("Job Crush couldn't put that job on the board: %1.")
+                         .arg(campaignRepository.lastErrorText());
+        return 0;
+    }
+
+    loadFromDatabase();
+    if (pipelineStage == PipelineStage::Saved) {
+        emit jobWasCrushed(newCampaign.jobApplicationId);
+    }
+    return newCampaign.jobApplicationId;
+}
+
+qint64 JobPipelines::jobApplicationIdForPosting(qint64 jobPostingId) const
+{
+    for (const TargetedJob &targetedJob : loadedTargetedJobs) {
+        if (targetedJob.campaign.jobPostingId == jobPostingId) {
+            return targetedJob.campaign.jobApplicationId;
+        }
+    }
+    return 0;
+}
+
 bool JobPipelines::moveToStage(qint64 jobApplicationId, PipelineStage newPipelineStage)
 {
     if (!campaignRepository.updatePipelineStage(jobApplicationId, newPipelineStage)) {

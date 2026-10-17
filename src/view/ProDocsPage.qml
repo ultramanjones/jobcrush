@@ -276,6 +276,64 @@ Rectangle {
                     wrapMode: Text.Wrap
                 }
 
+                // "Moonlight, clean this up!" Hands the document to the
+                // connected brain to read the jobs and schools again. With no
+                // brain the button is off and the line says why.
+                Column {
+                    width: parent.width
+                    visible: documentRow.hasReadableText
+                    spacing: 4
+
+                    Text {
+                        width: parent.width
+                        text: proDocsPage.professionalDocumentListViewModel.brainCanCleanUp
+                            ? "If Job Crush read the jobs or schools in this wrong, you "
+                              + "can have Moonlight read it again. It uses a few cents "
+                              + "of your AI credits."
+                            : "If you have connected an AI brain you can have Moonlight "
+                              + "read this again when the jobs or schools came out "
+                              + "wrong. Connect one in Settings."
+                        color: JobCrushTheme.mutedTextColor
+                        font.pixelSize: JobCrushTheme.smallFontSize
+                        wrapMode: Text.Wrap
+                    }
+
+                    Rectangle {
+                        readonly property bool canBePressed:
+                            proDocsPage.professionalDocumentListViewModel.brainCanCleanUp
+                            && !proDocsPage.professionalDocumentListViewModel.cleanupIsRunning
+
+                        width: cleanUpLabel.implicitWidth + 20
+                        height: 24
+                        radius: 12
+                        opacity: canBePressed ? 1.0 : 0.45
+                        color: cleanUpMouseArea.containsMouse && canBePressed
+                            ? JobCrushTheme.accentColor : "transparent"
+                        border.width: 1
+                        border.color: JobCrushTheme.accentColor
+
+                        Text {
+                            id: cleanUpLabel
+                            anchors.centerIn: parent
+                            text: proDocsPage.professionalDocumentListViewModel.cleanupIsRunning
+                                ? "Moonlight is reading…" : "Moonlight, clean this up!"
+                            color: cleanUpMouseArea.containsMouse && parent.canBePressed
+                                ? JobCrushTheme.onAccentTextColor : JobCrushTheme.accentColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                        }
+
+                        MouseArea {
+                            id: cleanUpMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            enabled: parent.canBePressed
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: proDocsPage.professionalDocumentListViewModel
+                                           .cleanUpDocumentAt(documentRow.index)
+                        }
+                    }
+                }
+
                 // Somebody asked for a Word copy and all they have is a PDF.
                 // Job Crush already read this document and already writes
                 // those formats, so it converts it here rather than sending
@@ -344,6 +402,45 @@ Rectangle {
                                             .saveCopyOfDocumentAt(documentRow.index,
                                                                   saveCopyButton.modelData)
                                     }
+                                }
+                            }
+
+                            // "Want it to look right? Moonlight can lay it out
+                            // properly." Shown only when a brain is connected.
+                            Rectangle {
+                                id: layOutButton
+
+                                readonly property bool canBePressed:
+                                    !proDocsPage.professionalDocumentListViewModel.cleanupIsRunning
+
+                                visible: proDocsPage.professionalDocumentListViewModel.brainCanCleanUp
+                                width: layOutLabel.implicitWidth + 20
+                                height: 24
+                                radius: 12
+                                color: layOutMouseArea.containsMouse && canBePressed
+                                    ? JobCrushTheme.accentColor : "transparent"
+                                border.width: 1
+                                border.color: JobCrushTheme.accentColor
+                                opacity: canBePressed ? 1.0 : 0.5
+
+                                Text {
+                                    id: layOutLabel
+                                    anchors.centerIn: parent
+                                    text: "Word, laid out by Moonlight"
+                                    color: layOutMouseArea.containsMouse && layOutButton.canBePressed
+                                        ? JobCrushTheme.onAccentTextColor
+                                        : JobCrushTheme.accentColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
+                                }
+
+                                MouseArea {
+                                    id: layOutMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    enabled: layOutButton.canBePressed
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: proDocsPage.professionalDocumentListViewModel
+                                        .layOutDocumentAt(documentRow.index)
                                 }
                             }
                         }

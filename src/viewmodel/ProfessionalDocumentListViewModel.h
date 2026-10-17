@@ -9,6 +9,7 @@
 #include "../modelview/exporting/DocumentConverter.h"
 
 class AppPreferences;
+class MoonlightDocumentCleanup;
 class ProDocsIntake;
 class ProfessionalDocumentRepository;
 
@@ -45,6 +46,7 @@ public:
     ProfessionalDocumentListViewModel(ProfessionalDocumentRepository &documentRepository,
                                       ProDocsIntake &intake,
                                       AppPreferences &preferences,
+                                      MoonlightDocumentCleanup &documentCleanup,
                                       const QString &applicationDataFolderPath,
                                       QObject *parent = nullptr);
 
@@ -92,7 +94,23 @@ public:
     // us first, not from the file.
     Q_INVOKABLE QString warningAboutConversion() const;
 
+    // --- "Moonlight, clean this up!" ---
+    //
+    // Hands one document's text to the connected brain, which reads the jobs
+    // and schools out of it again. The answer replaces Job Crush's own
+    // reading of that document. What it said lands in lastProDocsOutcomeText.
+    Q_PROPERTY(bool brainCanCleanUp READ brainCanCleanUp NOTIFY cleanupChanged)
+    Q_PROPERTY(bool cleanupIsRunning READ cleanupIsRunning NOTIFY cleanupChanged)
+    bool brainCanCleanUp() const;
+    bool cleanupIsRunning() const;
+    Q_INVOKABLE void cleanUpDocumentAt(int rowIndex);
+
+    // Has Moonlight lay the document out properly as a Word file, saved where
+    // "Save a copy as" saves.
+    Q_INVOKABLE void layOutDocumentAt(int rowIndex);
+
 signals:
+    void cleanupChanged();
     void documentsChanged();
     void lastProDocsOutcomeChanged();
 
@@ -104,6 +122,7 @@ private:
     ProfessionalDocumentRepository &repository;
     ProDocsIntake &proDocsIntake;
     AppPreferences &appPreferences;
+    MoonlightDocumentCleanup &moonlightCleanup;
     const QString applicationDataFolderPath;
     DocumentConverter documentConverter;
     QList<ProfessionalDocument> loadedDocuments;

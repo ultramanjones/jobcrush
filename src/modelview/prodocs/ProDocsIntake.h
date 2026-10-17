@@ -4,6 +4,9 @@
 #include <QString>
 #include <QStringList>
 
+#include "../../model/EducationRecord.h"
+#include "../../model/WorkExperience.h"
+
 #include "DocumentTextExtractor.h"
 #include "DroppedFileClassifier.h"
 #include "AcademicTranscriptReader.h"
@@ -80,6 +83,13 @@ public:
     //
     // Returns a plain sentence about what it found, for the page to show.
     QString rereadEveryDocument();
+
+    // Replaces what the built-in reader got out of one document with a better
+    // reading (Moonlight's). Entries the user typed into are kept; the rest
+    // from that document are replaced. Returns how many entries were added.
+    int replaceReadingOfDocument(qint64 professionalDocumentId,
+                                 const QList<WorkExperience> &workExperiences,
+                                 const QList<EducationRecord> &educationRecords);
 
 signals:
     // A document arrived, was reclassified, or was removed.

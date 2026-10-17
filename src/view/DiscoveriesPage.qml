@@ -318,6 +318,12 @@ Rectangle {
             // relying on color — Grayscale has no accent hue to notice.
             border.width: isActiveTab ? 2 : 1
 
+            GlowHalo {
+                glowColor: parent.border.color
+                cornerRadius: parent.radius
+                isLit: parent.isActiveTab
+            }
+
             Text {
                 id: topProspectsTabLabel
                 anchors.centerIn: parent
@@ -349,6 +355,12 @@ Rectangle {
             border.color: isActiveTab
                 ? JobCrushTheme.callToActionColor : JobCrushTheme.hairlineBorderColor
             border.width: isActiveTab ? 2 : 1
+
+            GlowHalo {
+                glowColor: parent.border.color
+                cornerRadius: parent.radius
+                isLit: parent.isActiveTab
+            }
 
             Text {
                 id: manualAddTabLabel
@@ -386,6 +398,12 @@ Rectangle {
                 ? JobCrushTheme.callToActionColor : JobCrushTheme.noticeTextColor
             border.width: isActiveTab ? 2 : 1
 
+            GlowHalo {
+                glowColor: parent.border.color
+                cornerRadius: parent.radius
+                isLit: parent.isActiveTab
+            }
+
             Text {
                 id: outsideSearchAreaTabLabel
                 anchors.centerIn: parent
@@ -422,6 +440,18 @@ Rectangle {
                 border.color: isActiveTab
                     ? JobCrushTheme.accentColor : JobCrushTheme.hairlineBorderColor
                 border.width: isActiveTab ? 2 : 1
+
+                GlowHalo {
+                    glowColor: parent.border.color
+                    cornerRadius: parent.radius
+                    isLit: parent.isActiveTab
+                }
+
+            GlowHalo {
+                glowColor: parent.border.color
+                cornerRadius: parent.radius
+                isLit: parent.isActiveTab
+            }
 
                 Text {
                     id: jobSourceTabLabel
@@ -642,6 +672,9 @@ Rectangle {
             required property string postingSourceDisplayName
             required property bool wasAddedByHand
             required property bool isManualAllTheWay
+            required property bool postingSeemsGone
+            required property string postingGoneText
+            required property bool asksForClearance
 
             readonly property bool isTheJobJustAdded:
                 discoveriesPage.highlightedRowIndex === discoveredJobRow.index
@@ -671,9 +704,12 @@ Rectangle {
                 ? JobCrushTheme.callToActionColor
                 : (discoveredJobRow.isManualAllTheWay
                        ? JobCrushTheme.pendingColor
-                       : JobCrushTheme.hairlineBorderColor)
+                       : (discoveredJobRow.postingSeemsGone
+                              ? JobCrushTheme.noticeTextColor
+                              : JobCrushTheme.hairlineBorderColor))
             border.width: (discoveredJobRow.isTheJobJustAdded
-                           || discoveredJobRow.isManualAllTheWay) ? 2 : 1
+                           || discoveredJobRow.isManualAllTheWay
+                           || discoveredJobRow.postingSeemsGone) ? 2 : 1
 
             // The right-hand lane: the score, and the button that acts on it.
             //
@@ -780,6 +816,32 @@ Rectangle {
                     textFormat: Text.PlainText
                     color: discoveredJobRow.isManualAllTheWay
                         ? JobCrushTheme.pendingColor : JobCrushTheme.positiveColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+
+                // Defense jobs often need a security clearance. Said up front
+                // so nobody reads a whole posting to find out at the end.
+                Text {
+                    width: parent.width
+                    visible: discoveredJobRow.asksForClearance
+                    text: "Asks for a security clearance"
+                    textFormat: Text.PlainText
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    font.italic: true
+                    elide: Text.ElideRight
+                }
+
+                // The company's own board stopped listing this job. Said in
+                // the same amber as the card on the board.
+                Text {
+                    width: parent.width
+                    visible: discoveredJobRow.postingSeemsGone
+                    text: discoveredJobRow.postingGoneText
+                    textFormat: Text.PlainText
+                    color: JobCrushTheme.noticeTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QVariantMap>
+
 #include <QAbstractListModel>
 #include <QList>
 #include <QString>
@@ -109,7 +111,15 @@ public:
 
         // The database id, so a row can be found again by something that only
         // knows which job it wants.
-        JobPostingIdRole
+        JobPostingIdRole,
+
+        // The company's own board no longer lists this job, as of the last
+        // sweep that read their whole board. The row says so.
+        PostingSeemsGoneRole,
+        PostingGoneTextRole,
+
+        // The posting asks for a security clearance. Flagged, never hidden.
+        AsksForClearanceRole
     };
 
     // Takes the board as well as the scout: a discovery's whole purpose is to
@@ -180,6 +190,35 @@ public:
     Q_INVOKABLE void addJobFromCompanyAndTitle(const QString &companyName,
                                                const QString &positionTitle);
 
+    // --- Paste any text and let Moonlight fill the form in ---
+    Q_PROPERTY(bool pastedTextIsBeingRead READ pastedTextIsBeingRead
+                   NOTIFY pastedTextFormChanged)
+    Q_PROPERTY(QString pastedTextStatusText READ pastedTextStatusText
+                   NOTIFY pastedTextFormChanged)
+    Q_PROPERTY(bool aBrainCanReadPastedText READ aBrainCanReadPastedText
+                   NOTIFY pastedTextFormChanged)
+    // The filled form: companyName, positionTitle, sourceUrl, locationText,
+    // salaryText, postedText, isRemoteRole, descriptionText, and hasForm.
+    Q_PROPERTY(QVariantMap filledForm READ filledForm NOTIFY pastedTextFormChanged)
+
+    bool pastedTextIsBeingRead() const;
+    QString pastedTextStatusText() const;
+    bool aBrainCanReadPastedText() const;
+    QVariantMap filledForm() const;
+
+    Q_INVOKABLE void readPastedText(const QString &pastedText);
+    Q_INVOKABLE void clearFilledForm();
+
+    // Adds the job from the form as the user left it. postedText is read the
+    // same forgiving way as the applied date on a card.
+    Q_INVOKABLE void addJobFromFilledForm(const QString &companyName,
+                                          const QString &positionTitle,
+                                          const QString &sourceUrl,
+                                          const QString &locationText,
+                                          const QString &salaryText,
+                                          const QString &postedText,
+                                          bool isRemoteRole);
+
     // --- Adding one job by hand ---
     //
     // The way around the sites Job Crush is not allowed to read: paste the
@@ -205,6 +244,7 @@ signals:
     void discoveredJobsChanged();
     void sweepProgressChanged();
     void leadStatusChanged();
+    void pastedTextFormChanged();
 
 private:
     void rebuildRowsFromJobScout();

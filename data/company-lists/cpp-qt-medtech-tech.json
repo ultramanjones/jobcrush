@@ -1,0 +1,422 @@
+{
+    "listName": "C++ and Qt: medical, defense, automotive and tech",
+    "about": "Companies known to hire C++ and Qt developers. A starting point, not a limit. Each followLink was checked against the company's live public job feed on the date in lastChecked. Workday companies are searched for the job titles in the user's profile instead of read whole. A company with no followLink has no feed recorded yet.",
+    "companies": [
+        {
+            "name": "Anduril Industries",
+            "sector": "Defense",
+            "hiringSystem": "greenhouse",
+            "followLink": "https://boards.greenhouse.io/andurilindustries",
+            "lastChecked": "2026-10-16",
+            "note": "2,537 jobs; 24 with C++ or Qt in the title."
+        },
+        {
+            "name": "Shield AI",
+            "sector": "Defense",
+            "hiringSystem": "lever",
+            "followLink": "https://jobs.lever.co/shieldai",
+            "lastChecked": "2026-10-16",
+            "note": "616 jobs; 8 with C++ or Qt in the title."
+        },
+        {
+            "name": "Epirus",
+            "sector": "Defense",
+            "hiringSystem": "greenhouse",
+            "followLink": "https://boards.greenhouse.io/epirus",
+            "lastChecked": "2026-10-16",
+            "note": "39 jobs."
+        },
+        {
+            "name": "Saronic",
+            "sector": "Defense",
+            "hiringSystem": "ashby",
+            "followLink": "https://jobs.ashbyhq.com/saronic",
+            "lastChecked": "2026-10-16",
+            "note": "231 jobs."
+        },
+        {
+            "name": "Skydio",
+            "sector": "Defense",
+            "hiringSystem": "ashby",
+            "followLink": "https://jobs.ashbyhq.com/skydio",
+            "lastChecked": "2026-10-16",
+            "note": "160 jobs."
+        },
+        {
+            "name": "Bosch",
+            "sector": "Automotive",
+            "hiringSystem": "smartrecruiters",
+            "followLink": "https://jobs.smartrecruiters.com/BoschGroup",
+            "lastChecked": "2026-10-16",
+            "note": "About 5,000 jobs worldwide; Job Crush reads the newest 1,000."
+        },
+        {
+            "name": "Continental",
+            "sector": "Automotive",
+            "hiringSystem": "smartrecruiters",
+            "followLink": "https://jobs.smartrecruiters.com/Continental",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "Lucid Motors",
+            "sector": "Automotive",
+            "hiringSystem": "greenhouse",
+            "followLink": "https://boards.greenhouse.io/lucidmotors",
+            "lastChecked": "2026-10-16",
+            "note": "456 jobs."
+        },
+        {
+            "name": "Motional",
+            "sector": "Robotics and autonomy",
+            "hiringSystem": "greenhouse",
+            "followLink": "https://boards.greenhouse.io/motional",
+            "lastChecked": "2026-10-16",
+            "note": "81 jobs; Pittsburgh office."
+        },
+        {
+            "name": "Zoox",
+            "sector": "Robotics and autonomy",
+            "hiringSystem": "lever",
+            "followLink": "https://jobs.lever.co/zoox",
+            "lastChecked": "2026-10-16",
+            "note": "240 jobs."
+        },
+        {
+            "name": "Waymo",
+            "sector": "Robotics and autonomy",
+            "hiringSystem": "greenhouse",
+            "followLink": "https://boards.greenhouse.io/waymo",
+            "lastChecked": "2026-10-16",
+            "note": "362 jobs."
+        },
+        {
+            "name": "Northrop Grumman",
+            "sector": "Defense",
+            "hiringSystem": "workday",
+            "followLink": "https://ngc.wd1.myworkdayjobs.com/Northrop_Grumman_External_Site",
+            "lastChecked": "2026-10-16",
+            "note": "Workday."
+        },
+        {
+            "name": "Stryker",
+            "sector": "Medical devices",
+            "hiringSystem": "workday",
+            "followLink": "https://stryker.wd1.myworkdayjobs.com/StrykerCareers",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "Medtronic",
+            "sector": "Medical devices",
+            "hiringSystem": "workday",
+            "followLink": "https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "GE HealthCare",
+            "sector": "Medical devices",
+            "hiringSystem": "workday",
+            "followLink": "https://gehc.wd5.myworkdayjobs.com/GEHC_ExternalSite",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "Philips",
+            "sector": "Medical devices",
+            "hiringSystem": "workday",
+            "followLink": "https://philips.wd3.myworkdayjobs.com/jobs-and-careers",
+            "lastChecked": "2026-10-16",
+            "note": "Includes Philips Respironics, Pittsburgh."
+        },
+        {
+            "name": "Abbott",
+            "sector": "Medical devices",
+            "hiringSystem": "workday",
+            "followLink": "https://abbott.wd5.myworkdayjobs.com/abbottcareers",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "Baxter",
+            "sector": "Medical devices",
+            "hiringSystem": "workday",
+            "followLink": "https://baxter.wd1.myworkdayjobs.com/baxter",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "Collins Aerospace (RTX)",
+            "sector": "Defense",
+            "hiringSystem": "workday",
+            "followLink": "https://globalhr.wd5.myworkdayjobs.com/REC_RTX_Ext_Gateway",
+            "lastChecked": "2026-10-16",
+            "note": "One Workday site for all of RTX: Collins, Raytheon and Pratt & Whitney."
+        },
+        {
+            "name": "Leidos",
+            "sector": "Defense",
+            "hiringSystem": "workday",
+            "followLink": "https://leidos.wd5.myworkdayjobs.com/External",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "GM",
+            "sector": "Automotive",
+            "hiringSystem": "workday",
+            "followLink": "https://generalmotors.wd5.myworkdayjobs.com/Careers_GM",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "Harman",
+            "sector": "Automotive",
+            "hiringSystem": "workday",
+            "followLink": "https://harman.wd3.myworkdayjobs.com/HARMAN",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "Autodesk",
+            "sector": "Software with Qt front ends",
+            "hiringSystem": "workday",
+            "followLink": "https://autodesk.wd1.myworkdayjobs.com/Ext",
+            "lastChecked": "2026-10-16",
+            "note": ""
+        },
+        {
+            "name": "Intuitive Surgical",
+            "sector": "Medical devices",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Siemens Healthineers",
+            "sector": "Medical devices",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Boston Scientific",
+            "sector": "Medical devices",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Zimmer Biomet",
+            "sector": "Medical devices",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Smith+Nephew",
+            "sector": "Medical devices",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "L3Harris",
+            "sector": "Defense",
+            "hiringSystem": "workday",
+            "followLink": "",
+            "lastChecked": "",
+            "note": "Workday."
+        },
+        {
+            "name": "CAE",
+            "sector": "Defense",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": "Flight simulation."
+        },
+        {
+            "name": "Lockheed Martin",
+            "sector": "Defense",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "General Dynamics Mission Systems",
+            "sector": "Defense",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "BAE Systems",
+            "sector": "Defense",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Textron Systems",
+            "sector": "Defense",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Kratos",
+            "sector": "Defense",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "AeroVironment",
+            "sector": "Defense",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Ford",
+            "sector": "Automotive",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Rivian",
+            "sector": "Automotive",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Visteon",
+            "sector": "Automotive",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Garmin",
+            "sector": "Automotive",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Keysight",
+            "sector": "Test and measurement",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "NI (Emerson)",
+            "sector": "Test and measurement",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Tektronix",
+            "sector": "Test and measurement",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "Rohde & Schwarz",
+            "sector": "Test and measurement",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "The Qt Company",
+            "sector": "Qt specialists",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "KDAB",
+            "sector": "Qt specialists",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": ""
+        },
+        {
+            "name": "ICS (Integrated Computer Solutions)",
+            "sector": "Qt specialists",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": "The Greenhouse board named ics belongs to a different company."
+        },
+        {
+            "name": "Ansys",
+            "sector": "Software with Qt front ends",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": "Canonsburg, PA."
+        },
+        {
+            "name": "Bentley Systems",
+            "sector": "Software with Qt front ends",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": "Exton, PA."
+        },
+        {
+            "name": "Aurora Innovation",
+            "sector": "Robotics and autonomy",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": "Pittsburgh."
+        },
+        {
+            "name": "Carnegie Robotics",
+            "sector": "Robotics and autonomy",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": "Pittsburgh."
+        },
+        {
+            "name": "Near Earth Autonomy",
+            "sector": "Robotics and autonomy",
+            "hiringSystem": "",
+            "followLink": "",
+            "lastChecked": "",
+            "note": "Pittsburgh."
+        }
+    ]
+}

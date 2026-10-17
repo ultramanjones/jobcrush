@@ -65,12 +65,14 @@ The dependency arrow points one way only, and the folders are the rule — which
 - no SQL appears above `src/model/`
 - no QML or Qt Quick header appears inside `src/viewmodel/`
 - nothing in `src/model/` includes anything from a layer above it
-- there is exactly one composition root, and it is `src/main.cpp`
+- there is exactly one composition root, and it is `src/main.cpp` (the AI app bridge in `tools/ai-app-bridge/` is a separate small program with its own `main`)
 
 ```
 src/
 ├── model/                  entities + repositories; the only place SQL lives
 ├── modelview/              the back end
+│   ├── activejobs/         the Active Jobs folder: one JobQuest.txt per job
+│   ├── aiapps/             the actions AI apps can ask for, over MCP
 │   ├── aibrain/            pluggable AI providers, credential roster, the soul
 │   ├── brainchat/          the conversation itself
 │   └── jobscout/           job-site clients, search profile, prospect scoring
@@ -120,6 +122,31 @@ cmake --build build
 ```
 
 Or open `CMakeLists.txt` in Qt Creator and hit Run.
+
+### The Windows installer
+
+`JobCrushSetup-<version>.exe` is the one file a person downloads to get Job
+Crush. It installs for the current user, with no administrator password, and
+includes everything Qt needs.
+
+The easy way is GitHub: Actions tab, "Windows installer", "Run workflow". Or
+push a version tag (`git tag v0.1.0; git push origin v0.1.0`) and the
+installer is attached to a GitHub Release for that tag.
+
+To make it on your own Windows computer, install [Inno Setup
+6](https://jrsoftware.org/isdl.php), then run from this folder:
+
+```
+powershell -ExecutionPolicy Bypass -File tools\installer\build-installer.ps1
+```
+
+### AI apps
+
+`jobcrush-ai-bridge` is a second, small program built next to Job Crush. AI
+apps such as Claude desktop start it to work the board through MCP (Model
+Context Protocol). It passes each request to the running Job Crush and never
+touches the database itself. Settings shows the text to paste into Claude
+desktop.
 
 ## Testing
 

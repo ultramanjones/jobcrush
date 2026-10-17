@@ -64,6 +64,11 @@ public:
     // game, the user's own words never are.
     bool removeEntriesTheReaderProducedAndNobodyTouched();
 
+    // The same, for one document only. Used when Moonlight reads a document
+    // again: its new reading replaces the old one, and anything the user
+    // typed into stays.
+    bool removeUntouchedEntriesFromDocument(qint64 professionalDocumentId);
+
     // Collapses duplicates already sitting in the database, keeping the one
     // the user confirmed where there is one, and the oldest otherwise. Runs at
     // startup so a database that got into this state before the fix heals

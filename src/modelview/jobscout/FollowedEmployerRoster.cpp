@@ -87,7 +87,33 @@ int FollowedEmployerRoster::followedEmployerCount() const
     return watchedEmployers.count();
 }
 
-QString FollowedEmployerRoster::followEmployerFromLink(const QString &pastedLink)
+namespace {
+
+// A Workday tenant is "ngc.wd1/Northrop_Grumman_External_Site". The site part
+// names the company, padded with words like "External Site". Those are taken
+// off: "Northrop Grumman".
+QString companyNameFromWorkdaySite(const QString &workdayTenant)
+{
+    const QString siteName = workdayTenant.section(QLatin1Char('/'), 1);
+    static const QStringList paddingWords = {
+        QStringLiteral("external"), QStringLiteral("site"), QStringLiteral("careers"),
+        QStringLiteral("career"), QStringLiteral("jobs"), QStringLiteral("job"),
+        QStringLiteral("en"), QStringLiteral("us"),
+    };
+    QStringList keptWords;
+    for (const QString &word : companyNameFromTenant(siteName).split(QLatin1Char(' '),
+                                                                     Qt::SkipEmptyParts)) {
+        if (!paddingWords.contains(word.toLower())) {
+            keptWords.append(word);
+        }
+    }
+    return keptWords.isEmpty() ? companyNameFromTenant(siteName) : keptWords.join(QLatin1Char(' '));
+}
+
+} // namespace
+
+QString FollowedEmployerRoster::followEmployerFromLink(const QString &pastedLink,
+                                                      const QString &displayName)
 {
     const QString trimmedLink = pastedLink.trimmed();
     if (trimmedLink.isEmpty()) {
@@ -106,24 +132,32 @@ QString FollowedEmployerRoster::followEmployerFromLink(const QString &pastedLink
                 "link from there.");
         }
         return QStringLiteral(
-            "Job Crush can watch companies on Greenhouse, Lever and Ashby. That link "
-            "isn't one of them. Open a job on the company's careers page — if the "
-            "address says greenhouse, lever or ashby anywhere in it, that link works.");
+            "Job Crush can watch companies on Greenhouse, Lever, Ashby, SmartRecruiters "
+            "and Workday. That link isn't one of them. Open a job on the company's "
+            "careers page. If the address says greenhouse, lever, ashby, "
+            "smartrecruiters or myworkdayjobs anywhere in it, that link works.");
     }
 
     const QString boardDisplayName = AtsBoardName::displayNameFor(boardIdentity.boardName);
     if (boardDisplayName != QStringLiteral("Greenhouse")
             && boardDisplayName != QStringLiteral("Lever")
-            && boardDisplayName != QStringLiteral("Ashby")) {
+            && boardDisplayName != QStringLiteral("Ashby")
+            && boardDisplayName != QStringLiteral("SmartRecruiters")
+            && boardDisplayName != QStringLiteral("Workday")) {
         return QStringLiteral(
-            "That company is on %1, and Job Crush can't read %1 yet — only Greenhouse, "
-            "Lever and Ashby. It's on the list.").arg(boardDisplayName);
+            "That company is on %1, and Job Crush can't read %1 yet. It reads "
+            "Greenhouse, Lever, Ashby, SmartRecruiters and Workday. It's on the list.")
+            .arg(boardDisplayName);
     }
 
     FollowedEmployer employer;
     employer.boardName = boardIdentity.boardName;
     employer.tenant = boardIdentity.tenant;
-    employer.displayName = companyNameFromTenant(boardIdentity.tenant);
+    employer.displayName = displayName.trimmed().isEmpty()
+        ? (boardIdentity.boardName == AtsBoardName::Workday
+               ? companyNameFromWorkdaySite(boardIdentity.tenant)
+               : companyNameFromTenant(boardIdentity.tenant))
+        : displayName.trimmed();
 
     for (const FollowedEmployer &alreadyWatched : watchedEmployers) {
         if (alreadyWatched.asKey().compare(employer.asKey(), Qt::CaseInsensitive) == 0) {
@@ -138,6 +172,45 @@ QString FollowedEmployerRoster::followEmployerFromLink(const QString &pastedLink
 
     return QStringLiteral("Now watching %1 on %2. Their whole board turns up next time "
                           "you scout.").arg(employer.displayName, boardDisplayName);
+}
+
+QString FollowedEmployerRoster::followEveryReadableCompanyOn(const CompanyList &companyList)
+{
+    int companiesAdded = 0;
+    int companiesAlreadyWatched = 0;
+    int companiesNotReadableYet = 0;
+
+    for (const CompanyListEntry &entry : companyList.companies) {
+        if (entry.followLink.isEmpty()) {
+            ++companiesNotReadableYet;
+            continue;
+        }
+        const int countBefore = watchedEmployers.count();
+        followEmployerFromLink(entry.followLink, entry.companyName);
+        if (watchedEmployers.count() > countBefore) {
+            ++companiesAdded;
+        } else {
+            ++companiesAlreadyWatched;
+        }
+    }
+
+    QStringList sentences;
+    sentences.append(companiesAdded == 1
+                         ? QStringLiteral("Now watching 1 more company from the list.")
+                         : QStringLiteral("Now watching %1 more companies from the list.")
+                               .arg(companiesAdded));
+    if (companiesAlreadyWatched > 0) {
+        sentences.append(QStringLiteral("%1 were already on your list.")
+                             .arg(companiesAlreadyWatched));
+    }
+    if (companiesNotReadableYet > 0) {
+        sentences.append(QStringLiteral(
+            "%1 others on the list have no feed recorded yet. For those, paste a "
+            "job's link into Add a job on Discoveries, or paste it above to watch "
+            "the company.").arg(companiesNotReadableYet));
+    }
+    sentences.append(QStringLiteral("Their jobs turn up the next time you scout."));
+    return sentences.join(QLatin1Char(' '));
 }
 
 void FollowedEmployerRoster::stopFollowing(const QString &employerKey)

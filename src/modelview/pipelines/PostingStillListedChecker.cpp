@@ -43,6 +43,7 @@ EmployerBoardProvider *PostingStillListedChecker::boardReaderFor(const QString &
     if (boardName == AtsBoardName::Lever)      return &leverBoard;
     if (boardName == AtsBoardName::Ashby)      return &ashbyBoard;
     if (boardName == AtsBoardName::Workday)    return &workdayBoard;
+    if (boardName == AtsBoardName::SmartRecruiters) return &smartRecruitersBoard;
     return nullptr;
 }
 
@@ -126,7 +127,7 @@ void PostingStillListedChecker::checkEveryOpenCard()
         statusSentence = jobsWithNoReadableLink == 0
             ? QStringLiteral("There are no open jobs on the board to check.")
             : QStringLiteral("None of these jobs has a link Job Crush can check. It can "
-                             "check jobs on Greenhouse, Lever, Ashby and Workday.");
+                             "check jobs on Greenhouse, Lever, Ashby, SmartRecruiters and Workday.");
         emit checkStatusChanged();
         return;
     }

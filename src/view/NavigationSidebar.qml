@@ -70,6 +70,10 @@ Rectangle {
                     height: parent.height
                     color: JobCrushTheme.accentColor
                     visible: navigationRow.isCurrent
+
+                    GlowHalo {
+                        glowColor: JobCrushTheme.accentColor
+                    }
                 }
 
                 Text {

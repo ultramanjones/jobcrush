@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 class AiBrainSoul;
 class AppPreferences;
@@ -18,6 +19,15 @@ class AppPreferencesViewModel : public QObject {
     Q_PROPERTY(QString boardThemeName READ boardThemeName WRITE setBoardThemeName
                    NOTIFY boardThemeNameChanged)
 
+    // The hints strip on the Moonlight chat page: the hints to rotate
+    // through, and whether the user closed the strip.
+    Q_PROPERTY(QStringList moonlightHints READ moonlightHints CONSTANT)
+    Q_PROPERTY(bool moonlightHintsAreDismissed READ moonlightHintsAreDismissed
+                   WRITE setMoonlightHintsAreDismissed NOTIFY moonlightHintsDismissedChanged)
+    // The Settings checkbox. Off hides the tips for good.
+    Q_PROPERTY(bool moonlightTipsAreTurnedOn READ moonlightTipsAreTurnedOn
+                   WRITE setMoonlightTipsAreTurnedOn NOTIFY moonlightTipsTurnedOnChanged)
+
     // Where the soul text files live, shown in Settings.
     Q_PROPERTY(QString soulFolderPath READ soulFolderPath CONSTANT)
 
@@ -31,6 +41,12 @@ public:
 
     QString soulFolderPath() const;
 
+    QStringList moonlightHints() const;
+    bool moonlightHintsAreDismissed() const;
+    void setMoonlightHintsAreDismissed(bool dismissed);
+    bool moonlightTipsAreTurnedOn() const;
+    void setMoonlightTipsAreTurnedOn(bool turnedOn);
+
     // Opens the soul folder in the system file manager, and reloads the soul
     // files on the way (cheap, and it means edits are picked up by the very
     // next AIBrain request without restarting).
@@ -38,6 +54,8 @@ public:
 
 signals:
     void boardThemeNameChanged();
+    void moonlightHintsDismissedChanged();
+    void moonlightTipsTurnedOnChanged();
 
 private:
     AppPreferences &preferences;

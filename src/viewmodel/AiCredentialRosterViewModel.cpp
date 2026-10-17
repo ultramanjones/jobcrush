@@ -87,6 +87,11 @@ bool AiCredentialRosterViewModel::providerHasKey(const QString &providerKindName
     return false;
 }
 
+bool AiCredentialRosterViewModel::providerNeedsKey(const QString &providerKindName) const
+{
+    return aiProviderKindFromStorageText(providerKindName) != AiProviderKind::Ollama;
+}
+
 QString AiCredentialRosterViewModel::providerKeyNickname(const QString &providerKindName) const
 {
     const AiProviderKind providerKind = aiProviderKindFromStorageText(providerKindName);

@@ -351,6 +351,23 @@ bool CareerHistoryRepository::removeEntriesTheReaderProducedAndNobodyTouched()
     return true;
 }
 
+bool CareerHistoryRepository::removeUntouchedEntriesFromDocument(qint64 professionalDocumentId)
+{
+    for (const QString &tableName : { QStringLiteral("workExperience"),
+                                      QStringLiteral("educationRecord") }) {
+        QSqlQuery deleteQuery(jobCrushDatabase.connection());
+        deleteQuery.prepare(QStringLiteral(
+            "DELETE FROM %1 WHERE sourceDocumentId = :documentId AND wasEditedByUser = 0")
+                .arg(tableName));
+        deleteQuery.bindValue(QStringLiteral(":documentId"), professionalDocumentId);
+        if (!deleteQuery.exec()) {
+            lastErrorDescription = deleteQuery.lastError().text();
+            return false;
+        }
+    }
+    return true;
+}
+
 int CareerHistoryRepository::removeDuplicateEntries()
 {
     // Written as a read, a decision and a delete rather than as one clever

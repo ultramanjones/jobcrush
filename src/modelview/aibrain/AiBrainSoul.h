@@ -16,6 +16,11 @@
 // On first run both files are created with sensible defaults so the user has
 // something real to edit. The assembled text rides as the system prompt on
 // every AIBrain request.
+//
+// A third file, capabilities.txt, belongs to the app, not the user: what Job
+// Crush can do today. It is written fresh on every launch, so the brain never
+// describes features that changed. It goes last in the assembled text so it
+// has the final word.
 class AiBrainSoul {
 public:
     // folderPath: where the soul files live (under the app's data folder).
@@ -25,7 +30,8 @@ public:
     // Safe to call again at any time to pick up the user's edits.
     void loadCreatingDefaultsIfMissing();
 
-    // Prime directives first, then the soul — assembled for the system prompt.
+    // Prime directives, then the soul, then the app's capabilities list,
+    // assembled for the system prompt.
     QString assembledSoulText() const;
 
     // Where the files live, for the "open soul folder" button in Settings.

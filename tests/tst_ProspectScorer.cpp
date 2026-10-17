@@ -4,6 +4,7 @@
 
 #include "IsolatedTestSettings.h"
 #include "modelview/jobscout/JobSearchProfile.h"
+#include "modelview/jobscout/ClearanceDetector.h"
 #include "modelview/jobscout/ProspectScorer.h"
 
 namespace {
@@ -187,6 +188,25 @@ private slots:
 
 private:
     QTemporaryDir settingsFolder;
+
+    // ClearanceDetector lives beside the scorer and is tested here with it.
+    void clearanceIsFlaggedFromTitleOrDescription()
+    {
+        JobPosting secretJob;
+        secretJob.positionTitle = QStringLiteral("Embedded C++ Engineer");
+        secretJob.fullDescriptionText =
+            QStringLiteral("Must be able to obtain a DoD Secret clearance.");
+        QVERIFY(ClearanceDetector::asksForClearance(secretJob));
+
+        JobPosting tsJob;
+        tsJob.positionTitle = QStringLiteral("Qt Developer (TS/SCI)");
+        QVERIFY(ClearanceDetector::asksForClearance(tsJob));
+
+        JobPosting plainJob;
+        plainJob.positionTitle = QStringLiteral("Qt Developer");
+        plainJob.fullDescriptionText = QStringLiteral("Build QML screens for robots.");
+        QVERIFY(!ClearanceDetector::asksForClearance(plainJob));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestProspectScorer)

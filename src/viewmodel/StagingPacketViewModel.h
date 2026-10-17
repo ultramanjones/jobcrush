@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QVariantList>
+
 #include <QAbstractListModel>
 #include <QList>
 #include <QString>
@@ -7,6 +9,7 @@
 #include "../model/StagedDocument.h"
 #include "../modelview/tasks/AiBrainTask.h"
 
+class ActiveJobsFolder;
 class AppPreferences;
 class JobPipelines;
 class StagedDocumentRepository;
@@ -46,6 +49,11 @@ class StagingPacketViewModel : public QAbstractListModel {
                    NOTIFY downloadFormatChanged)
     Q_PROPERTY(QString exportFolderPath READ exportFolderPath NOTIFY exportFolderPathChanged)
 
+    // Every place this job can be applied to, for the Apply block: each a
+    // plain object with label ("Apply on Greenhouse") and url. The user
+    // picks; Job Crush never applies for them.
+    Q_PROPERTY(QVariantList applyRoutes READ applyRoutes NOTIFY selectedJobChanged)
+
     Q_PROPERTY(QString noticeText READ noticeText NOTIFY noticeChanged)
     Q_PROPERTY(QString noticeNextStepText READ noticeNextStepText NOTIFY noticeChanged)
     Q_PROPERTY(bool noticeIsAProblem READ noticeIsAProblem NOTIFY noticeChanged)
@@ -65,6 +73,7 @@ public:
                            StagedDocumentRepository &packetRepository,
                            JobPipelines &board,
                            AppPreferences &preferences,
+                           ActiveJobsFolder &activeJobsFolder,
                            const QString &applicationDataFolderPath,
                            QObject *parent = nullptr);
 
@@ -116,6 +125,11 @@ public:
 
     Q_INVOKABLE void markAsSent();
 
+    QVariantList applyRoutes() const;
+
+    // Opens one apply route in the browser. http and https only.
+    Q_INVOKABLE void openApplyRoute(const QString &routeUrl) const;
+
     // --- The status line shown to the user -------------------------------
     QString noticeText() const;
     QString noticeNextStepText() const;
@@ -147,6 +161,7 @@ private:
     StagedDocumentRepository &stagedDocumentRepository;
     JobPipelines &jobPipelines;
     AppPreferences &appPreferences;
+    ActiveJobsFolder &activeJobs;
     const QString applicationDataFolderPath;
 
     qint64 selectedJobApplicationId = 0;

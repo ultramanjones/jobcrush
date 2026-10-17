@@ -5,6 +5,7 @@
 
 #include "../modelview/AppPreferences.h"
 #include "../modelview/aibrain/AiBrainSoul.h"
+#include "../modelview/brainchat/MoonlightHints.h"
 
 AppPreferencesViewModel::AppPreferencesViewModel(AppPreferences &appPreferences,
                                                  AiBrainSoul &aiBrainSoul,
@@ -15,6 +16,10 @@ AppPreferencesViewModel::AppPreferencesViewModel(AppPreferences &appPreferences,
 {
     connect(&preferences, &AppPreferences::boardThemeNameChanged,
             this, &AppPreferencesViewModel::boardThemeNameChanged);
+    connect(&preferences, &AppPreferences::moonlightHintsDismissedChanged,
+            this, &AppPreferencesViewModel::moonlightHintsDismissedChanged);
+    connect(&preferences, &AppPreferences::moonlightTipsTurnedOnChanged,
+            this, &AppPreferencesViewModel::moonlightTipsTurnedOnChanged);
 }
 
 QString AppPreferencesViewModel::boardThemeName() const
@@ -38,4 +43,29 @@ void AppPreferencesViewModel::openSoulFolder()
     // then hand the folder to the OS file manager.
     soul.loadCreatingDefaultsIfMissing();
     QDesktopServices::openUrl(QUrl::fromLocalFile(soul.soulFolderPath()));
+}
+
+QStringList AppPreferencesViewModel::moonlightHints() const
+{
+    return MoonlightHints::everyHint();
+}
+
+bool AppPreferencesViewModel::moonlightHintsAreDismissed() const
+{
+    return preferences.moonlightHintsAreDismissed();
+}
+
+void AppPreferencesViewModel::setMoonlightHintsAreDismissed(bool dismissed)
+{
+    preferences.setMoonlightHintsAreDismissed(dismissed);
+}
+
+bool AppPreferencesViewModel::moonlightTipsAreTurnedOn() const
+{
+    return preferences.moonlightTipsAreTurnedOn();
+}
+
+void AppPreferencesViewModel::setMoonlightTipsAreTurnedOn(bool turnedOn)
+{
+    preferences.setMoonlightTipsAreTurnedOn(turnedOn);
 }

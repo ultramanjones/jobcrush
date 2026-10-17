@@ -79,6 +79,22 @@ public:
     // fire. reasonText explains either outcome in words the user can read.
     bool crushJobPosting(qint64 jobPostingId, QString &reasonText);
 
+    // Puts a job from a job folder on the board, in the column the folder's
+    // JobQuest.txt names, with the applied date and notes the file gave.
+    //
+    // Different from CRUSH on purpose. A packet is only started when the job
+    // lands in Crushed. A job that was already sent needs no cover letter, and
+    // starting a packet asks the brain questions, which spends the user's AI
+    // credits for nothing.
+    //
+    // Returns the new card's id, or 0 with the reason in reasonText.
+    qint64 putOnBoardFromJobFolder(qint64 jobPostingId, PipelineStage pipelineStage,
+                                   const QDateTime &appliedTimestamp,
+                                   const QString &notesText, QString &reasonText);
+
+    // The card for one posting, or 0 when that posting is not on the board.
+    qint64 jobApplicationIdForPosting(qint64 jobPostingId) const;
+
     // Is this posting already on the board? The Discoveries list asks so it
     // can show "on your board" instead of an inviting button that will only
     // say no.

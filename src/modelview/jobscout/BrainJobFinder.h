@@ -35,6 +35,10 @@ public:
     // True when a brain is connected and can be asked.
     bool aBrainIsAvailable() const;
 
+    // True when the connected brain can search the web. Ollama runs on the
+    // user's own computer and cannot, so it is never asked to find a job.
+    bool aBrainCanSearchTheWeb() const;
+
     // "Anthropic", "Gemini" — for the status line. Empty when none.
     QString brainDisplayName() const;
 

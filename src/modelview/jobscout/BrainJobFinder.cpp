@@ -21,6 +21,12 @@ bool BrainJobFinder::aBrainIsAvailable() const
     return connectedBrain.isConfigured();
 }
 
+bool BrainJobFinder::aBrainCanSearchTheWeb() const
+{
+    return connectedBrain.isConfigured()
+           && connectedBrain.selectedProviderKindName() != QStringLiteral("ollama");
+}
+
 QString BrainJobFinder::brainDisplayName() const
 {
     return connectedBrain.selectedProviderDisplayName();

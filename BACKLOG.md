@@ -16,67 +16,41 @@ section before starting anything here.
 
 ## Next up
 
-**22. Import a folder of applications.** Ultra, 2026-10-12; settled
-2026-10-16. Job Crush cannot see FlexJobs, ZipRecruiter and many other boards.
-People find and apply to those jobs with an AI or on their own. Job Crush
-should still track them. This is the answer to the old open question: an
-"Import a folder" button any user can use, not a one-time load.
+**27. Never freeze the window.** Ultra, 2026-10-16. Job Crush must never
+freeze long enough for Windows to say "not responding". Not even close to it.
+After the starter list, one search brought in almost 7,000 jobs and the window
+froze until they were all saved. (A stopgap went in the same night: the saving
+is done as one batch instead of one disk write per job. That is faster, but it
+still runs on the screen's thread.) The real fix:
+- Save jobs on a background thread, never on the thread that draws the screen.
+- Save in small bursts: one company at a time, as soon as that company
+  answers. Not everything at the end.
+- Discoveries fills in as each company is saved, so the user sees them arrive.
 
-How it works. Job Crush decides where the **Active Jobs** folder lives and
-tells the user where it is. Each job is a subfolder inside it. Each subfolder
-holds one required file, `JobQuest.txt`. Resumes and cover letters go in the
-same subfolder, whether an outside AI made them or Job Crush did. The user
-always knows where to find them.
+**29. Pick where Job Crush saves files.** Ultra, 2026-10-16. Job Crush
+saves copies and packets in Documents\Job Crush Packets. When OneDrive backs
+up Documents, Windows says Documents is the OneDrive one, so files land in
+OneDrive. Many people use that, so it stays the default. But Settings needs a
+"Where Job Crush saves files" picker, like the Active Jobs folder picker.
+AppPreferences already stores exportFolderPath; only the Settings control is
+missing.
 
-`JobQuest.txt` is plain lines of "Name: value". Only Company and Title are
-required.
-
-```
-Quest created by: Claude
-Company: Acme Robotics
-Title: Senior Qt Developer
-Link: https://...
-Found on: FlexJobs
-Status: Applied
-Applied on: 10/14/2026
-Pay: $140k
-Where: Remote
-Notes: Recruiter is Jane, follow up Friday
-```
-
-"Quest created by" says who made the job: Job Crush, ChatGPT, Claude, and so
-on. The AI forgets it made the job; the file remembers. This widens the
-existing `scoutSource` field ("you" or "scout") to hold these names.
-
-Status is one of the board's columns: Saved, Applied, Interview, Offer, Closed.
-
-Watching for changes. Use `QFileSystemWatcher` so Windows tells Job Crush when
-a file changes. Wait about a second after the last change before reading, so a
-half-written file is never read. On launch, compare each file's last-changed
-time to the one saved, to catch changes made while Job Crush was closed.
-
-Keep the file and the board the same. When the user moves a card or edits a
-job in Job Crush, Job Crush writes the change into `JobQuest.txt`. If both
-change at once, the newest change wins.
-
-AI Buddy Mode. A short blurb in the app, with a Copy instructions button. The
-instructions tell any outside AI where the Active Jobs folder is, and list
-every line of `JobQuest.txt` and every Status value. Draft blurb:
-
-> Job Crush finds jobs on many sites, but not all of them. If you use an
-> outside AI to find jobs or help you apply, it can keep Job Crush up to date
-> for you. Copy these instructions and paste them into your AI once. After
-> that, every job it helps you with shows up on your board.
-
-First real test: Ultra's own folders. They sit in `Make Money Now\Job
-Applications\Application Complete` (14 jobs as of 2026-10-12). Do NOT read
-`1 - Send These`: those are not sent. Each folder name is "Company - Title".
-Its `HOW TO APPLY.txt` has the link (the line starting `HOW:`), the pay
-(`PAY:`) and the place (`WHERE:`). Each job goes on the board in Applied. The
-applied date is the folder's date modified. Ultra's call: close enough, and he
-can fix any one with the Applied on box. Shield AI (R5189 Staff Engineer GCS)
-goes in Closed: two interviews, then turned down. So the importer reads this
-older layout too, not just the new text file.
+**28. Home country and home metro filter.** Ultra, 2026-10-16. Followed
+companies send jobs from every country (Bangalore, Jakarta). Today, any job
+marked remote gets through the area filter, even "Remote - India".
+- Pick your home country, for example United States.
+- Pick your home city as a metro area, for example the Pittsburgh area. No
+  separate state step.
+- "Look for jobs in other countries?" Default: no.
+- No: an on-site or hybrid job in another country is out.
+- Remote jobs tied to another country ("Remote - India") go in their own tab,
+  "Remote, listed in another country". Companies do not use that wording the
+  same way, so Job Crush does not decide. They are not hidden and not thrown
+  away, but they do not flood the main list. Plain "Remote", or remote in the
+  home country, stays in the main list.
+- Yes: the user is ready to move there. Jobs in other countries come in.
+  Rare, but allowed. Do not make these people leave Job Crush.
+- Hybrid counts as on-site. A hybrid job in Jakarta means being in Jakarta.
 
 **2. Job source coverage.** The source interface and the roster are done;
 Remotive and Arbeitnow are wired. Every other free board is a class that
@@ -91,13 +65,10 @@ on 2026-10-11 (see Shipped). What is left:
   itself, because the cloud machine that wrote the code cannot reach Workday.
   If Workday refuses requests that do not come from a browser, the first pasted
   link will say so in the message, with the status code.
-- **Following a Workday employer** in Settings. Workday sites list thousands of
-  jobs, so following one needs a search, not a full read. Settings says
-  "Job Crush can't read Workday yet" for now, which is still true for this part.
-- **Company and title only, no link.** Greenhouse, Lever and Ashby account
-  names can be guessed from a company name. Workday's cannot: they need the
-  server and the site name too. Item 16's company list is the fix. It records
-  each company's Workday site once.
+- **Company and title only, no link — the rest.** Done for the 12 Workday
+  companies in the company list (2026-10-16): a typed company that is on the
+  list is searched on its recorded Workday site. Any other Workday employer
+  still needs a pasted link, or its site added to the list.
 - **Workday's other link shape**, `wd3.myworkdaysite.com/recruiting/{tenant}/{site}/...`,
   is not read yet. No example has turned up to check it against.
 - **Taleo** has no common JSON answer across companies. Cost it separately.
@@ -107,27 +78,10 @@ closed beta: six partners, no open enrollment. The flow gets built against the
 published shape and sits behind an honest "waiting on OpenAI program access"
 state rather than a button that does nothing.
 
-**5. The rest of the brains.** An OpenAI API-key provider (an OpenRouter clone
-pointed elsewhere) and Ollama. Ollama needs `providerIsSelectable` to stop
-demanding a credential — it runs on the user's own machine and has no key.
-
 **6. Brain levels.** Per-provider model choice, so "which brain" and "how much
 brain" are separate questions. Replaces the hardcoded model constant in each
 provider. The naming is the hard part: model version numbers mean nothing to
 somebody who just wants their cover letter to sound like them.
-
-**6. "Moonlight clean this up!"** The button on ProDocs that hands a messy
-parse to the connected brain. Label above it reads "If you have connected an
-AI brain you can have…", and with no brain connected it greys out *and says
-why*.
-
-**7. An app-owned soul capabilities file** that refreshes on every launch, so
-what Job Crush can DO stays current while the user's own edits to `soul.txt`
-stay theirs. Today a stale soul file means a brain that describes an app that
-no longer exists.
-
-**9. Trace On glow.** `glowStrength` exists as a theme token, sits at 1.0 for
-the two Trace On palettes and 0.0 everywhere else, and nothing reads it yet.
 
 **11. OCR for scanned documents.** People scan real-world paper and find it
 useless in the digital world — the transcript that started this was a photo of
@@ -137,63 +91,11 @@ to Moonlight instead is a separate, offered choice the user makes knowingly,
 and on hard pages — handwriting, odd layouts — it is the better reader. See
 item 14.
 
-**12. Paste any text and let Moonlight fill the form in.** On "Add a job", a
-box where the user pastes an email, a job alert, a recruiter message or a
-posting copied off a page no API can reach. With a brain connected, Moonlight
-reads it and fills in company, title, location, salary, remote or not, the
-link, the posting date and the description. Anything it cannot find in the text
-is left empty and marked as still needing the user — it never guesses a field.
-Once the fields are filled, item 13 goes looking for the employer's own posting
-of the same job.
-Two things have to come first: "Add a job" today has only a link box and
-company/title boxes, so the full set of editable fields has to exist before
-anything can fill them; and with no brain connected the paste box greys out and
-says why, same rule as item 6.
-
-**13. Every job knows where it can be applied to, and Staging hands them
-over.** A job can be reachable in more than one place at once: the aggregator
-that found it (USAJOBS, Remotive, Jobicy) and the employer's own posting. Both
-are worth keeping. The employer's own board is the source of truth — it is
-current, it is not a rewrite, and it is where a lot of people would rather
-apply — but the aggregator link is the one that was actually verified to exist,
-and some people prefer applying there. Job Crush offers both and the user
-picks.
-
-Three parts:
-
-*Finding them.* `CanonicalPostingResolver` already guesses the employer's
-Greenhouse, Lever or Ashby account from the company name and matches by title.
-It runs today only at the moment a job is added by hand, and it REPLACES the
-lead with what it finds. Both of those change: it runs for any job, and it adds
-what it finds instead of overwriting. Where the account guess fails and a brain
-is connected, Moonlight gets asked — a person reads "The Home Depot" and knows
-to try `homedepot`; a string rule does not. The same hunt widens to the sources
-that take search terms (Remotive, Jobicy, and USAJOBS by keyword and
-organization; Arbeitnow has no search).
-
-*Storing them.* `JobPosting.sourceUrl` is one link and this is a list, so
-apply routes become their own table: the job, the link, which site it is, and
-whether it is the employer's own. A route already known is not added twice.
-Finding nothing extra is a normal answer and leaves the job as it was.
-
-*Using them.* An **Apply:** block in Staging, next to "I've sent it" — a button
-per route, each naming where it goes ("Apply on USAJOBS", "Apply on Acme's own
-site"). That is the whole point of the step: Job Crush hands the user the cover
-letter written for this job AND the places to send it, in one screen, and the
-user chooses. A "search for this job elsewhere" button, on the job itself, runs
-the hunt again on demand for anything added before this existed or added
-without a brain connected.
-
-*When it runs.* On CRUSH, not on discovery. Settled 2026-08-28. A sweep turns
-up a lot of jobs that are not a real match — the scorer tries, but it is not
-perfect — and looking up the employer's own posting for every one of them
-spends bandwidth, and the user's AI credits, on jobs they were never going to
-open. Interest is the signal: the moment a job goes on the board, Job Crush
-goes and finds out more about it. Jobs sitting in Discoveries are left alone.
-The manual "search for this job elsewhere" button covers anything else.
-
-Paid and subscription sites become routes the day they are added; nothing about
-the block changes when they are.
+**13. Every job knows where it can be applied to — the rest.** Still to do:
+when the employer's own board has no match and a brain is connected, ask
+Moonlight for the employer's hiring-system account name (a person reads "The
+Home Depot" and knows to try "homedepot"). Left out for now because it
+spends AI credits on every crush; Ultra to decide.
 
 **14. Convert a document from one format to another.** Somebody asks for a Word
 copy and all the user has is a PDF. Today that means searching the web for a
@@ -259,49 +161,32 @@ Moonlight can read one. That paragraph is where the offer goes.
 Neither offer appears when no brain is connected. There the message says what
 is missing and how to connect one, same rule as item 6.
 
-**15. A hints strip on the Moonlight chat page.** A small line near the bottom
-naming one thing Moonlight or Job Crush can do that the user has not found —
-"Drop a PDF here and ask for a Word copy", "Paste a job email into Add a job
-and I will fill the form in". Rotates, and dismissible. Written last, once the
-features it advertises exist, because a hint pointing at something that is not
-there is worse than no hint.
+*Done 2026-10-16:* the page count for picture pages, and the layout offer
+("Word, laid out by Moonlight"). Still to do: the "Moonlight can read this"
+button for scans, which needs a brain that reads images.
 
-**16. A list of companies, kept as data.** Ultra, 2026-10-11. Job Crush checks
-the companies a person wants to work for, instead of waiting for their jobs to
-show up on a board. Employers want their jobs found. Most post through a hiring
-system with a public feed, so the feed is the place to look.
+**16. A list of companies — the rest.** The list and the button shipped
+2026-10-16 (see Shipped). 29 of the 52 companies have no feed recorded yet.
+For each, find its Workday site (or other feed), check it live, and add the
+followLink. Workday guesses that failed on 2026-10-16:
+bostonscientific.wd1/BSCCareers and garmin.wd1/Garmin. The Greenhouse board named "ics" is a cooling company, not ICS the Qt
+consultancy. Johnson & Johnson MedTech was on the starter list in
+`docs/job-crush-handoff.md` and was left off the shipped file on purpose (see
+the questions in the handoff).
 
-The list lives in a data file or table, never in code, so a user can add and
-remove companies. Each entry holds: company name, sector, hiring system, feed
-link, and the date it was last checked.
+**17. Career presets — the rest.** The C++ and Qt preset and the clearance
+flag shipped 2026-10-16 (see Shipped). Still to do: when a brain is attached,
+Moonlight reads the user's documents, works out their line of work, and
+builds a preset and a company list for it. The scorer still counts every
+skill the same; the preset file already keeps "strongSkills" and
+"goodSkills" apart, so weighting strong ones higher is a change to
+ProspectScorer only.
 
-The first list is C++/Qt in med tech and tech. It is a default, not a limit.
-The starter companies are in `docs/job-crush-handoff.md` (2026-10-11). That list was
-written from memory. For each company, find its hiring system and feed link,
-and confirm it still hires C++/Qt people.
-
-**17. Career presets, built from what the user gives us.** The C++/Qt list is
-just the first preset. Other careers get their own. When the user puts in their
-documents, Moonlight reads them, works out the line of work, and goes and finds
-companies in that line. This only happens when a brain is attached. Without
-one, the user picks a preset or builds a list by hand.
-
-Each preset also carries keywords for matching jobs. For C++/Qt:
-strong match is Qt, QML, Qt Quick, C++ with a GUI, embedded UI, HMI. Good match
-is C++, real-time, embedded Linux, simulation, telemetry, medical device
-software, IEC 62304. "Security clearance required" is flagged, never hidden.
-The user can edit every list.
-
-**18. Warn when a posting disappears — the rest.** The board half shipped
-2026-10-12 (see Shipped). Still to do: Discoveries rows. A followed employer's
-sweep reads their whole board, so a job missing from it is gone, and the row
-could say so the same way the card does. Jobs that came from search sites
-(Remotive, Arbeitnow) cannot be checked this way.
-
-**19. More feeds.** SmartRecruiters has an official public API. Many employer
-careers pages carry `JobPosting` data for Google; `PostedJobPageReader` already
-reads it from a pasted page, so a company with no hiring system feed can still
-be checked from its careers page. Workday is item 3a.
+**19. More feeds — careers pages.** Many employer careers pages carry
+`JobPosting` data for Google; `PostedJobPageReader` already reads it from a
+pasted page, so a company with no hiring system feed can still be checked
+from its careers page. SmartRecruiters shipped 2026-10-16 (see Shipped).
+Workday is item 3a.
 
 **20. A web version of Job Crush.** Ultra, 2026-10-11. A portfolio piece that
 shows web work on top of desktop work, built on Qt 6's newer server-side tools
@@ -349,37 +234,12 @@ user saw it, saved it, or put it on their board. Index the user ID column from
 day one. Clear out jobs that have been gone for months and sit on nobody's board.
 
 
-**23. Let AI apps work Job Crush directly.** Ultra, 2026-10-16. Claude
-desktop, ChatGPT and Gemini can connect to other programs through a shared
-standard called MCP (Model Context Protocol). Job Crush should offer a short
-list of actions through it: add a job, mark it applied on a date, move it to
-another column, list what is waiting on the user. Then a user can tell their AI
-"I applied to the FlexJobs one yesterday" and the board updates.
-
-Why: AI is good at finding jobs and helping apply. It is poor at tracking them
-over weeks. Job Crush does the tracking. This is how most people will use it.
-
-Rule: Job Crush is the only program that writes to its database. The AI asks
-and Job Crush does the work, through the same Logic code the screens use. Two
-programs writing the same database at once would lose changes.
-
-Do this after item 22.
-
-**24. Say what each board column means.** Ultra, 2026-10-16. Hovering over a
-column title on Job Pipelines shows one plain line:
-
-- Crushed: "You picked this job but have not applied yet."
-- Applied: "You sent the application. It waits here until they set up an interview."
-- Interview: "Move the job here only once you have a scheduled interview. It stays here through every round until an offer or a no."
-- Offer: "They made you an offer."
-- Closed: "It is over: they said no, you withdrew, or you turned it down."
-
-Small. Can go in with any other board work.
-
-**25. A Windows installer.** Ultra, 2026-10-16. Needed before the public can
-use Job Crush. A stranger must be able to download one file, run it, and have
-Job Crush start, with Qt and everything else it needs included. Planned in an
-earlier handoff and never started.
+**25. A Windows installer — check it on Windows.** Built 2026-10-16 (see
+Shipped), but it has never run on a Windows machine. Run the "Windows
+installer" GitHub workflow once, install the result on a computer with no Qt
+(or a fresh Windows user account), and check that Job Crush starts, the
+database opens, a PDF drops into ProDocs, and Claude desktop can reach the
+bridge.
 
 **26. A website with short videos.** Ultra, 2026-10-16. Do this once the app
 is feature ready. One very fast video: set up Job Crush and get started. Then
@@ -389,6 +249,190 @@ with Job Crush. Short and quick, each one.
 ---
 
 ## Shipped
+
+"Word, laid out by Moonlight" (the layout half of item 14). On ProDocs, next
+to "Save a copy as", shown only when a brain is connected. Moonlight gets the
+document's words and sends them back as headings, dates and bullets, with the
+words unchanged; that is written as a new Word file where the other copies
+go, named like Resume_Moonlight_202610162100.docx (year, month, day, hour,
+minute, so the copies sort by name). Built and tested in the cloud, but NOT
+run against a real brain yet.
+
+Crushing a job looks for it elsewhere (most of the rest of item 13). When a
+job lands on the board, Job Crush looks for the same job on the employer's
+own board (Greenhouse, Lever, Ashby, SmartRecruiters, Workday) and ADDS it
+as another place to apply. The job itself is never replaced, and a job
+already read off the employer's own board sends no requests. Each card has
+"look for this job elsewhere" to run the same search by hand, for jobs added
+before this existed. Quiet when nothing turns up. Not run against real
+boards from the cloud.
+
+The Apply block in Staging (part of item 13). Above "Download as", one button
+per place the job can be applied to ("Apply on Greenhouse", "Apply on
+USAJOBS"), plus the job's own link. The user picks; Job Crush never applies.
+And "Write it out as one file" now saves the packet into the job's own folder
+in Active Jobs when it has one, beside its JobQuest.txt, as item 22 asked.
+"Open the folder" opens that same folder.
+
+"Moonlight, clean this up!" (the second item 6). Each readable document on
+ProDocs has the button, with the line above it. It hands the document's text
+to the connected brain, which reads the jobs and schools again into a fixed
+JSON shape, never guessing. The answer replaces Job Crush's own reading of
+that one document; anything the user typed into is kept. With no brain the
+button is greyed and the line says to connect one in Settings. It spends AI
+credits, so it only runs when pressed. Checked with a stand-in brain: the
+two schools the built-in reader had glued together came out as two.
+Note: "Read my documents again" on the Experience tab still throws away every
+untouched entry, Moonlight's included, and reads with the built-in reader.
+
+A hints strip on the Moonlight chat page (item 15). One tip at a time above
+the message box, a new one every 20 seconds, each naming a feature that
+exists today (MoonlightHints.h). "hide tips" hides it until Job Crush is
+closed; the tips come back the next time it opens.
+
+Paste any text and let Moonlight fill the form in (item 12). "Add a job" has
+a third box, "Or paste the text". With a brain connected, "Have Moonlight
+fill it in" reads it (no web search, so it costs a few cents) and fills in
+company, title, link, place, pay, posted date and remote. Anything the text
+did not say stays empty with an amber edge and the hint "not in the text.
+Type it if you know it". Moonlight is told never to guess, and a link that
+is not a web address is thrown away. "Add this job" then runs the usual hunt
+for the employer's own posting; if none is found, the form is what gets
+saved, with the description. With no brain, the button is off and a line
+says why. Checked on screen with a stand-in brain.
+Fixed while here: a pasted job that no board answered for used to say "Job
+Crush found the posting on Greenhouse". It now says no board had it. And
+Ollama is never asked to search the web, since it cannot; the message says
+so instead.
+
+The C++ and Qt career preset (part of item 17). `data/career-presets/
+cpp-qt.json` holds six job titles and the strong and good skills from this
+item. "Fill in the C++ and Qt preset" in Settings adds them to the search
+profile; nothing the user typed is removed. Discoveries rows say "Asks for a
+security clearance" when the title or description does (secret, top secret,
+TS/SCI, polygraph, "obtain a clearance"). A flag, never a filter.
+
+A list of companies, kept as data (item 16). `data/company-lists/
+cpp-qt-medtech-tech.json` holds the 52 companies from the starter list in
+`docs/job-crush-handoff.md`, each with sector, hiring system, follow link and
+the day it was checked. 23 have a live feed Job Crush can read, each checked
+against the real feed on 2026-10-16 through a browser. On Greenhouse, Lever,
+Ashby and SmartRecruiters: Anduril (24 C++ or Qt titles), Shield AI (8),
+Epirus, Saronic, Skydio, Bosch, Continental, Lucid Motors, Motional, Zoox and
+Waymo. On Workday: Northrop Grumman, Stryker, Medtronic, Leidos, GE
+HealthCare, RTX (Collins, Raytheon, Pratt), Philips, Baxter, Abbott, Harman,
+GM and Autodesk. Settings has "Add the C++ and Qt starter list", which
+watches all 23 at once.
+
+Following a Workday employer (part of item 3a). A Workday link can now be
+watched in Settings. A Workday site holds thousands of jobs, so a sweep
+searches it for each job title in the profile (up to three), instead of
+reading it whole. A job two searches both find is kept once. Because a
+search never reads the whole site, a Workday job missing from it is never
+marked gone; the board's "Are these still open?" still checks Workday cards
+one by one. The name shown comes from the site name with words like
+"External Site" taken off. The sweep itself was not run, because the cloud
+cannot reach Workday; the sites were checked live in a browser. The file ships inside Job Crush as a resource; change the file, not
+the code.
+
+SmartRecruiters (part of item 19). Followed companies, pasted links, the
+company-and-title hunt, and "Are these still open?" all read SmartRecruiters
+now, through its official public API with no key. Checked live on 2026-10-16
+against BoschGroup through a browser, and the traps are written at the top of
+`SmartRecruitersBoardSource.h`: the list has no description or link, a limit
+over 100 is cut to 100, an unknown company looks the same as one with no jobs,
+and search matches loosely. A whole-board read stops after 1,000 jobs and says
+so, so a job past the stop is never marked gone. A test reads a real answer.
+
+The capabilities file (item 7). Job Crush writes capabilities.txt into the
+soul folder on every launch: every page, the Active Jobs folder, AI Buddy
+Mode, and what Moonlight cannot do from the chat. It goes last in what the
+brain is told, so it wins over an older soul.txt that still talks about
+phases. The user's soul.txt and primeDirectives.txt are never touched. New
+installs get a soul.txt without the old "rolling out in phases" paragraph.
+Keep capabilities.txt current: when a feature ships, it goes in
+AiBrainSoul.cpp.
+
+Trace On glow (item 9). GlowHalo.qml draws fading rings around a lit shape,
+using glowStrength, so only the two Trace On themes change. Lit for now: the
+board's column stripes, a column while a card is dragged over it, the
+sidebar's current-page bar, and the active tab on Discoveries. Plain
+rectangles, no shader effects, so it builds on every Qt 6 version. Ultra to
+judge the look; more shapes can take a GlowHalo in one line each.
+
+Discoveries rows say when a posting is gone (the rest of item 18). A sweep of
+"Companies you follow" reads each company's whole board. A job from a company
+that answered, which its board no longer lists, gets an amber outline and the
+line "Gone from the company's own board since 15 Oct. It may be filled." A job
+that comes back loses the mark. A company that did not answer this sweep
+changes nothing. Search sites (Remotive, Arbeitnow) are never used for this,
+because they only show a slice of a company's jobs. Checked on screen with a
+marked job; the sweep itself was not run, because the cloud cannot reach job
+boards.
+
+The rest of the brains (item 5). OpenAI with an API key, and Ollama. OpenAI
+uses gpt-5-mini, and gpt-5-search-api when a search is asked for (OpenAI's
+chat API only searches with that model; checked in OpenAI's guide on
+2026-10-16). Not run against OpenAI itself: the cloud machine cannot reach it.
+Ollama runs on the user's own computer at localhost:11434, needs no key, and
+uses the first model the user has downloaded. Settings hides the key boxes on
+the ollama tab and says how to get started. Ollama is never picked for a user
+who has not chosen it, because it would fail for anyone who never installed
+it. Checked against a stand-in Ollama server: the chat streams. OpenRouter,
+OpenAI and Ollama now share one reader for the streamed answer
+(OpenAiStyleStream).
+
+A Windows installer (item 25), not yet run on Windows. `cmake --install` now
+gathers Job Crush, the AI app bridge, and every Qt file they need (Qt's
+windeployqt does the gathering), plus the Microsoft C++ runtime for a Visual
+Studio build. `tools/installer/JobCrush.iss` is the Inno Setup script: a
+per-user install with no administrator password, a Start menu entry, an
+optional desktop icon, and an uninstaller that never touches the user's jobs.
+Two ways to make it: the "Windows installer" GitHub workflow (by hand, or by
+pushing a v tag, which also attaches it to a GitHub Release), or
+`tools/installer/build-installer.ps1` on a Windows computer with Inno Setup.
+
+The Active Jobs folder (item 22). Every job on the board has its own folder in
+Documents/Job Crush/Active Jobs, holding a JobQuest.txt file. The file is plain
+"Name: value" lines; only Company and Title are required. Any outside AI that
+can write a text file can add a job or change one. Job Crush watches the
+folder: a new or changed file moves the board one second after the last
+change, and a card moved, dated or noted on the board is written back into its
+file. Lines Job Crush does not know are kept. A file with a problem is listed
+in Settings with a sentence saying how to fix it. Every card gets a folder,
+including jobs Job Crush found itself, and the open card has an "open this
+job's folder" link. A folder the user deletes is not made again.
+"Import a folder" in Settings copies job folders in from anywhere, so the
+originals are never changed. It reads the older layout too (folder named
+"Company - Title" with a HOW TO APPLY.txt): those go in Applied, dated by the
+folder's last change. A job already on the board keeps its column. Only the
+folders directly inside the one picked are read, so a "1 - Send These" folder
+inside it is left alone. AI Buddy Mode in Settings has the blurb, a Copy
+instructions button, and the exact text that gets copied.
+Settled while building: a packet (and its brain questions) is only started for
+a folder job that lands in Crushed, so importing sent jobs spends no AI
+credits. A file with no Notes line or no Applied on line leaves the card's
+notes and date alone, so an AI that rewrites a file and forgets a line does
+not wipe them.
+
+AI apps work Job Crush directly (item 23). Claude desktop, and any AI app that
+speaks MCP, can list the board, add a job, mark one applied, move one, add a
+note, and ask what is waiting on the user. The AI app starts a small bridge
+program, jobcrush-ai-bridge.exe, that sits next to jobcrush.exe. The bridge
+passes each action to the running Job Crush through a local connection that
+only the same Windows user can open. Job Crush stays the only program that
+writes its database, through the same Logic the screens use. If Job Crush is
+closed, the AI is told to ask the user to open it. Settings has a box to turn
+it off and the exact text to paste into Claude desktop. ChatGPT's and Gemini's
+desktop apps are not set up yet; their settings differ and were not checked.
+
+Column meanings on hover (item 24). Resting the mouse on a column title on Job
+Pipelines shows one line saying exactly when a card belongs there.
+
+Converting a document (most of item 14). ProDocs has "Save a copy as" Word,
+PDF or plain text, using DocumentConverter, with no brain and nothing leaving
+the machine. A PDF with some picture pages says how many. Still to do from
+item 14: the two Moonlight offers (lay it out properly; read a scanned page).
 
 Tests. `tests/` holds QtTest programs for the job scorer, the search profile,
 the date reader and the Workday reader: 4 programs, about 50 checks. They build

@@ -202,6 +202,34 @@ bool JobPostingRepository::markJobPostingAsHandAdded(qint64 jobPostingId)
     return true;
 }
 
+bool JobPostingRepository::updateJobPostingDetails(const JobPosting &jobPosting)
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE jobPosting SET "
+        "  companyName = :companyName, "
+        "  positionTitle = :positionTitle, "
+        "  locationText = :locationText, "
+        "  salaryText = :salaryText, "
+        "  sourceUrl = :sourceUrl, "
+        "  isRemoteRole = :isRemoteRole "
+        "WHERE jobPostingId = :jobPostingId"));
+    updateQuery.bindValue(QStringLiteral(":companyName"), textOrEmpty(jobPosting.companyName));
+    updateQuery.bindValue(QStringLiteral(":positionTitle"),
+                          textOrEmpty(jobPosting.positionTitle));
+    updateQuery.bindValue(QStringLiteral(":locationText"), textOrEmpty(jobPosting.locationText));
+    updateQuery.bindValue(QStringLiteral(":salaryText"), textOrEmpty(jobPosting.salaryText));
+    updateQuery.bindValue(QStringLiteral(":sourceUrl"), textOrEmpty(jobPosting.sourceUrl));
+    updateQuery.bindValue(QStringLiteral(":isRemoteRole"), jobPosting.isRemoteRole ? 1 : 0);
+    updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPosting.jobPostingId);
+
+    if (!updateQuery.exec()) {
+        lastErrorDescription = updateQuery.lastError().text();
+        return false;
+    }
+    return true;
+}
+
 bool JobPostingRepository::updatePostingGoneSince(qint64 jobPostingId,
                                                   const QDateTime &goneSinceTimestamp)
 {
@@ -280,4 +308,22 @@ JobPosting JobPostingRepository::loadJobPostingById(qint64 jobPostingId, bool &f
 QString JobPostingRepository::lastErrorText() const
 {
     return lastErrorDescription;
+}
+
+bool JobPostingRepository::beginManyChanges()
+{
+    if (!jobCrushDatabase.connection().transaction()) {
+        lastErrorDescription = jobCrushDatabase.connection().lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool JobPostingRepository::finishManyChanges()
+{
+    if (!jobCrushDatabase.connection().commit()) {
+        lastErrorDescription = jobCrushDatabase.connection().lastError().text();
+        return false;
+    }
+    return true;
 }

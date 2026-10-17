@@ -70,6 +70,10 @@ public:
 
     bool hasEnoughToRankBy() const;
 
+    // Adds the C++ and Qt preset's job titles and skills to the profile.
+    // Nothing already typed is removed. Returns the sentence to show.
+    Q_INVOKABLE QString addTheCppQtPreset();
+
 signals:
     void searchProfileChanged();
 

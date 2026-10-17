@@ -58,7 +58,8 @@ QByteArray AnthropicApiProvider::buildRequestBody(
 
     QJsonObject requestBodyObject;
     requestBodyObject.insert(QStringLiteral("model"), anthropicDefaultModelName);
-    requestBodyObject.insert(QStringLiteral("max_tokens"), anthropicMaxResponseTokens);
+    requestBodyObject.insert(QStringLiteral("max_tokens"),
+                             qMax(anthropicMaxResponseTokens, requestOptions.longestAnswerTokens));
     requestBodyObject.insert(QStringLiteral("stream"), true);
     if (!soulText.isEmpty()) {
         requestBodyObject.insert(QStringLiteral("system"), soulText);

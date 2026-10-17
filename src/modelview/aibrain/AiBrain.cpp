@@ -8,6 +8,8 @@
 #include "AiCredentialRoster.h"
 #include "AnthropicApiProvider.h"
 #include "GeminiApiProvider.h"
+#include "OllamaProvider.h"
+#include "OpenAiApiProvider.h"
 #include "OpenRouterApiProvider.h"
 
 namespace {
@@ -83,6 +85,8 @@ AiBrain::AiBrain(AiCredentialRoster &credentialRoster,
     , anthropicProvider(std::make_unique<AnthropicApiProvider>())
     , openRouterProvider(std::make_unique<OpenRouterApiProvider>())
     , geminiProvider(std::make_unique<GeminiApiProvider>())
+    , openAiProvider(std::make_unique<OpenAiApiProvider>())
+    , ollamaProvider(std::make_unique<OllamaProvider>())
 {
     // Any roster edit in Settings changes what "connected and active" means,
     // instantly: a deleted key can unseat the running brain, and a freshly
@@ -126,10 +130,23 @@ AiBrainProvider *AiBrain::providerFor(AiProviderKind providerKind) const
     case AiProviderKind::Gemini:
         return geminiProvider.get();
     case AiProviderKind::OpenAi:
+        return openAiProvider.get();
     case AiProviderKind::Ollama:
-        return nullptr; // clients not written yet
+        return ollamaProvider.get();
     }
     return nullptr;
+}
+
+AiCredential AiBrain::credentialToUse(AiProviderKind providerKind, bool &found) const
+{
+    if (providerKind == AiProviderKind::Ollama) {
+        AiCredential thisComputer;
+        thisComputer.providerKind = AiProviderKind::Ollama;
+        thisComputer.displayLabel = QStringLiteral("this computer");
+        found = true;
+        return thisComputer;
+    }
+    return registeredCredentialRoster.firstEnabledCredentialFor(providerKind, found);
 }
 
 bool AiBrain::providerIsSelectable(AiProviderKind providerKind) const
@@ -138,9 +155,7 @@ bool AiBrain::providerIsSelectable(AiProviderKind providerKind) const
         return false;
     }
     bool credentialFound = false;
-    registeredCredentialRoster.firstEnabledCredentialFor(providerKind, credentialFound);
-    // (When the Ollama client lands it will need this credential requirement
-    //  relaxed — it runs on the user's own machine and has no key at all.)
+    credentialToUse(providerKind, credentialFound);
     return credentialFound;
 }
 
@@ -182,6 +197,12 @@ AiProviderKind AiBrain::effectivelySelectedProviderKind(bool &found) const
     // a single key is enough to start talking — the checkbox then shows the
     // adopted brain, so nothing about it is a secret.
     for (AiProviderKind candidateKind : providerRoutingOrder) {
+        // Ollama is never picked for the user. It needs no key, so it is
+        // always "selectable", and adopting it for someone who never installed
+        // it would greet them with a brain that cannot be reached.
+        if (candidateKind == AiProviderKind::Ollama) {
+            continue;
+        }
         if (providerIsSelectable(candidateKind)) {
             found = true;
             return candidateKind;
@@ -277,7 +298,7 @@ QString AiBrain::currentCredentialFingerprint() const
     }
     bool credentialFound = false;
     const AiCredential selectedCredential =
-        registeredCredentialRoster.firstEnabledCredentialFor(selectedKind, credentialFound);
+        credentialToUse(selectedKind, credentialFound);
 
     // Provider plus key: swapping either one invalidates a cached "connected"
     // result, which is the entire point of keeping a fingerprint at all.
@@ -355,7 +376,7 @@ void AiBrain::checkConnectionNow()
 
     bool credentialFound = false;
     const AiCredential selectedCredential =
-        registeredCredentialRoster.firstEnabledCredentialFor(selectedKind, credentialFound);
+        credentialToUse(selectedKind, credentialFound);
     if (!credentialFound) {
         setConnectionState(AiBrainConnectionState::NoBrainSelected, QString());
         return;
@@ -411,7 +432,7 @@ AiBrainReply *AiBrain::streamConversation(
 
     bool credentialFound = false;
     const AiCredential selectedCredential =
-        registeredCredentialRoster.firstEnabledCredentialFor(selectedKind, credentialFound);
+        credentialToUse(selectedKind, credentialFound);
     if (!credentialFound) {
         return nullptr;
     }

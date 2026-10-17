@@ -1,5 +1,7 @@
 #include "JobScout.h"
 
+#include <QSet>
+
 #include <algorithm>
 
 #include <QDateTime>
@@ -13,6 +15,7 @@
 #include "../aibrain/AiBrain.h"
 #include "AtsBoardDetector.h"
 #include "BrainJobFinder.h"
+#include "PastedTextJobReader.h"
 #include "CanonicalPostingResolver.h"
 #include "FollowedEmployerJobSource.h"
 #include "FollowedEmployerRoster.h"
@@ -72,6 +75,7 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
     employerBoardResolver = std::make_unique<CanonicalPostingResolver>(this);
     postedPageReader = std::make_unique<PostedJobPageReader>(this);
     webSearchingBrain = std::make_unique<BrainJobFinder>(aiBrain, this);
+    pastedTextReader = std::make_unique<PastedTextJobReader>(aiBrain);
 
     // Editing the profile re-ranks everything already stored — instantly and
     // for free, because the scorer is arithmetic rather than a paid call.
@@ -199,6 +203,9 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
                 const QList<JobPosting> &foundJobPostings) {
         const int newJobCountBefore = totalNewJobsThisSweep;
         recordFindingsFromSource(sourceStorageName, foundJobPostings);
+        markJobsGoneFromBoardsReadInFull(sourceStorageName,
+                                         scoutReply->employersReadInFull(),
+                                         foundJobPostings);
         const int newJobsFromThisSource = totalNewJobsThisSweep - newJobCountBefore;
 
         // A source that answers politely with nothing at all is not an error,
@@ -268,6 +275,52 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
     });
 }
 
+void JobScout::markJobsGoneFromBoardsReadInFull(const QString &sourceStorageName,
+                                                const QStringList &employersReadInFull,
+                                                const QList<JobPosting> &foundJobPostings)
+{
+    if (employersReadInFull.isEmpty()) {
+        return;
+    }
+
+    const AtsBoardDetector boardDetector;
+    QSet<QString> jobsStillListed;
+    for (const JobPosting &foundPosting : foundJobPostings) {
+        const AtsBoardIdentity identity = boardDetector.identify(foundPosting.sourceUrl);
+        if (identity.namesOneJob()) {
+            jobsStillListed.insert(identity.asKey().toLower());
+        }
+    }
+
+    const QDateTime now = QDateTime::currentDateTime();
+    const bool savingAsOneBatch = discoveredJobPostingRepository.beginManyChanges();
+    for (const JobPosting &knownPosting :
+         discoveredJobPostingRepository.loadJobPostingsFromSource(sourceStorageName)) {
+        const AtsBoardIdentity identity = boardDetector.identify(knownPosting.sourceUrl);
+        if (!identity.namesOneJob()) {
+            continue;
+        }
+        const QString employerKey =
+            QStringLiteral("%1/%2").arg(identity.boardName, identity.tenant).toLower();
+        if (!employersReadInFull.contains(employerKey)) {
+            continue; // that company did not answer this time; nothing is known
+        }
+
+        const bool isStillListed = jobsStillListed.contains(identity.asKey().toLower());
+        const bool wasMarkedGone = knownPosting.postingGoneSinceTimestamp.isValid();
+        if (isStillListed && wasMarkedGone) {
+            // It came back. Employers do repost.
+            discoveredJobPostingRepository.updatePostingGoneSince(knownPosting.jobPostingId,
+                                                                  QDateTime());
+        } else if (!isStillListed && !wasMarkedGone) {
+            discoveredJobPostingRepository.updatePostingGoneSince(knownPosting.jobPostingId, now);
+        }
+    }
+    if (savingAsOneBatch) {
+        discoveredJobPostingRepository.finishManyChanges();
+    }
+}
+
 void JobScout::recordFindingsFromSource(const QString &sourceStorageName,
                                         const QList<JobPosting> &foundJobPostings)
 {
@@ -276,6 +329,8 @@ void JobScout::recordFindingsFromSource(const QString &sourceStorageName,
     jobPostingsRefusedThisSource = 0;
     firstRefusalReasonThisSource.clear();
 
+    // One batch, so the disk is written once and not once per job.
+    const bool savingAsOneBatch = discoveredJobPostingRepository.beginManyChanges();
     for (JobPosting foundJobPosting : foundJobPostings) {
         bool wasAlreadyKnown = false;
         if (!discoveredJobPostingRepository.insertDiscoveryIfNew(foundJobPosting,
@@ -292,6 +347,11 @@ void JobScout::recordFindingsFromSource(const QString &sourceStorageName,
         ++totalJobsFoundThisSweep;
         if (!wasAlreadyKnown) {
             ++totalNewJobsThisSweep;
+        }
+    }
+    if (savingAsOneBatch && !discoveredJobPostingRepository.finishManyChanges()) {
+        if (firstRefusalReasonThisSource.isEmpty()) {
+            firstRefusalReasonThisSource = discoveredJobPostingRepository.lastErrorText();
         }
     }
 }
@@ -481,6 +541,158 @@ void JobScout::writeSweepLog() const
 // Adding one job by hand
 // ---------------------------------------------------------------------------
 
+void JobScout::readPastedText(const QString &pastedText)
+{
+    if (pastedTextBeingRead) {
+        return;
+    }
+    pastedTextBeingRead = true;
+    storedPastedTextStatus = QStringLiteral("Moonlight is reading it…");
+    storedFilledForm = JobPosting();
+    emit pastedTextFormChanged();
+
+    JobScoutReply *readerReply = pastedTextReader->readJob(pastedText, this);
+    const QString keptText = pastedText.trimmed();
+    connect(readerReply, &JobScoutReply::finished, this,
+            [this, readerReply, keptText](const QList<JobPosting> &postingsRead) {
+        readerReply->deleteLater();
+        pastedTextBeingRead = false;
+        storedFilledForm = postingsRead.isEmpty() ? JobPosting() : postingsRead.first();
+        // With no description pulled out, the whole pasted text stands in
+        // for one, so nothing the user gave is lost.
+        if (storedFilledForm.fullDescriptionText.isEmpty()) {
+            storedFilledForm.fullDescriptionText = keptText;
+        }
+        storedPastedTextStatus = QStringLiteral(
+            "Moonlight filled in what the text says. Check it, fill in anything "
+            "marked empty if you know it, then press Add this job.");
+        emit pastedTextFormChanged();
+    });
+    connect(readerReply, &JobScoutReply::failed, this,
+            [this, readerReply](const QString &whyItFailed) {
+        readerReply->deleteLater();
+        pastedTextBeingRead = false;
+        storedPastedTextStatus = whyItFailed;
+        emit pastedTextFormChanged();
+    });
+}
+
+bool JobScout::pastedTextIsBeingRead() const
+{
+    return pastedTextBeingRead;
+}
+
+QString JobScout::pastedTextStatusText() const
+{
+    return storedPastedTextStatus;
+}
+
+bool JobScout::aBrainCanReadPastedText() const
+{
+    // Reading text needs no web search, so any connected brain will do,
+    // Ollama included.
+    return webSearchingBrain->aBrainIsAvailable();
+}
+
+JobPosting JobScout::filledFormFromPastedText() const
+{
+    return storedFilledForm;
+}
+
+void JobScout::clearFilledForm()
+{
+    storedFilledForm = JobPosting();
+    storedPastedTextStatus.clear();
+    emit pastedTextFormChanged();
+}
+
+void JobScout::addJobFromFilledForm(const JobPosting &formFields)
+{
+    if (formFields.companyName.trimmed().isEmpty()
+            || formFields.positionTitle.trimmed().isEmpty()) {
+        storedPastedTextStatus = QStringLiteral(
+            "Job Crush needs at least the company and the job title. Fill in both "
+            "and press Add this job again.");
+        emit pastedTextFormChanged();
+        return;
+    }
+    if (aLeadIsBeingResolved) {
+        sayThisAboutTheLead(QStringLiteral(
+            "Job Crush is still looking for the last one. Give it a moment."));
+        return;
+    }
+
+    JobLead jobLead;
+    jobLead.companyName = formFields.companyName.trimmed();
+    jobLead.positionTitle = formFields.positionTitle.trimmed();
+    jobLead.locationText = formFields.locationText.trimmed();
+    jobLead.salaryText = formFields.salaryText.trimmed();
+    jobLead.isRemoteRole = formFields.isRemoteRole;
+    jobLead.postedTimestamp = formFields.postedTimestamp;
+    jobLead.rawText = formFields.fullDescriptionText;
+    jobLead.discoveryUrl = formFields.sourceUrl.trimmed();
+    if (!jobLead.discoveryUrl.isEmpty()) {
+        jobLead.boardIdentity = AtsBoardDetector().identify(jobLead.discoveryUrl);
+        if (jobLead.boardIdentity.isKnown()) {
+            jobLead.postingSource = jobLead.boardIdentity.boardName;
+        }
+    }
+
+    storedFilledForm = JobPosting();
+    storedPastedTextStatus.clear();
+    emit pastedTextFormChanged();
+
+    // The same hunt as every other added job: the employer's own board, the
+    // page, then the brain. If none of them has it, what the form says is
+    // saved, because the form came from the user.
+    beginHuntForOneLead(jobLead);
+}
+
+void JobScout::lookForOtherPlacesToApply(qint64 jobPostingId)
+{
+    bool postingFound = false;
+    const JobPosting posting =
+        discoveredJobPostingRepository.loadJobPostingById(jobPostingId, postingFound);
+    if (!postingFound || posting.companyName.trimmed().isEmpty()
+            || posting.positionTitle.trimmed().isEmpty()) {
+        return;
+    }
+
+    // The place it was found is a place to apply too. Kept first, so the job
+    // always has at least that.
+    if (!posting.sourceUrl.isEmpty() && !posting.postingSource.isEmpty()) {
+        rememberRouteToThisJob(jobPostingId, posting.postingSource,
+                               posting.externalSourceId, posting.sourceUrl);
+    }
+
+    // Already read off the employer's own board: there is nothing better to
+    // find, so no requests are sent.
+    if (AtsBoardDetector().identify(posting.sourceUrl).namesOneJob()) {
+        return;
+    }
+
+    JobLead jobLead;
+    jobLead.companyName = posting.companyName;
+    jobLead.positionTitle = posting.positionTitle;
+    jobLead.locationText = posting.locationText;
+
+    JobScoutReply *resolverReply = employerBoardResolver->resolve(jobLead, this);
+    connect(resolverReply, &JobScoutReply::finished, this,
+            [this, resolverReply, jobPostingId, posting](const QList<JobPosting> &found) {
+        resolverReply->deleteLater();
+        if (found.isEmpty() || found.first().sourceUrl.isEmpty()
+                || found.first().sourceUrl == posting.sourceUrl) {
+            return;
+        }
+        const JobPosting &employersOwn = found.first();
+        rememberRouteToThisJob(jobPostingId, employersOwn.postingSource,
+                               employersOwn.externalSourceId, employersOwn.sourceUrl);
+        emit placesToApplyChanged(jobPostingId);
+    });
+    connect(resolverReply, &JobScoutReply::failed, this,
+            [resolverReply](const QString &) { resolverReply->deleteLater(); });
+}
+
 bool JobScout::leadIsBeingResolved() const
 {
     return aLeadIsBeingResolved;
@@ -613,8 +825,9 @@ void JobScout::huntTheEmployerBoards(const JobLead &jobLead, bool brainWasAlread
             return;
         }
         whenTheHuntCameUpEmpty(jobLead, QStringLiteral(
-            "%1 isn't on Greenhouse, Lever or Ashby.").arg(
-                jobLead.companyName.isEmpty() ? QStringLiteral("That company")
+            "Job Crush didn't find %1 on Greenhouse, Lever, Ashby or SmartRecruiters, "
+            "or on a Workday site it knows.").arg(
+                jobLead.companyName.isEmpty() ? QStringLiteral("that company")
                                               : jobLead.companyName),
             brainWasAlreadyAsked);
     });
@@ -657,7 +870,7 @@ void JobScout::whenTheHuntCameUpEmpty(const JobLead &jobLead,
                                       const QString &whyNothingWasFound,
                                       bool brainWasAlreadyAsked)
 {
-    if (!brainWasAlreadyAsked && webSearchingBrain->aBrainIsAvailable()) {
+    if (!brainWasAlreadyAsked && webSearchingBrain->aBrainCanSearchTheWeb()) {
         askTheBrainToFindIt(jobLead, whyNothingWasFound);
         return;
     }
@@ -673,6 +886,10 @@ void JobScout::whenTheHuntCameUpEmpty(const JobLead &jobLead,
     } else if (!webSearchingBrain->aBrainIsAvailable()) {
         whatToSay += QStringLiteral(" Connect an AI brain in Settings and Job Crush "
                                     "will search the web for it next time.");
+    } else if (!webSearchingBrain->aBrainCanSearchTheWeb()) {
+        whatToSay += QStringLiteral(" %1 runs on your computer and can't search the "
+                                    "web, so it wasn't asked.")
+                         .arg(webSearchingBrain->brainDisplayName());
     }
     finishLeadWith(keepWhatTheUserGaveUs(jobLead, whatToSay));
 }
@@ -787,7 +1004,10 @@ QString JobScout::keepWhatTheUserGaveUs(const JobLead &jobLead,
     leadAsPosting.fullDescriptionText = jobLead.rawText;
     leadAsPosting.isRemoteRole = jobLead.isRemoteRole;
     leadAsPosting.postedTimestamp = jobLead.postedTimestamp;
-    leadAsPosting.postingSource = jobLead.postingSource;
+    // Nothing was read off a board, so the posting has no board. The lead
+    // may name one (the link pointed at Greenhouse), but saying the posting
+    // came from there would tell the user Job Crush found it when it did not.
+    leadAsPosting.postingSource.clear();
 
     // A hand-added job has no id from a board, so make one out of what it does
     // have. Without this, pasting the same job twice would store it twice: the

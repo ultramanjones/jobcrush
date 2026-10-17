@@ -34,6 +34,12 @@ struct AiBrainConversationMessage {
 // default because a search costs extra and a chat message rarely needs one.
 struct AiBrainRequestOptions {
     bool letTheBrainSearchTheWeb = false;
+
+    // How long the answer may be, in tokens (a token is about 3/4 of a word).
+    // 0 means the provider's usual limit, which is sized for chat. A job that
+    // writes a whole document back, like laying out a resume, asks for more,
+    // or the answer is cut off in the middle.
+    int longestAnswerTokens = 0;
 };
 
 // AiBrainProvider

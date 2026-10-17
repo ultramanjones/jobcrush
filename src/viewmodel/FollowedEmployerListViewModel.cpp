@@ -44,6 +44,18 @@ void FollowedEmployerListViewModel::followFromLink(const QString &pastedLink)
     emit lastActionTextChanged();
 }
 
+void FollowedEmployerListViewModel::followTheCppQtStarterList()
+{
+    CompanyList starterList;
+    QString problemText;
+    if (!CompanyList::readFromFile(shippedCppQtCompanyListPath, starterList, problemText)) {
+        storedLastActionText = problemText;
+    } else {
+        storedLastActionText = roster.followEveryReadableCompanyOn(starterList);
+    }
+    emit lastActionTextChanged();
+}
+
 void FollowedEmployerListViewModel::stopFollowing(const QString &employerKey)
 {
     QString employerName;

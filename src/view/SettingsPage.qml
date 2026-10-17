@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Dialogs
 import JobCrush
 
 // SettingsPage
@@ -16,6 +17,8 @@ Rectangle {
     property var jobSourceRosterViewModel
     property var followedEmployerListViewModel
     property var jobSearchProfileViewModel
+    property var activeJobsFolderViewModel
+    property var aiAppConnectionViewModel
 
     color: JobCrushTheme.appBackgroundColor
 
@@ -177,8 +180,8 @@ Rectangle {
                           + "you're editing — a " + JobCrushTheme.positiveColorName
                           + " ● means that slot already holds "
                           + "one. The CHECKBOX picks which brain actually answers you. "
-                          + "AIBrain speaks Anthropic, OpenRouter and Gemini today; "
-                          + "OpenAI and Ollama are on the way."
+                          + "AIBrain speaks Anthropic, OpenRouter, OpenAI and Gemini "
+                          + "with a key, and Ollama on your own computer with no key."
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     wrapMode: Text.Wrap
@@ -408,11 +411,41 @@ Rectangle {
                             wrapMode: Text.Wrap
                         }
 
+                        // Ollama has no key: it runs on the user's own
+                        // computer. Instead of key boxes, say what to do.
+                        Text {
+                            width: parent.width
+                            visible: !settingsPage.credentialRosterViewModel
+                                         .providerNeedsKey(settingsPage.newKeyProviderKindName)
+                            text: "Ollama runs AI on your own computer. It needs no key, "
+                                  + "costs nothing per question, and nothing leaves your "
+                                  + "computer. It is slower than the paid brains and cannot "
+                                  + "search the web. To use it: install Ollama, open a "
+                                  + "terminal, run  ollama pull llama3.2  once, then tick "
+                                  + "the box above.  <a href=\"open\">Get Ollama</a>"
+                            textFormat: Text.StyledText
+                            linkColor: JobCrushTheme.accentColor
+                            color: JobCrushTheme.secondaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
+                            onLinkActivated: settingsPage.credentialRosterViewModel
+                                .openProviderKeyInstructions(settingsPage.newKeyProviderKindName)
+
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                cursorShape: parent.hoveredLink !== ""
+                                    ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            }
+                        }
+
                         // API key field. Two states:
                         //  - empty slot: a real input, type the key in
                         //  - filled slot: asterisks in a green frame — the key
                         //    is registered, on display but never revealed
                         Rectangle {
+                            visible: settingsPage.credentialRosterViewModel
+                                         .providerNeedsKey(settingsPage.newKeyProviderKindName)
                             width: parent.width
                             height: 40
                             radius: 8
@@ -493,6 +526,8 @@ Rectangle {
                         // google their way in.
                         Text {
                             visible: !settingsPage.selectedProviderHasKey
+                                     && settingsPage.credentialRosterViewModel
+                                            .providerNeedsKey(settingsPage.newKeyProviderKindName)
                             // "an anthropic key" but "a gemini key" — the
                             // article follows the provider name's first letter.
                             text: "Where do I get "
@@ -547,6 +582,8 @@ Rectangle {
                         }
 
                         Row {
+                            visible: settingsPage.credentialRosterViewModel
+                                         .providerNeedsKey(settingsPage.newKeyProviderKindName)
                             width: parent.width
                             spacing: 12
 
@@ -726,6 +763,473 @@ Rectangle {
                         elide: Text.ElideMiddle
                         width: Math.min(implicitWidth, settingsColumn.width - 220)
                     }
+                }
+            }
+
+            // ==========================================================
+            // Active Jobs folder and AI Buddy Mode
+            // ==========================================================
+            Column {
+                id: activeJobsSection
+                width: parent.width
+                spacing: 12
+
+                Text {
+                    text: "Active Jobs folder and AI Buddy Mode"
+                    color: JobCrushTheme.accentColor
+                    font.pixelSize: JobCrushTheme.bodyFontSize
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Every job on your board has its own folder in here. The "
+                          + "folder holds a file named JobQuest.txt that says what the "
+                          + "job is and where it stands, and it is where your resume and "
+                          + "cover letter for that job go. Move a card on the board and "
+                          + "its file changes. Change the file and the card moves."
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                Row {
+                    spacing: 12
+
+                    Rectangle {
+                        width: openActiveJobsLabel.implicitWidth + 28
+                        height: 36
+                        radius: 8
+                        color: openActiveJobsMouseArea.containsMouse
+                            ? Qt.lighter(JobCrushTheme.accentColor, 1.12)
+                            : JobCrushTheme.accentColor
+
+                        Text {
+                            id: openActiveJobsLabel
+                            anchors.centerIn: parent
+                            text: "Open the folder"
+                            color: JobCrushTheme.onAccentTextColor
+                            font.pixelSize: JobCrushTheme.bodyFontSize
+                            font.weight: Font.DemiBold
+                        }
+
+                        MouseArea {
+                            id: openActiveJobsMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: settingsPage.activeJobsFolderViewModel.openFolder()
+                        }
+                    }
+
+                    Rectangle {
+                        width: moveActiveJobsLabel.implicitWidth + 28
+                        height: 36
+                        radius: 8
+                        color: "transparent"
+                        border.width: 1
+                        border.color: moveActiveJobsMouseArea.containsMouse
+                            ? JobCrushTheme.accentColor
+                            : JobCrushTheme.hairlineBorderColor
+
+                        Text {
+                            id: moveActiveJobsLabel
+                            anchors.centerIn: parent
+                            text: "Use a different folder"
+                            color: JobCrushTheme.primaryTextColor
+                            font.pixelSize: JobCrushTheme.bodyFontSize
+                        }
+
+                        MouseArea {
+                            id: moveActiveJobsMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: activeJobsFolderPicker.open()
+                        }
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: settingsPage.activeJobsFolderViewModel.folderPath
+                        color: JobCrushTheme.mutedTextColor
+                        font.pixelSize: JobCrushTheme.smallFontSize
+                        elide: Text.ElideMiddle
+                        width: Math.min(implicitWidth, settingsColumn.width - 420)
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    visible: text.length > 0
+                    text: settingsPage.activeJobsFolderViewModel.lastLookText
+                    color: JobCrushTheme.primaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                // ---- Job folders that need a fix ----
+                Rectangle {
+                    width: parent.width
+                    visible: settingsPage.activeJobsFolderViewModel
+                                 .folderProblemSentences.length > 0
+                    height: folderProblemColumn.implicitHeight + 24
+                    radius: 8
+                    color: JobCrushTheme.panelBackgroundColor
+                    border.width: 1
+                    border.color: JobCrushTheme.noticeTextColor
+
+                    Column {
+                        id: folderProblemColumn
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.margins: 12
+                        spacing: 6
+
+                        Text {
+                            width: parent.width
+                            text: "These job folders need a fix before they can go on "
+                                  + "your board. Fix the file, save it, and Job Crush "
+                                  + "reads it again on its own."
+                            color: JobCrushTheme.noticeTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            font.weight: Font.DemiBold
+                            wrapMode: Text.Wrap
+                        }
+
+                        Repeater {
+                            model: settingsPage.activeJobsFolderViewModel.folderProblemSentences
+
+                            delegate: Text {
+                                required property var modelData
+                                width: folderProblemColumn.width
+                                text: modelData
+                                color: JobCrushTheme.secondaryTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                    }
+                }
+
+                // ---- Bringing in jobs from somewhere else ----
+                Text {
+                    width: parent.width
+                    text: "Already have folders of jobs you applied to? Bring them in. "
+                          + "Pick a folder that holds one folder per job. Each one is "
+                          + "copied into your Active Jobs folder and put on your board. "
+                          + "Your original folders are not changed."
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                Rectangle {
+                    width: importJobFoldersLabel.implicitWidth + 28
+                    height: 36
+                    radius: 8
+                    color: importJobFoldersMouseArea.containsMouse
+                        ? Qt.lighter(JobCrushTheme.accentColor, 1.12)
+                        : JobCrushTheme.accentColor
+
+                    Text {
+                        id: importJobFoldersLabel
+                        anchors.centerIn: parent
+                        text: "Import a folder"
+                        color: JobCrushTheme.onAccentTextColor
+                        font.pixelSize: JobCrushTheme.bodyFontSize
+                        font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        id: importJobFoldersMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: importJobFoldersPicker.open()
+                    }
+                }
+
+                // ---- AI Buddy Mode ----
+                Rectangle {
+                    width: parent.width
+                    height: aiBuddyColumn.implicitHeight + 28
+                    radius: 8
+                    color: JobCrushTheme.panelBackgroundColor
+                    border.width: 1
+                    border.color: JobCrushTheme.hairlineBorderColor
+
+                    Column {
+                        id: aiBuddyColumn
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.margins: 14
+                        spacing: 10
+
+                        Text {
+                            text: "AI Buddy Mode"
+                            color: JobCrushTheme.primaryTextColor
+                            font.pixelSize: JobCrushTheme.bodyFontSize
+                            font.weight: Font.DemiBold
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: "Job Crush finds jobs on many sites, but not all of "
+                                  + "them. If you use an outside AI to find jobs or help "
+                                  + "you apply, it can keep Job Crush up to date for you. "
+                                  + "Copy these instructions and paste them into your AI "
+                                  + "once. After that, every job it helps you with shows "
+                                  + "up on your board."
+                            color: JobCrushTheme.secondaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
+                        }
+
+                        Rectangle {
+                            width: copyAiBuddyLabel.implicitWidth + 28
+                            height: 36
+                            radius: 8
+                            color: copyAiBuddyMouseArea.containsMouse
+                                ? Qt.lighter(JobCrushTheme.accentColor, 1.12)
+                                : JobCrushTheme.accentColor
+
+                            Text {
+                                id: copyAiBuddyLabel
+                                anchors.centerIn: parent
+                                text: "Copy instructions"
+                                color: JobCrushTheme.onAccentTextColor
+                                font.pixelSize: JobCrushTheme.bodyFontSize
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: copyAiBuddyMouseArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: settingsPage.activeJobsFolderViewModel
+                                               .copyAiBuddyInstructions()
+                            }
+                        }
+
+                        // What gets copied, so nobody pastes something they
+                        // have not read. Folded away until asked for: it is
+                        // long, and most people only need the button.
+                        Text {
+                            id: showInstructionsToggle
+                            property bool instructionsAreShown: false
+                            text: instructionsAreShown ? "hide what gets copied"
+                                                       : "show what gets copied"
+                            color: showInstructionsMouseArea.containsMouse
+                                ? JobCrushTheme.accentColor
+                                : JobCrushTheme.mutedTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            font.underline: showInstructionsMouseArea.containsMouse
+
+                            MouseArea {
+                                id: showInstructionsMouseArea
+                                anchors.fill: parent
+                                anchors.margins: -3
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: showInstructionsToggle.instructionsAreShown =
+                                               !showInstructionsToggle.instructionsAreShown
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: showInstructionsToggle.instructionsAreShown
+                            text: settingsPage.activeJobsFolderViewModel.aiBuddyInstructions
+                            color: JobCrushTheme.mutedTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            font.family: "monospace"
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    visible: text.length > 0
+                    text: settingsPage.activeJobsFolderViewModel.lastActionText
+                    color: JobCrushTheme.positiveColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                    wrapMode: Text.Wrap
+                }
+
+                // ---- AI apps working Job Crush directly ----
+                Rectangle {
+                    width: parent.width
+                    height: aiAppsColumn.implicitHeight + 28
+                    radius: 8
+                    color: JobCrushTheme.panelBackgroundColor
+                    border.width: 1
+                    border.color: JobCrushTheme.hairlineBorderColor
+
+                    Column {
+                        id: aiAppsColumn
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.margins: 14
+                        spacing: 10
+
+                        Text {
+                            text: "Let AI apps work Job Crush"
+                            color: JobCrushTheme.primaryTextColor
+                            font.pixelSize: JobCrushTheme.bodyFontSize
+                            font.weight: Font.DemiBold
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: "Claude desktop and other AI apps can work your board "
+                                  + "directly. Tell your AI \"I applied to the FlexJobs one "
+                                  + "yesterday\" and the card moves. The AI can list your "
+                                  + "jobs, add one, mark one applied, move one, add a note, "
+                                  + "and tell you what is waiting on you. Job Crush must be "
+                                  + "open. Only programs on this computer, run by you, can "
+                                  + "connect."
+                            color: JobCrushTheme.secondaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
+                        }
+
+                        Item {
+                            width: aiAppsAllowedRow.implicitWidth
+                            height: aiAppsAllowedRow.implicitHeight
+
+                            Row {
+                                id: aiAppsAllowedRow
+                                spacing: 10
+
+                                Rectangle {
+                                    id: aiAppsAllowedBox
+                                    width: 22
+                                    height: 22
+                                    radius: 5
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: settingsPage.aiAppConnectionViewModel.connectionIsOpen
+                                        ? JobCrushTheme.positiveColor
+                                        : "transparent"
+                                    border.width: 2
+                                    border.color: settingsPage.aiAppConnectionViewModel.connectionIsOpen
+                                        ? JobCrushTheme.positiveColor
+                                        : JobCrushTheme.secondaryTextColor
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: settingsPage.aiAppConnectionViewModel.connectionIsOpen
+                                        text: "\u2713"
+                                        color: JobCrushTheme.onAccentTextColor
+                                        font.pixelSize: 15
+                                        font.weight: Font.Bold
+                                    }
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "AI apps may work my board"
+                                    color: JobCrushTheme.primaryTextColor
+                                    font.pixelSize: JobCrushTheme.bodyFontSize
+                                }
+
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: settingsPage.aiAppConnectionViewModel.connectionIsOpen =
+                                               !settingsPage.aiAppConnectionViewModel.connectionIsOpen
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: text.length > 0
+                            text: settingsPage.aiAppConnectionViewModel.problemText
+                            color: JobCrushTheme.noticeTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: "To set up Claude desktop: copy the text below. In Claude "
+                                  + "desktop, open Settings, then Developer, then Edit Config. "
+                                  + "That opens a file. Paste the text in, save the file, and "
+                                  + "restart Claude desktop. If the file already has an "
+                                  + "\"mcpServers\" part, add only the \"job-crush\" part "
+                                  + "inside it."
+                            color: JobCrushTheme.secondaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
+                        }
+
+                        Rectangle {
+                            width: copyClaudeSettingsLabel.implicitWidth + 28
+                            height: 36
+                            radius: 8
+                            color: copyClaudeSettingsMouseArea.containsMouse
+                                ? Qt.lighter(JobCrushTheme.accentColor, 1.12)
+                                : JobCrushTheme.accentColor
+
+                            Text {
+                                id: copyClaudeSettingsLabel
+                                anchors.centerIn: parent
+                                text: "Copy the Claude desktop text"
+                                color: JobCrushTheme.onAccentTextColor
+                                font.pixelSize: JobCrushTheme.bodyFontSize
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: copyClaudeSettingsMouseArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: settingsPage.aiAppConnectionViewModel
+                                               .copyClaudeDesktopSettings()
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: settingsPage.aiAppConnectionViewModel.claudeDesktopSettingsText
+                            color: JobCrushTheme.mutedTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            font.family: "monospace"
+                            wrapMode: Text.WrapAnywhere
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: text.length > 0
+                            text: settingsPage.aiAppConnectionViewModel.lastActionText
+                            color: JobCrushTheme.positiveColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
+
+                FolderDialog {
+                    id: activeJobsFolderPicker
+                    title: "Pick your Active Jobs folder"
+                    onAccepted: settingsPage.activeJobsFolderViewModel
+                                    .useFolder(selectedFolder.toString())
+                }
+
+                FolderDialog {
+                    id: importJobFoldersPicker
+                    title: "Pick the folder that holds your job folders"
+                    onAccepted: settingsPage.activeJobsFolderViewModel
+                                    .importJobFoldersFrom(selectedFolder.toString())
                 }
             }
 
@@ -1021,7 +1525,9 @@ Rectangle {
                     text: "Watch a company and Job Crush reads their whole careers page "
                           + "every time you scout — the employer's own posting, all of "
                           + "it, and gone from the list when the job is filled. Works "
-                          + "for any company on Greenhouse, Lever or Ashby."
+                          + "for any company on Greenhouse, Lever, Ashby or SmartRecruiters. "
+                          + "Workday companies are searched for the job titles in your "
+                          + "profile below, since their sites hold thousands of jobs."
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     wrapMode: Text.Wrap
@@ -1225,6 +1731,48 @@ Rectangle {
                             }
                         }
 
+                        // A starter list, for people who do not know where to
+                        // begin: C++ and Qt employers whose feeds were checked.
+                        Row {
+                            spacing: 10
+
+                            Rectangle {
+                                width: starterListLabel.implicitWidth + 28
+                                height: 34
+                                radius: 6
+                                color: "transparent"
+                                border.width: 1
+                                border.color: starterListMouseArea.containsMouse
+                                    ? JobCrushTheme.accentColor
+                                    : JobCrushTheme.hairlineBorderColor
+
+                                Text {
+                                    id: starterListLabel
+                                    anchors.centerIn: parent
+                                    text: "Add the C++ and Qt starter list"
+                                    color: JobCrushTheme.primaryTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
+                                }
+
+                                MouseArea {
+                                    id: starterListMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: settingsPage.followedEmployerListViewModel
+                                                   .followTheCppQtStarterList()
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Medical, defense, automotive and robotics companies that "
+                                      + "hire C++ and Qt people. Remove any you don't want."
+                                color: JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                            }
+                        }
+
                         // What the last add or removal did. Never a bare no.
                         Text {
                             width: parent.width
@@ -1246,6 +1794,51 @@ Rectangle {
                     color: JobCrushTheme.secondaryTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
                     wrapMode: Text.Wrap
+                }
+
+                // A ready-made profile for C++ and Qt work. It only adds;
+                // nothing already typed is removed.
+                Row {
+                    spacing: 10
+
+                    Rectangle {
+                        width: cppQtPresetLabel.implicitWidth + 28
+                        height: 34
+                        radius: 6
+                        color: "transparent"
+                        border.width: 1
+                        border.color: cppQtPresetMouseArea.containsMouse
+                            ? JobCrushTheme.accentColor
+                            : JobCrushTheme.hairlineBorderColor
+
+                        Text {
+                            id: cppQtPresetLabel
+                            anchors.centerIn: parent
+                            text: "Fill in the C++ and Qt preset"
+                            color: JobCrushTheme.primaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                        }
+
+                        MouseArea {
+                            id: cppQtPresetMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: cppQtPresetResult.text =
+                                settingsPage.jobSearchProfileViewModel.addTheCppQtPreset()
+                        }
+                    }
+
+                    Text {
+                        id: cppQtPresetResult
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: settingsColumn.width - cppQtPresetLabel.implicitWidth - 50
+                        text: "Adds job titles and skills for C++ and Qt work. You can "
+                              + "change any of them."
+                        color: JobCrushTheme.mutedTextColor
+                        font.pixelSize: JobCrushTheme.smallFontSize
+                        wrapMode: Text.Wrap
+                    }
                 }
 
                 Rectangle {
@@ -1573,6 +2166,70 @@ Rectangle {
                                     = themeChip.modelData.themeName
                             }
                         }
+                    }
+                }
+            }
+
+            // ==========================================================
+            // Tips. "hide tips" on the Moonlight page hides them until Job
+            // Crush closes. This turns them off for good.
+            // ==========================================================
+            Column {
+                width: parent.width
+                spacing: 12
+
+                Text {
+                    text: "Tips"
+                    color: JobCrushTheme.accentColor
+                    font.pixelSize: JobCrushTheme.bodyFontSize
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1
+                }
+
+                // The whole line is the click target, not just the little box.
+                Item {
+                    width: showTipsRow.width
+                    height: showTipsRow.height
+
+                    Row {
+                        id: showTipsRow
+                        spacing: 10
+
+                        readonly property bool isOn:
+                            settingsPage.preferencesViewModel.moonlightTipsAreTurnedOn
+
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 18
+                            height: 18
+                            radius: 3
+                            color: showTipsRow.isOn ? JobCrushTheme.accentColor : "transparent"
+                            border.width: 1
+                            border.color: JobCrushTheme.accentColor
+
+                            Text {
+                                anchors.centerIn: parent
+                                visible: showTipsRow.isOn
+                                text: "\u2713"
+                                color: JobCrushTheme.onAccentTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Show tips on the Moonlight page"
+                            color: JobCrushTheme.primaryTextColor
+                            font.pixelSize: JobCrushTheme.bodyFontSize
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: settingsPage.preferencesViewModel.moonlightTipsAreTurnedOn
+                            = !showTipsRow.isOn
                     }
                 }
             }

@@ -4,6 +4,8 @@
 #include <QString>
 #include <QVariantList>
 
+class ActiveJobsFolder;
+class JobScout;
 class JobPipelines;
 class PostingStillListedChecker;
 
@@ -42,6 +44,8 @@ class JobPipelineBoardViewModel : public QObject {
 public:
     JobPipelineBoardViewModel(JobPipelines &pipelines,
                               PostingStillListedChecker &stillListedChecker,
+                              ActiveJobsFolder &activeJobsFolder,
+                              JobScout &jobScout,
                               QObject *parent = nullptr);
 
     int boardRevision() const;
@@ -63,11 +67,15 @@ public:
     // question mark, and Job Crush answers questions rather than posing them.
     Q_INVOKABLE QString explanationForStage(const QString &stageName) const;
 
+    // The line shown when the mouse rests on a column's heading: exactly when
+    // a card belongs in that column.
+    Q_INVOKABLE QString hoverLineForStage(const QString &stageName) const;
+
     // The cards in one column, oldest crush first. Each is a plain object the
     // QML delegate reads by name: jobApplicationId, positionTitle,
     // companyName, locationText, salaryText, sourceUrl, isRemoteRole,
     // stageName, notesText, targetedText, appliedText, appliedDateEditText,
-    // appliedDateIsEditable, postingSeemsGone, postingGoneText.
+    // appliedDateIsEditable, postingSeemsGone, postingGoneText, jobFolderPath.
     Q_INVOKABLE QVariantList cardsInStage(const QString &stageName) const;
 
     Q_INVOKABLE int countInStage(const QString &stageName) const;
@@ -95,6 +103,15 @@ public:
     // and the user chooses; this opens the one they chose.
     Q_INVOKABLE void openPostingRouteInBrowser(const QString &postingUrl) const;
 
+    // Opens the card's job folder, where its JobQuest.txt, resume and cover
+    // letter are kept.
+    Q_INVOKABLE void openJobFolder(qint64 jobApplicationId) const;
+
+    // Looks for the same job on the employer's own board and adds it as
+    // another place to apply. The sentence at the top of the page says it
+    // is looking; a new link on the card says it found one.
+    Q_INVOKABLE void lookForOtherPlacesToApply(qint64 jobApplicationId);
+
     Q_INVOKABLE void clearLastAction();
 
     // Asks each employer's board whether the jobs on this board are still
@@ -115,6 +132,8 @@ private:
 
     JobPipelines &board;
     PostingStillListedChecker &postingChecker;
+    ActiveJobsFolder &activeJobs;
+    JobScout &scout;
     int boardChangeCounter = 0;
     QString lastActionSentence;
 };

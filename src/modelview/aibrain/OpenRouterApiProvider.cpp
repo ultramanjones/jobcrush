@@ -7,9 +7,8 @@
 #include <QNetworkRequest>
 #include <QUrl>
 
-#include <memory>
-
 #include "AiBrainReply.h"
+#include "OpenAiStyleStream.h"
 
 namespace {
 
@@ -69,7 +68,8 @@ QByteArray OpenRouterApiProvider::buildRequestBody(
 
     QJsonObject requestBodyObject;
     requestBodyObject.insert(QStringLiteral("model"), openRouterDefaultModelName);
-    requestBodyObject.insert(QStringLiteral("max_tokens"), openRouterMaxResponseTokens);
+    requestBodyObject.insert(QStringLiteral("max_tokens"),
+                             qMax(openRouterMaxResponseTokens, requestOptions.longestAnswerTokens));
     requestBodyObject.insert(QStringLiteral("stream"), true);
     requestBodyObject.insert(QStringLiteral("messages"), messagesArray);
 
@@ -111,85 +111,11 @@ AiBrainReply *OpenRouterApiProvider::streamConversation(
         networkRequest, buildRequestBody(soulText, conversation, requestOptions));
     networkReply->setParent(brainReply); // dies with the brain reply
 
-    // --- OpenAI-style SSE parsing ----------------------------------------
-    //
-    //     data: {"choices":[{"delta":{"content":"Hel"}}]}
-    //     data: [DONE]
-    //
-    // Same rolling-buffer technique as the Anthropic provider: cut complete
-    // lines, forward every content delta, keep partial lines for later.
-    auto streamParseBuffer = std::make_shared<QByteArray>();
-
-    QObject::connect(networkReply, &QNetworkReply::readyRead, brainReply,
-                     [networkReply, brainReply, streamParseBuffer]() {
-        streamParseBuffer->append(networkReply->readAll());
-
-        int lineBreakIndex = streamParseBuffer->indexOf('\n');
-        while (lineBreakIndex >= 0) {
-            const QByteArray completeLine =
-                streamParseBuffer->left(lineBreakIndex).trimmed();
-            streamParseBuffer->remove(0, lineBreakIndex + 1);
-            lineBreakIndex = streamParseBuffer->indexOf('\n');
-
-            if (!completeLine.startsWith("data:")) {
-                continue; // comments and blank keep-alive lines
-            }
-            const QByteArray payloadJson = completeLine.mid(5).trimmed();
-            if (payloadJson == QByteArrayLiteral("[DONE]")) {
-                continue; // the network reply's finished signal closes out
-            }
-
-            const QJsonObject payloadObject =
-                QJsonDocument::fromJson(payloadJson).object();
-
-            // Mid-stream errors arrive as an "error" object.
-            if (payloadObject.contains(QStringLiteral("error"))) {
-                brainReply->markFailed(payloadObject
-                    .value(QStringLiteral("error")).toObject()
-                    .value(QStringLiteral("message")).toString());
-                continue;
-            }
-
-            const QString contentDelta = payloadObject
-                .value(QStringLiteral("choices")).toArray()
-                .at(0).toObject()
-                .value(QStringLiteral("delta")).toObject()
-                .value(QStringLiteral("content")).toString();
-            if (!contentDelta.isEmpty()) {
-                brainReply->appendStreamedFragment(contentDelta);
-            }
-        }
-    });
-
-    QObject::connect(networkReply, &QNetworkReply::finished, brainReply,
-                     [networkReply, brainReply]() {
-        if (brainReply->isFinished()) {
-            return; // already failed mid-stream; nothing more to say
-        }
-
-        if (networkReply->error() != QNetworkReply::NoError) {
-            // A 401 makes Qt discard the body, so the vendor's own message is
-            // usually gone — say something a human can act on instead.
-            if (networkReply->error() == QNetworkReply::AuthenticationRequiredError) {
-                brainReply->markFailed(QStringLiteral(
-                    "OpenRouter did not accept this key. Double-check it in "
-                    "Settings — or delete it there and add a fresh one from "
-                    "OpenRouter's key page."));
-                return;
-            }
-            const QJsonObject errorBodyObject =
-                QJsonDocument::fromJson(networkReply->readAll()).object();
-            const QString apiErrorMessage = errorBodyObject
-                .value(QStringLiteral("error")).toObject()
-                .value(QStringLiteral("message")).toString();
-            brainReply->markFailed(apiErrorMessage.isEmpty()
-                                       ? networkReply->errorString()
-                                       : apiErrorMessage);
-            return;
-        }
-
-        brainReply->markFinished();
-    });
+    OpenAiStyleStream::readInto(
+        networkReply, brainReply,
+        QStringLiteral("OpenRouter did not accept this key. Double-check it in "
+                       "Settings — or delete it there and add a fresh one from "
+                       "OpenRouter's key page."));
 
     return brainReply;
 }

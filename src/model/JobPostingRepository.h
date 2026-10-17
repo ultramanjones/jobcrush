@@ -44,6 +44,11 @@ public:
     // look at, which is the same disappearing act this tab exists to end.
     bool markJobPostingAsHandAdded(qint64 jobPostingId);
 
+    // Replaces the facts a person can fix by hand: company, title, place,
+    // pay, link, and whether it is remote. Used when an outside AI corrects a
+    // job in its JobQuest.txt file. Nothing else on the row is touched.
+    bool updateJobPostingDetails(const JobPosting &jobPosting);
+
     // Records when the posting was found missing from the employer's board.
     // An invalid timestamp clears it, for a posting that is listed again.
     bool updatePostingGoneSince(qint64 jobPostingId, const QDateTime &goneSinceTimestamp);
@@ -63,6 +68,12 @@ public:
     // Why the last insert or query failed. A repository that returns false
     // and keeps the reason to itself forces every caller to guess.
     QString lastErrorText() const;
+
+    // Saving many jobs one at a time makes the disk wait once per job. With
+    // thousands of jobs that froze the window. Call beginManyChanges, make the
+    // changes, then finishManyChanges, and the disk is written once.
+    bool beginManyChanges();
+    bool finishManyChanges();
 
 private:
     JobCrushDatabase &jobCrushDatabase;

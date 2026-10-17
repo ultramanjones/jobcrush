@@ -13,6 +13,7 @@
 
 class AiBrain;
 class BrainJobFinder;
+class PastedTextJobReader;
 class CanonicalPostingResolver;
 class FollowedEmployerRoster;
 struct JobLead;
@@ -123,6 +124,34 @@ public:
     void addJobFromCompanyAndTitle(const QString &companyName,
                                    const QString &positionTitle);
 
+    // --- Pasted text, read by Moonlight (BACKLOG item 12) ---
+    //
+    // The user pastes an email, an alert or a posting. With a brain
+    // connected, Moonlight fills in a form from it; the user checks the form
+    // and adds the job, and then the usual hunt for the employer's own
+    // posting runs. Anything the text did not say stays empty in the form.
+    void readPastedText(const QString &pastedText);
+    bool pastedTextIsBeingRead() const;
+    QString pastedTextStatusText() const;
+    bool aBrainCanReadPastedText() const;
+
+    // What Moonlight filled in, or an empty posting when nothing is filled.
+    JobPosting filledFormFromPastedText() const;
+    void clearFilledForm();
+
+    // Adds the job from the form the user checked. formFields carries the
+    // boxes as the user left them.
+    void addJobFromFilledForm(const JobPosting &formFields);
+
+    // --- Every place a job can be applied to (BACKLOG item 13) ---
+    //
+    // Looks for the same job on the employer's own board (Greenhouse, Lever,
+    // Ashby, SmartRecruiters, Workday) and, when it is there, ADDS that as
+    // another place to apply. The job itself is never replaced. Runs when a
+    // job is crushed onto the board, and when the user asks on a card.
+    // Quiet: finding nothing is a normal answer and changes nothing.
+    void lookForOtherPlacesToApply(qint64 jobPostingId);
+
     // True while Job Crush is out looking for one pasted job.
     bool leadIsBeingResolved() const;
 
@@ -178,6 +207,12 @@ signals:
     // leadIsBeingResolved() or leadStatusText() changed.
     void leadStatusChanged();
 
+    // The pasted-text form changed: being read, filled, or cleared.
+    void pastedTextFormChanged();
+
+    // A new place to apply was found for this job.
+    void placesToApplyChanged(qint64 jobPostingId);
+
 private:
     // The client for a site, or nullptr while that site's client has not been
     // written yet.
@@ -227,6 +262,14 @@ private:
     void sayThisAboutTheLead(const QString &statusTextForTheUser);
 
     // Stores one site's finds, counting what was genuinely new.
+    // Marks the jobs that have gone from a company's board. Only for sources
+    // that read whole boards (companies you follow): a job from one of those
+    // companies that the board no longer lists has been taken down. A job
+    // that comes back loses the mark. Nothing is deleted.
+    void markJobsGoneFromBoardsReadInFull(const QString &sourceStorageName,
+                                          const QStringList &employersReadInFull,
+                                          const QList<JobPosting> &foundJobPostings);
+
     void recordFindingsFromSource(const QString &sourceStorageName,
                                   const QList<JobPosting> &foundJobPostings);
 
@@ -268,6 +311,10 @@ private:
 
     // Asks the connected brain to search the web. Same lifetime.
     std::unique_ptr<BrainJobFinder> webSearchingBrain;
+    std::unique_ptr<PastedTextJobReader> pastedTextReader;
+    bool pastedTextBeingRead = false;
+    QString storedPastedTextStatus;
+    JobPosting storedFilledForm;
 
     // Live bookkeeping for one pasted job.
     bool aLeadIsBeingResolved = false;

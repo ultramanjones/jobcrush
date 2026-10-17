@@ -28,6 +28,8 @@ Window {
     required property var stagedJobListViewModel
     required property var stagingPacketViewModel
     required property var jobSearchStatsViewModel
+    required property var activeJobsFolderViewModel
+    required property var aiAppConnectionViewModel
 
     width: 1280
     height: 800
@@ -85,6 +87,7 @@ Window {
         visible: applicationWindow.currentPageName === "brainChat"
         conversationViewModel: applicationWindow.brainChatConversationViewModel
         brainConnectionViewModel: applicationWindow.selectedBrainConnectionViewModel
+        preferencesViewModel: applicationWindow.appPreferencesViewModel
         onSettingsRequested: applicationWindow.currentPageName = "settings"
     }
 
@@ -314,5 +317,7 @@ Window {
         jobSourceRosterViewModel: applicationWindow.jobSourceRosterViewModel
         followedEmployerListViewModel: applicationWindow.followedEmployerListViewModel
         jobSearchProfileViewModel: applicationWindow.jobSearchProfileViewModel
+        activeJobsFolderViewModel: applicationWindow.activeJobsFolderViewModel
+        aiAppConnectionViewModel: applicationWindow.aiAppConnectionViewModel
     }
 }

@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 
+#include "CompanyList.h"
 #include "FollowedEmployer.h"
 
 // FollowedEmployerRoster
@@ -32,7 +33,16 @@ public:
     // Returns the sentence to show the user, either way. A refusal that only
     // says "no" leaves them guessing which part of the link was wrong, and
     // the link is the only thing they had to give.
-    QString followEmployerFromLink(const QString &pastedLink);
+    //
+    // displayName, when given, is the company's real name. Without it the
+    // name is worked out from the board account, which is usually right.
+    QString followEmployerFromLink(const QString &pastedLink,
+                                   const QString &displayName = QString());
+
+    // Starts watching every company on a list whose hiring system Job Crush
+    // can read. Companies already watched are left as they are. Returns one
+    // or two sentences saying how many were added and how many could not be.
+    QString followEveryReadableCompanyOn(const CompanyList &companyList);
 
     // Stops watching. Jobs already found stay where they are — they were real
     // when they arrived, and deleting somebody's list because they stopped

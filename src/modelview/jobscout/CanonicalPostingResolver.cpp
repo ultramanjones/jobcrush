@@ -1,5 +1,7 @@
 #include "CanonicalPostingResolver.h"
 
+#include "CompanyList.h"
+
 #include <memory>
 
 #include <QDebug>
@@ -262,6 +264,7 @@ EmployerBoardProvider *CanonicalPostingResolver::boardReaderFor(const QString &b
     if (boardName == AtsBoardName::Lever)      return &leverBoard;
     if (boardName == AtsBoardName::Ashby)      return &ashbyBoard;
     if (boardName == AtsBoardName::Workday)    return &workdayBoard;
+    if (boardName == AtsBoardName::SmartRecruiters) return &smartRecruitersBoard;
     return nullptr;
 }
 
@@ -350,10 +353,33 @@ JobScoutReply *CanonicalPostingResolver::resolve(const JobLead &jobLead, QObject
                 "posting. Add both and try again."));
             return scoutReply;
         }
+        // The company list may already know exactly where this employer
+        // posts. That is the only way to find a Workday job from a company
+        // name alone: a Workday site cannot be guessed. Tried alongside the
+        // guesses below.
+        static CompanyList knownCompanies = []() {
+            CompanyList shippedList;
+            QString ignoredProblem;
+            CompanyList::readFromFile(shippedCppQtCompanyListPath, shippedList, ignoredProblem);
+            return shippedList;
+        }();
+        CompanyListEntry listedCompany;
+        if (knownCompanies.findCompany(jobLead.companyName, listedCompany)
+                && !listedCompany.followLink.isEmpty()) {
+            const AtsBoardIdentity listedBoard = AtsBoardDetector().identify(listedCompany.followLink);
+            if (EmployerBoardProvider *listedReader = boardReaderFor(listedBoard.boardName)) {
+                BoardBeingSearched board;
+                board.boardReader = listedReader;
+                board.tenantsLeftToTry = { listedBoard.tenant };
+                hunt->boards.append(board);
+            }
+        }
+
         for (EmployerBoardProvider *boardReader :
                  { static_cast<EmployerBoardProvider *>(&greenhouseBoard),
                    static_cast<EmployerBoardProvider *>(&leverBoard),
-                   static_cast<EmployerBoardProvider *>(&ashbyBoard) }) {
+                   static_cast<EmployerBoardProvider *>(&ashbyBoard),
+                   static_cast<EmployerBoardProvider *>(&smartRecruitersBoard) }) {
             BoardBeingSearched board;
             board.boardReader = boardReader;
             board.tenantsLeftToTry = tenantGuesses;

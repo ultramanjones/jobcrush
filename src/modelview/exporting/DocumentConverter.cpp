@@ -107,7 +107,8 @@ DocumentConverter::ConversionOutcome DocumentConverter::convertToFile(
     const QString &documentText,
     const QString &suggestedBaseName,
     const QString &format,
-    const QString &destinationFolderPath) const
+    const QString &destinationFolderPath,
+    bool textIsAlreadyMarkdown) const
 {
     ConversionOutcome outcome;
 
@@ -172,7 +173,9 @@ DocumentConverter::ConversionOutcome DocumentConverter::convertToFile(
                              .arg(fileName, plainTextFile.errorString());
         }
     } else {
-        const QString markdownText = markdownForPlainText(documentText);
+        const QString markdownText = textIsAlreadyMarkdown
+            ? documentText
+            : markdownForPlainText(documentText);
         wasWritten = (format == ExportFormat::PortableDocument)
             ? documentWriter.writePortableDocument(markdownText, filePath, reasonText)
             : documentWriter.writeWordDocument(markdownText, filePath, reasonText);

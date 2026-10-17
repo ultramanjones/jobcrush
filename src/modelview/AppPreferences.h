@@ -36,8 +36,20 @@ public:
     QString exportFolderPath() const;
     void setExportFolderPath(const QString &folderPath);
 
+    // Whether the user hid the tips strip on the Moonlight chat page. Hidden
+    // until Job Crush is closed. The tips come back the next time it opens.
+    bool moonlightHintsAreDismissed() const;
+    void setMoonlightHintsAreDismissed(bool dismissed);
+
+    // The Settings checkbox "Show tips on the Moonlight page". Off means the
+    // tips never show, and that is saved.
+    bool moonlightTipsAreTurnedOn() const;
+    void setMoonlightTipsAreTurnedOn(bool turnedOn);
+
 signals:
     void boardThemeNameChanged();
+    void moonlightHintsDismissedChanged();
+    void moonlightTipsTurnedOnChanged();
     void defaultDownloadFormatChanged();
     void exportFolderPathChanged();
 
@@ -45,4 +57,6 @@ private:
     QString selectedBoardThemeName = QStringLiteral("classic");
     QString selectedDownloadFormat = QStringLiteral("docx");
     QString selectedExportFolderPath;
+    bool hintsDismissed = false;
+    bool tipsTurnedOn = true;
 };

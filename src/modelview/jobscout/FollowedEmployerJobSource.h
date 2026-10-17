@@ -4,6 +4,8 @@
 #include "GreenhouseBoardSource.h"
 #include "JobSourceProvider.h"
 #include "LeverBoardSource.h"
+#include "SmartRecruitersBoardSource.h"
+#include "WorkdayBoardSource.h"
 
 class FollowedEmployerRoster;
 
@@ -36,4 +38,6 @@ private:
     GreenhouseBoardSource greenhouseBoard;
     LeverBoardSource leverBoard;
     AshbyBoardSource ashbyBoard;
+    SmartRecruitersBoardSource smartRecruitersBoard;
+    WorkdayBoardSource workdayBoard;
 };

@@ -77,7 +77,8 @@ QByteArray GeminiApiProvider::buildRequestBody(
     }
 
     QJsonObject generationConfigObject;
-    generationConfigObject.insert(QStringLiteral("maxOutputTokens"), geminiMaxResponseTokens);
+    generationConfigObject.insert(QStringLiteral("maxOutputTokens"),
+                                  qMax(geminiMaxResponseTokens, requestOptions.longestAnswerTokens));
     requestBodyObject.insert(QStringLiteral("generationConfig"), generationConfigObject);
 
     // Google's own web search, which they call grounding. The model searches

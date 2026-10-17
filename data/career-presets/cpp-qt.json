@@ -1,0 +1,14 @@
+{
+    "presetName": "C++ and Qt",
+    "about": "Desktop, embedded and device screens built in C++ and Qt: medical devices, defense, simulation, automotive.",
+    "jobTitles": [
+        "Qt Developer",
+        "C++ Software Engineer",
+        "Embedded Software Engineer",
+        "HMI Software Engineer",
+        "UI Software Engineer",
+        "Simulation Software Engineer"
+    ],
+    "strongSkills": [ "Qt", "QML", "Qt Quick", "C++", "HMI", "embedded UI" ],
+    "goodSkills": [ "real-time", "embedded Linux", "simulation", "telemetry", "medical device", "IEC 62304", "OpenGL", "multithreading" ]
+}

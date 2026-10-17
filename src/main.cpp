@@ -12,8 +12,12 @@
 #include "model/ProfessionalDocumentRepository.h"
 #include "model/CareerHistoryRepository.h"
 #include "model/StagedDocumentRepository.h"
+#include "model/ActiveJobFolderRepository.h"
 
 #include "modelview/AppPreferences.h"
+#include "modelview/activejobs/ActiveJobsFolder.h"
+#include "modelview/aiapps/AiAppConnection.h"
+#include "modelview/aiapps/AiAppRequests.h"
 #include "modelview/aibrain/AiBrain.h"
 #include "modelview/aibrain/AiBrainSoul.h"
 #include "model/PostingSourceRepository.h"
@@ -25,10 +29,13 @@
 #include "modelview/jobscout/JobSearchProfile.h"
 #include "modelview/jobscout/FollowedEmployerRoster.h"
 #include "modelview/jobscout/JobSourceRoster.h"
+#include "modelview/prodocs/MoonlightDocumentCleanup.h"
 #include "modelview/prodocs/ProDocsIntake.h"
 #include "modelview/stats/JobSearchStatistics.h"
 #include "modelview/tasks/StagingWorkbench.h"
 
+#include "viewmodel/ActiveJobsFolderViewModel.h"
+#include "viewmodel/AiAppConnectionViewModel.h"
 #include "viewmodel/AiCredentialRosterViewModel.h"
 #include "viewmodel/AppPreferencesViewModel.h"
 #include "viewmodel/BrainChatConversationViewModel.h"
@@ -84,6 +91,7 @@ int main(int argc, char *argv[])
     ProfessionalDocumentRepository professionalDocumentRepository(jobCrushDatabase);
     CareerHistoryRepository careerHistoryRepository(jobCrushDatabase);
     StagedDocumentRepository stagedDocumentRepository(jobCrushDatabase);
+    ActiveJobFolderRepository activeJobFolderRepository(jobCrushDatabase);
 
     // (The Job Pipelines board arrives in Phase 4; its repository stays wired
     //  so the startup path is proven end to end.)
@@ -153,6 +161,9 @@ int main(int argc, char *argv[])
 
     BrainChatSession brainChatSession(aiBrain);
 
+    // "Moonlight, clean this up!" on ProDocs. Only runs when pressed.
+    MoonlightDocumentCleanup moonlightDocumentCleanup(aiBrain, proDocsIntake);
+
     // The packet bench. Built after AIBrain because it asks the brain to do
     // the work, and after the board because a packet belongs to a campaign.
     StagingWorkbench stagingWorkbench(aiBrain, jobPipelines, stagedDocumentRepository,
@@ -168,6 +179,37 @@ int main(int argc, char *argv[])
 
     JobSearchStatistics jobSearchStatistics(jobPipelines, stagedDocumentRepository);
 
+    // Crushing a job also looks for the same job on the employer's own board,
+    // and adds it as another place to apply (BACKLOG item 13). The board
+    // redraws when one is found, so the card and Staging show it.
+    QObject::connect(&jobPipelines, &JobPipelines::jobWasCrushed, &jobScout,
+                     [&jobPipelines, &jobScout](qint64 jobApplicationId) {
+        for (const TargetedJob &targetedJob : jobPipelines.everyTargetedJob()) {
+            if (targetedJob.campaign.jobApplicationId == jobApplicationId) {
+                jobScout.lookForOtherPlacesToApply(targetedJob.posting.jobPostingId);
+                return;
+            }
+        }
+    });
+    QObject::connect(&jobScout, &JobScout::placesToApplyChanged,
+                     &jobPipelines, &JobPipelines::loadFromDatabase);
+
+    // The Active Jobs folder: one folder per job, each with a JobQuest.txt
+    // that any outside AI can write. Started after the board is loaded and
+    // after Staging listens for new cards, because reading the folder can put
+    // jobs on the board.
+    ActiveJobsFolder activeJobsFolder(jobPipelines, jobPostingRepository,
+                                      activeJobFolderRepository);
+    activeJobsFolder.loadFromSettings();
+    activeJobsFolder.startKeepingTheBoardAndFolderTheSame();
+
+    // The door AI apps use to work Job Crush directly (see
+    // tools/ai-app-bridge). Job Crush stays the only program that writes its
+    // database: the AI asks, and the same Logic the screens use does it.
+    AiAppRequests aiAppRequests(jobPipelines, jobPostingRepository, activeJobsFolder);
+    AiAppConnection aiAppConnection(aiAppRequests);
+    aiAppConnection.loadFromSettings();
+
     // --- ViewModel layer ----------------------------------------------------
     BrainChatConversationViewModel brainChatConversationViewModel(
         brainChatSession, aiBrain);
@@ -176,13 +218,17 @@ int main(int argc, char *argv[])
     SelectedBrainConnectionViewModel selectedBrainConnectionViewModel(aiBrain);
     DiscoveredJobListViewModel discoveredJobListViewModel(jobScout, jobPipelines);
     JobPipelineBoardViewModel jobPipelineBoardViewModel(jobPipelines,
-                                                        postingStillListedChecker);
+                                                        postingStillListedChecker,
+                                                        activeJobsFolder,
+                                                        jobScout);
+    ActiveJobsFolderViewModel activeJobsFolderViewModel(activeJobsFolder);
+    AiAppConnectionViewModel aiAppConnectionViewModel(aiAppConnection);
     JobSourceRosterViewModel jobSourceRosterViewModel(jobSourceRoster);
     FollowedEmployerListViewModel followedEmployerListViewModel(followedEmployerRoster);
     JobSearchProfileViewModel jobSearchProfileViewModel(jobSearchProfile);
     ProfessionalDocumentListViewModel professionalDocumentListViewModel(
         professionalDocumentRepository, proDocsIntake, appPreferences,
-        applicationDataFolderPath);
+        moonlightDocumentCleanup, applicationDataFolderPath);
     WorkExperienceListViewModel workExperienceListViewModel(
         careerHistoryRepository, proDocsIntake);
     EducationListViewModel educationListViewModel(careerHistoryRepository, proDocsIntake);
@@ -190,6 +236,7 @@ int main(int argc, char *argv[])
                                                   stagingWorkbench);
     StagingPacketViewModel stagingPacketViewModel(stagingWorkbench, stagedDocumentRepository,
                                                   jobPipelines, appPreferences,
+                                                  activeJobsFolder,
                                                   applicationDataFolderPath);
     JobSearchStatsViewModel jobSearchStatsViewModel(jobSearchStatistics, stagingWorkbench);
 
@@ -231,6 +278,10 @@ int main(int argc, char *argv[])
           QVariant::fromValue(&stagingPacketViewModel) },
         { QStringLiteral("jobSearchStatsViewModel"),
           QVariant::fromValue(&jobSearchStatsViewModel) },
+        { QStringLiteral("activeJobsFolderViewModel"),
+          QVariant::fromValue(&activeJobsFolderViewModel) },
+        { QStringLiteral("aiAppConnectionViewModel"),
+          QVariant::fromValue(&aiAppConnectionViewModel) },
     });
 
     qmlEngine.loadFromModule("JobCrush", "Main");

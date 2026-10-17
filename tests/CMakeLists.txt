@@ -3,6 +3,8 @@
 # The README says the core works without a window. These tests are the proof.
 # Each one builds the Logic classes it needs straight from src/, links QtCore
 # and QtTest, and runs headless. No QML, no database file, no network.
+# The Active Jobs folder test also links QtSql, for a database in a
+# temporary folder.
 #
 # Run them with:  ctest --test-dir build --output-on-failure
 
@@ -39,3 +41,46 @@ add_job_crush_test(tst_WorkdayBoardSource
     ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/JobScoutReply.h
     ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/WorkdayBoardSource.cpp
 )
+
+add_job_crush_test(tst_JobQuestFile
+    tst_JobQuestFile.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/JobQuestFile.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/TypedDateReader.cpp
+)
+
+# The Active Jobs folder and the AI app actions need the board and the
+# database to test against.
+# It uses a temporary folder with its own database file, so it still writes
+# nothing to the real computer.
+add_job_crush_test(tst_ActiveJobsFolder
+    tst_ActiveJobsFolder.cpp
+    ${CMAKE_SOURCE_DIR}/src/model/JobCrushDatabase.cpp
+    ${CMAKE_SOURCE_DIR}/src/model/JobPostingRepository.cpp
+    ${CMAKE_SOURCE_DIR}/src/model/JobApplicationRepository.cpp
+    ${CMAKE_SOURCE_DIR}/src/model/PostingSourceRepository.cpp
+    ${CMAKE_SOURCE_DIR}/src/model/ActiveJobFolderRepository.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/JobPipelines.h
+    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/JobPipelines.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/TypedDateReader.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/JobQuestFile.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/OlderJobFolderReader.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/ActiveJobsFolder.h
+    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/ActiveJobsFolder.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/aiapps/AiAppRequests.cpp
+)
+find_package(Qt6 REQUIRED COMPONENTS Sql)
+target_link_libraries(tst_ActiveJobsFolder PRIVATE Qt6::Sql)
+
+add_job_crush_test(tst_SmartRecruitersBoardSource
+    tst_SmartRecruitersBoardSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/JobScoutReply.h
+    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/SmartRecruitersBoardSource.cpp
+)
+
+# Reads the shipped data files, so a typo in one fails here.
+add_job_crush_test(tst_CompanyList
+    tst_CompanyList.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/CompanyList.cpp
+    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/CareerPreset.cpp
+)
+target_compile_definitions(tst_CompanyList PRIVATE JOBCRUSH_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

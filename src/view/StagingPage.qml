@@ -745,6 +745,7 @@ Rectangle {
             // 1400px and overlapped at 1280px, which is the width the window
             // opens at.
             height: exportFlow.implicitHeight + 28
+                    + (applyFlow.visible ? applyFlow.implicitHeight + 10 : 0)
             color: JobCrushTheme.panelBackgroundColor
 
             Rectangle {
@@ -755,10 +756,70 @@ Rectangle {
                 color: JobCrushTheme.hairlineBorderColor
             }
 
+            // Where to send it. One button per place this job can be applied
+            // to; the user picks. Job Crush never applies for them.
+            Flow {
+                id: applyFlow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: 14
+                anchors.leftMargin: 28
+                anchors.rightMargin: 28
+                spacing: 10
+                visible: stagingPage.stagingPacketViewModel.applyRoutes.length > 0
+
+                Text {
+                    height: 32
+                    verticalAlignment: Text.AlignVCenter
+                    text: "Apply:"
+                    color: JobCrushTheme.secondaryTextColor
+                    font.pixelSize: JobCrushTheme.smallFontSize
+                }
+
+                Repeater {
+                    model: stagingPage.stagingPacketViewModel.applyRoutes
+
+                    delegate: Rectangle {
+                        id: applyRouteButton
+                        required property var modelData
+
+                        width: applyRouteLabel.implicitWidth + 24
+                        height: 32
+                        radius: 6
+                        color: applyRouteMouseArea.containsMouse
+                            ? JobCrushTheme.callToActionColor : "transparent"
+                        border.width: 1
+                        border.color: JobCrushTheme.callToActionColor
+
+                        Text {
+                            id: applyRouteLabel
+                            anchors.centerIn: parent
+                            text: applyRouteButton.modelData.label
+                            color: applyRouteMouseArea.containsMouse
+                                ? JobCrushTheme.onAccentTextColor
+                                : JobCrushTheme.primaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                        }
+
+                        MouseArea {
+                            id: applyRouteMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: stagingPage.stagingPacketViewModel
+                                           .openApplyRoute(applyRouteButton.modelData.url)
+                        }
+                    }
+                }
+            }
+
             Flow {
                 id: exportFlow
                 anchors.left: parent.left
                 anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 14
                 anchors.leftMargin: 28
                 anchors.rightMargin: 28
                 spacing: 10

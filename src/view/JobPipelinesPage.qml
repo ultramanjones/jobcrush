@@ -219,6 +219,13 @@ Rectangle {
                     ? jobPipelinesPage.stageColorFor(stageColumn.stageName)
                     : JobCrushTheme.hairlineBorderColor
 
+                // Trace On: the column lights up while a card is over it.
+                GlowHalo {
+                    glowColor: jobPipelinesPage.stageColorFor(stageColumn.stageName)
+                    cornerRadius: stageColumn.radius
+                    isLit: columnDropArea.containsDrag
+                }
+
                 // ---- Column heading ----
                 Item {
                     id: columnHeading
@@ -236,6 +243,11 @@ Rectangle {
                         height: 18
                         radius: 2
                         color: jobPipelinesPage.stageColorFor(stageColumn.stageName)
+
+                        GlowHalo {
+                            glowColor: stageStripe.color
+                            cornerRadius: stageStripe.radius
+                        }
                     }
 
                     Text {
@@ -258,6 +270,43 @@ Rectangle {
                         font.pixelSize: JobCrushTheme.smallFontSize
                         font.weight: Font.DemiBold
                     }
+
+                    // Rest the mouse on the heading to see what the column means.
+                    HoverHandler {
+                        id: columnHeadingHover
+                    }
+                }
+
+                // ---- What the column means, while the mouse is on the heading ----
+                Rectangle {
+                    id: columnMeaningBox
+                    anchors.top: columnHeading.bottom
+                    anchors.topMargin: 4
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    z: 50
+                    visible: columnHeadingHover.hovered
+                    height: columnMeaningText.implicitHeight + 16
+                    radius: 6
+                    color: JobCrushTheme.appBackgroundColor
+                    border.width: 1
+                    border.color: jobPipelinesPage.stageColorFor(stageColumn.stageName)
+
+                    Text {
+                        id: columnMeaningText
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        text: jobPipelinesPage.jobPipelineBoardViewModel
+                            .hoverLineForStage(stageColumn.stageName)
+                        color: JobCrushTheme.primaryTextColor
+                        font.pixelSize: JobCrushTheme.smallFontSize
+                        wrapMode: Text.Wrap
+                    }
                 }
 
                 // ---- What this column is for ----
@@ -272,6 +321,7 @@ Rectangle {
                     anchors.leftMargin: 14
                     anchors.rightMargin: 14
                     visible: stageColumn.cardsHere.length === 0
+                             && !columnHeadingHover.hovered
                     text: jobPipelinesPage.jobPipelineBoardViewModel
                         .explanationForStage(stageColumn.stageName)
                     color: JobCrushTheme.mutedTextColor
@@ -672,8 +722,13 @@ Rectangle {
                                             // lose their only link.
                                             Text {
                                                 width: parent.width
-                                                visible: cardSlot.card.postingRoutes === undefined
-                                                         || cardSlot.card.postingRoutes.length === 0
+                                                // Hidden when there is no link at
+                                                // all, as for a job an AI added
+                                                // from a site it gave no link for.
+                                                visible: (cardSlot.card.postingRoutes === undefined
+                                                          || cardSlot.card.postingRoutes.length === 0)
+                                                         && cardSlot.card.sourceUrl !== undefined
+                                                         && cardSlot.card.sourceUrl.length > 0
                                                 text: "open the posting"
                                                 color: openPostingMouseArea.containsMouse
                                                     ? JobCrushTheme.accentColor
@@ -690,6 +745,58 @@ Rectangle {
                                                     onClicked: jobPipelinesPage
                                                         .jobPipelineBoardViewModel
                                                         .openPostingInBrowser(
+                                                            cardSlot.card.jobApplicationId)
+                                                }
+                                            }
+
+                                            // Looks for the same job on the
+                                            // employer's own board and adds it
+                                            // as another place to apply.
+                                            Text {
+                                                width: parent.width
+                                                text: "look for this job elsewhere"
+                                                color: lookElsewhereMouseArea.containsMouse
+                                                    ? JobCrushTheme.accentColor
+                                                    : JobCrushTheme.mutedTextColor
+                                                font.pixelSize: JobCrushTheme.smallFontSize
+                                                font.underline: lookElsewhereMouseArea.containsMouse
+
+                                                MouseArea {
+                                                    id: lookElsewhereMouseArea
+                                                    anchors.fill: parent
+                                                    anchors.margins: -3
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: jobPipelinesPage
+                                                        .jobPipelineBoardViewModel
+                                                        .lookForOtherPlacesToApply(
+                                                            cardSlot.card.jobApplicationId)
+                                                }
+                                            }
+
+                                            // The job's own folder: its
+                                            // JobQuest.txt, resume and cover
+                                            // letter.
+                                            Text {
+                                                width: parent.width
+                                                visible: cardSlot.card.jobFolderPath !== undefined
+                                                         && cardSlot.card.jobFolderPath.length > 0
+                                                text: "open this job's folder"
+                                                color: openJobFolderMouseArea.containsMouse
+                                                    ? JobCrushTheme.accentColor
+                                                    : JobCrushTheme.mutedTextColor
+                                                font.pixelSize: JobCrushTheme.smallFontSize
+                                                font.underline: openJobFolderMouseArea.containsMouse
+
+                                                MouseArea {
+                                                    id: openJobFolderMouseArea
+                                                    anchors.fill: parent
+                                                    anchors.margins: -3
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: jobPipelinesPage
+                                                        .jobPipelineBoardViewModel
+                                                        .openJobFolder(
                                                             cardSlot.card.jobApplicationId)
                                                 }
                                             }

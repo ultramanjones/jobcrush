@@ -1,5 +1,12 @@
 #include "StagingPacketViewModel.h"
 
+#include <QVariantMap>
+
+#include "../modelview/jobscout/AtsBoardIdentity.h"
+#include "../modelview/jobscout/JobSourceDescriptor.h"
+
+#include "../modelview/activejobs/ActiveJobsFolder.h"
+
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
@@ -47,6 +54,7 @@ StagingPacketViewModel::StagingPacketViewModel(StagingWorkbench &workbench,
                                                StagedDocumentRepository &packetRepository,
                                                JobPipelines &board,
                                                AppPreferences &preferences,
+                                               ActiveJobsFolder &activeJobsFolder,
                                                const QString &applicationDataFolder,
                                                QObject *parent)
     : QAbstractListModel(parent)
@@ -54,6 +62,7 @@ StagingPacketViewModel::StagingPacketViewModel(StagingWorkbench &workbench,
     , stagedDocumentRepository(packetRepository)
     , jobPipelines(board)
     , appPreferences(preferences)
+    , activeJobs(activeJobsFolder)
     , applicationDataFolderPath(applicationDataFolder)
 {
     connect(&workbench, &StagingWorkbench::packetChanged, this,
@@ -377,7 +386,65 @@ QString StagingPacketViewModel::downloadFormatDisplayName() const
 
 QString StagingPacketViewModel::folderExportsGoTo() const
 {
+    // The job's own folder in Active Jobs when it has one, so the resume and
+    // cover letter sit with the job's JobQuest.txt. Otherwise the export
+    // folder from Settings.
+    const QString jobFolderPath = activeJobs.jobFolderPathForCard(selectedJobApplicationId);
+    if (!jobFolderPath.isEmpty()) {
+        return jobFolderPath;
+    }
     return ExportFolder::folderJobCrushWritesTo(appPreferences, applicationDataFolderPath);
+}
+
+QVariantList StagingPacketViewModel::applyRoutes() const
+{
+    QVariantList routes;
+    QStringList urlsListed;
+    for (const TargetedJob &targetedJob : jobPipelines.everyTargetedJob()) {
+        if (targetedJob.campaign.jobApplicationId != selectedJobApplicationId) {
+            continue;
+        }
+        for (const PostingSource &route :
+                 jobPipelines.routesToJobPosting(targetedJob.posting.jobPostingId)) {
+            if (route.postingUrl.isEmpty() || urlsListed.contains(route.postingUrl)) {
+                continue;
+            }
+            urlsListed.append(route.postingUrl);
+            // A job site's own name when Job Crush knows it, a hiring
+            // system's name next, and the stored word with a capital last.
+            bool descriptorFound = false;
+            const JobSourceDescriptor descriptor =
+                jobSourceDescriptorFor(route.boardName, descriptorFound);
+            QString boardName = descriptorFound ? descriptor.displayName
+                                                : AtsBoardName::displayNameFor(route.boardName);
+            if (boardName.isEmpty() && !route.boardName.isEmpty()) {
+                boardName = route.boardName.left(1).toUpper() + route.boardName.mid(1);
+            }
+            QVariantMap routeEntry;
+            routeEntry.insert(QStringLiteral("label"), QStringLiteral("Apply on %1").arg(boardName));
+            routeEntry.insert(QStringLiteral("url"), route.postingUrl);
+            routes.append(routeEntry);
+        }
+        // Every job has at least its own link, even one saved before routes
+        // were kept.
+        const QString ownLink = targetedJob.posting.sourceUrl;
+        if (!ownLink.isEmpty() && !urlsListed.contains(ownLink)) {
+            QVariantMap routeEntry;
+            routeEntry.insert(QStringLiteral("label"), QStringLiteral("Apply at the posting"));
+            routeEntry.insert(QStringLiteral("url"), ownLink);
+            routes.append(routeEntry);
+        }
+        break;
+    }
+    return routes;
+}
+
+void StagingPacketViewModel::openApplyRoute(const QString &routeUrl) const
+{
+    const QUrl url(routeUrl);
+    if (url.scheme() == QStringLiteral("http") || url.scheme() == QStringLiteral("https")) {
+        QDesktopServices::openUrl(url);
+    }
 }
 
 QString StagingPacketViewModel::exportFolderPath() const

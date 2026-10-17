@@ -6,7 +6,9 @@
 #include <QUrlQuery>
 #include <QVariantMap>
 
+#include "../modelview/activejobs/ActiveJobsFolder.h"
 #include "../modelview/jobscout/AtsBoardIdentity.h"
+#include "../modelview/jobscout/JobScout.h"
 #include "../modelview/jobscout/JobSourceDescriptor.h"
 #include "../modelview/pipelines/JobPipelines.h"
 #include "../modelview/pipelines/PostingStillListedChecker.h"
@@ -61,6 +63,30 @@ QString explanationFor(PipelineStage pipelineStage)
     return QString();
 }
 
+// The line shown when the mouse rests on a column's heading. It says exactly
+// when a card belongs in that column, so every user sorts their cards the same
+// way and the Stats page counts the same thing for everyone.
+QString hoverLineFor(PipelineStage pipelineStage)
+{
+    switch (pipelineStage) {
+    case PipelineStage::Saved:
+        return QStringLiteral("You picked this job but have not applied yet.");
+    case PipelineStage::Applied:
+        return QStringLiteral("You sent the application. It waits here until they "
+                              "set up an interview.");
+    case PipelineStage::Interview:
+        return QStringLiteral("Move the job here only once you have a scheduled "
+                              "interview. It stays here through every round until "
+                              "an offer or a no.");
+    case PipelineStage::Offer:
+        return QStringLiteral("They made you an offer.");
+    case PipelineStage::Closed:
+        return QStringLiteral("It is over: they said no, you withdrew, or you turned "
+                              "it down.");
+    }
+    return QString();
+}
+
 // "3 Feb" — short, because a card is a glance, not a record.
 QString shortDateTextFor(const QDateTime &timestamp)
 {
@@ -74,11 +100,22 @@ QString shortDateTextFor(const QDateTime &timestamp)
 
 JobPipelineBoardViewModel::JobPipelineBoardViewModel(JobPipelines &pipelines,
                                                      PostingStillListedChecker &stillListedChecker,
+                                                     ActiveJobsFolder &activeJobsFolder,
+                                                     JobScout &jobScout,
                                                      QObject *parent)
     : QObject(parent)
     , board(pipelines)
     , postingChecker(stillListedChecker)
+    , activeJobs(activeJobsFolder)
+    , scout(jobScout)
 {
+    // A card's folder path is part of the card. When a folder is made the
+    // cards are served again so the link shows.
+    connect(&activeJobs, &ActiveJobsFolder::folderStatusChanged, this, [this]() {
+        ++boardChangeCounter;
+        emit boardChanged();
+    });
+
     connect(&postingChecker, &PostingStillListedChecker::checkStatusChanged,
             this, &JobPipelineBoardViewModel::stillListedCheckChanged);
 
@@ -131,6 +168,28 @@ void JobPipelineBoardViewModel::searchTheWebForJob(qint64 jobApplicationId) cons
     }
 }
 
+void JobPipelineBoardViewModel::lookForOtherPlacesToApply(qint64 jobApplicationId)
+{
+    for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
+        if (targetedJob.campaign.jobApplicationId == jobApplicationId) {
+            scout.lookForOtherPlacesToApply(targetedJob.posting.jobPostingId);
+            setLastActionText(QStringLiteral(
+                "Looking for %1 on %2's own board. If it is there, a new link shows on "
+                "the card.").arg(targetedJob.posting.positionTitle,
+                                 targetedJob.posting.companyName));
+            return;
+        }
+    }
+}
+
+void JobPipelineBoardViewModel::openJobFolder(qint64 jobApplicationId) const
+{
+    const QString jobFolderPath = activeJobs.jobFolderPathForCard(jobApplicationId);
+    if (!jobFolderPath.isEmpty()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(jobFolderPath));
+    }
+}
+
 QString JobPipelineBoardViewModel::lastActionText() const
 {
     return lastActionSentence;
@@ -169,6 +228,11 @@ QString JobPipelineBoardViewModel::explanationForStage(const QString &stageName)
     return explanationFor(pipelineStageFromStorageText(stageName));
 }
 
+QString JobPipelineBoardViewModel::hoverLineForStage(const QString &stageName) const
+{
+    return hoverLineFor(pipelineStageFromStorageText(stageName));
+}
+
 // A route's board is either a job SITE Job Crush sweeps or an employer BOARD
 // it reads. Two rosters, and asking only one is how a lowercase storage name
 // reaches the screen.
@@ -181,7 +245,12 @@ static QString sourceDisplayNameFor(const QString &sourceStorageName)
         return descriptor.displayName;
     }
     const QString boardDisplayName = AtsBoardName::displayNameFor(sourceStorageName);
-    return boardDisplayName.isEmpty() ? sourceStorageName : boardDisplayName;
+    if (!boardDisplayName.isEmpty()) {
+        return boardDisplayName;
+    }
+    // A site Job Crush has no name for, such as one an outside AI wrote in a
+    // JobQuest.txt: shown as written, with a capital.
+    return sourceStorageName.left(1).toUpper() + sourceStorageName.mid(1);
 }
 
 QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) const
@@ -202,6 +271,7 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
         card.insert(QStringLiteral("locationText"),  targetedJob.posting.locationText);
         card.insert(QStringLiteral("salaryText"),    targetedJob.posting.salaryText);
         card.insert(QStringLiteral("sourceName"),    targetedJob.posting.postingSource);
+        card.insert(QStringLiteral("sourceUrl"),     targetedJob.posting.sourceUrl);
         card.insert(QStringLiteral("isRemoteRole"),  targetedJob.posting.isRemoteRole);
         card.insert(QStringLiteral("stageName"),     stageName);
         card.insert(QStringLiteral("notesText"),     targetedJob.campaign.notesText);
@@ -249,6 +319,11 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
             routes.append(routeEntry);
         }
         card.insert(QStringLiteral("postingRoutes"), routes);
+
+        // The job's own folder, where its JobQuest.txt, resume and cover
+        // letter live. Empty when it has none yet.
+        card.insert(QStringLiteral("jobFolderPath"),
+                    activeJobs.jobFolderPathForCard(targetedJob.campaign.jobApplicationId));
 
         cards.append(card);
     }

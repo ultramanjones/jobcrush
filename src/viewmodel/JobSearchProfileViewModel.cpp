@@ -1,5 +1,7 @@
 #include "JobSearchProfileViewModel.h"
 
+#include "../modelview/jobscout/CareerPreset.h"
+
 #include <QRegularExpression>
 
 #include "../modelview/jobscout/JobSearchProfile.h"
@@ -116,4 +118,40 @@ void JobSearchProfileViewModel::setMinimumSalaryText(const QString &salaryText)
 bool JobSearchProfileViewModel::hasEnoughToRankBy() const
 {
     return profile.hasEnoughToRankBy();
+}
+
+QString JobSearchProfileViewModel::addTheCppQtPreset()
+{
+    CareerPreset preset;
+    QString problemText;
+    if (!CareerPreset::readFromFile(shippedCppQtCareerPresetPath, preset, problemText)) {
+        return problemText;
+    }
+
+    // Adds what is missing, compared without case, and keeps the user's own
+    // entries first and in their order.
+    auto withAdded = [](QStringList current, const QStringList &additions, int &addedCount) {
+        for (const QString &addition : additions) {
+            if (!current.contains(addition, Qt::CaseInsensitive)) {
+                current.append(addition);
+                ++addedCount;
+            }
+        }
+        return current;
+    };
+
+    int titlesAdded = 0;
+    int skillsAdded = 0;
+    profile.setTargetJobTitles(withAdded(profile.targetJobTitles(), preset.jobTitles,
+                                         titlesAdded));
+    profile.setSkillKeywords(withAdded(profile.skillKeywords(),
+                                       preset.strongSkills + preset.goodSkills, skillsAdded));
+    emit searchProfileChanged();
+
+    if (titlesAdded == 0 && skillsAdded == 0) {
+        return QStringLiteral("Your profile already has everything in the C++ and Qt preset.");
+    }
+    return QStringLiteral("Added %1 job titles and %2 skills from the C++ and Qt preset. "
+                          "Change or remove any of them above.")
+        .arg(titlesAdded).arg(skillsAdded);
 }

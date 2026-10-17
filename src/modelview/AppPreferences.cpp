@@ -6,6 +6,8 @@ namespace {
 const QString boardThemeSettingsKey = QStringLiteral("appearance/boardThemeName");
 const QString downloadFormatSettingsKey = QStringLiteral("packets/defaultDownloadFormat");
 const QString exportFolderSettingsKey = QStringLiteral("packets/exportFolderPath");
+const QString hintsDismissedSettingsKey = QStringLiteral("moonlight/hintsDismissed");
+const QString tipsTurnedOnSettingsKey = QStringLiteral("moonlight/tipsTurnedOn");
 } // namespace
 
 AppPreferences::AppPreferences(QObject *parent)
@@ -22,6 +24,11 @@ void AppPreferences::loadFromSettings()
         settings.value(downloadFormatSettingsKey, QStringLiteral("docx")).toString();
     selectedExportFolderPath =
         settings.value(exportFolderSettingsKey, QString()).toString();
+    // Hidden tips come back each time Job Crush opens (Ultra, 2026-10-16):
+    // someone who hid them once may still want them later. Clear the old
+    // saved value so a strip hidden by an older build comes back too.
+    settings.remove(hintsDismissedSettingsKey);
+    tipsTurnedOn = settings.value(tipsTurnedOnSettingsKey, true).toBool();
 
     emit boardThemeNameChanged();
     emit defaultDownloadFormatChanged();
@@ -80,4 +87,34 @@ void AppPreferences::setExportFolderPath(const QString &folderPath)
     settings.setValue(exportFolderSettingsKey, selectedExportFolderPath);
 
     emit exportFolderPathChanged();
+}
+
+bool AppPreferences::moonlightHintsAreDismissed() const
+{
+    return hintsDismissed;
+}
+
+void AppPreferences::setMoonlightHintsAreDismissed(bool dismissed)
+{
+    if (hintsDismissed == dismissed) {
+        return;
+    }
+    hintsDismissed = dismissed; // for this run only, never saved
+    emit moonlightHintsDismissedChanged();
+}
+
+bool AppPreferences::moonlightTipsAreTurnedOn() const
+{
+    return tipsTurnedOn;
+}
+
+void AppPreferences::setMoonlightTipsAreTurnedOn(bool turnedOn)
+{
+    if (tipsTurnedOn == turnedOn) {
+        return;
+    }
+    tipsTurnedOn = turnedOn;
+    QSettings settings;
+    settings.setValue(tipsTurnedOnSettingsKey, turnedOn);
+    emit moonlightTipsTurnedOnChanged();
 }

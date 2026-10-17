@@ -310,3 +310,32 @@ QString ProDocsIntake::rereadEveryDocument()
         .arg(entriesFound)
         .arg(entriesFound == 1 ? QStringLiteral("entry") : QStringLiteral("entries"));
 }
+
+int ProDocsIntake::replaceReadingOfDocument(qint64 professionalDocumentId,
+                                            const QList<WorkExperience> &workExperiences,
+                                            const QList<EducationRecord> &educationRecords)
+{
+    careerHistoryRepository.removeUntouchedEntriesFromDocument(professionalDocumentId);
+
+    int entriesAdded = 0;
+    for (WorkExperience workExperience : workExperiences) {
+        workExperience.sourceDocumentId = professionalDocumentId;
+        if (careerHistoryRepository.workExperienceAlreadyRecorded(workExperience)) {
+            continue;
+        }
+        if (careerHistoryRepository.insertWorkExperience(workExperience)) {
+            ++entriesAdded;
+        }
+    }
+    for (EducationRecord educationRecord : educationRecords) {
+        educationRecord.sourceDocumentId = professionalDocumentId;
+        if (careerHistoryRepository.educationRecordAlreadyRecorded(educationRecord)) {
+            continue;
+        }
+        if (careerHistoryRepository.insertEducationRecord(educationRecord)) {
+            ++entriesAdded;
+        }
+    }
+    emit careerHistoryChanged();
+    return entriesAdded;
+}

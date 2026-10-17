@@ -20,6 +20,9 @@ Rectangle {
     // two screens can never disagree about which brain is live.
     property var brainConnectionViewModel
 
+    // Injected from Main: the hints, and whether the strip was closed.
+    property var preferencesViewModel
+
     // Asks Main to navigate (degraded mode points the user at Settings).
     signal settingsRequested
 
@@ -131,7 +134,7 @@ Rectangle {
         id: transcriptListView
 
         anchors.top: chatHeader.bottom
-        anchors.bottom: composerArea.top
+        anchors.bottom: hintsStrip.visible ? hintsStrip.top : composerArea.top
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 8
@@ -313,6 +316,68 @@ Rectangle {
     // ------------------------------------------------------------------
     // Composer
     // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Hints: one thing Job Crush can do that the user may not have found.
+    // A new one every 20 seconds. The x closes the strip for good.
+    // ------------------------------------------------------------------
+    Item {
+        id: hintsStrip
+        anchors.bottom: composerArea.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: 24
+        anchors.rightMargin: 24
+        height: 26
+        visible: brainChatPage.preferencesViewModel !== undefined
+                 && brainChatPage.preferencesViewModel !== null
+                 && !brainChatPage.preferencesViewModel.moonlightHintsAreDismissed
+                 && brainChatPage.preferencesViewModel.moonlightTipsAreTurnedOn
+                 && brainChatPage.preferencesViewModel.moonlightHints.length > 0
+
+        property int hintIndex: 0
+
+        Timer {
+            interval: 20000
+            repeat: true
+            running: hintsStrip.visible && brainChatPage.visible
+            onTriggered: hintsStrip.hintIndex = (hintsStrip.hintIndex + 1)
+                         % brainChatPage.preferencesViewModel.moonlightHints.length
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.right: closeHintsLabel.left
+            anchors.rightMargin: 10
+            anchors.verticalCenter: parent.verticalCenter
+            text: hintsStrip.visible
+                ? "Tip: " + brainChatPage.preferencesViewModel.moonlightHints[hintsStrip.hintIndex]
+                : ""
+            color: JobCrushTheme.mutedTextColor
+            font.pixelSize: JobCrushTheme.smallFontSize
+            elide: Text.ElideRight
+        }
+
+        Text {
+            id: closeHintsLabel
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "hide tips"
+            color: closeHintsMouseArea.containsMouse
+                ? JobCrushTheme.accentColor : JobCrushTheme.mutedTextColor
+            font.pixelSize: JobCrushTheme.smallFontSize
+            font.underline: closeHintsMouseArea.containsMouse
+
+            MouseArea {
+                id: closeHintsMouseArea
+                anchors.fill: parent
+                anchors.margins: -4
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: brainChatPage.preferencesViewModel.moonlightHintsAreDismissed = true
+            }
+        }
+    }
+
     Rectangle {
         id: composerArea
         anchors.bottom: parent.bottom

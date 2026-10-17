@@ -1,0 +1,71 @@
+# Makes the Windows installer, JobCrushSetup-<version>.exe, on GitHub's own
+# Windows machine. Nothing needs to be installed on your computer for this.
+#
+# Two ways to run it:
+#   - By hand: GitHub, Actions tab, "Windows installer", "Run workflow".
+#     The installer is then a download at the bottom of that run's page.
+#   - By pushing a version tag, for example: git tag v0.1.0; git push origin v0.1.0
+#     The installer is then also attached to a GitHub Release for that tag,
+#     which is the link to give people.
+
+name: Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+          modules: 'qtpdf'
+
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "0.1.0"
+          if ("${{ github.ref_type }}" -eq "tag") { $version = "${{ github.ref_name }}".TrimStart("v") }
+          "number=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DJOBCRUSH_BUILD_TESTS=OFF
+          cmake --build build --config Release
+
+      - name: Gather every file Job Crush needs
+        run: cmake --install build --config Release --prefix stage
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Make the installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSourceFolder=$PWD\stage\bin" "/DAppVersion=${{ steps.version.outputs.number }}" tools\installer\JobCrush.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Keep the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: JobCrushSetup-${{ steps.version.outputs.number }}
+          path: build/installer-output/*.exe
+
+      - name: Attach it to the release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/installer-output/*.exe

@@ -47,6 +47,10 @@ public:
 
     Q_INVOKABLE bool providerHasKey(const QString &providerKindName) const;
 
+    // False for Ollama, which runs on the user's own computer and has no key.
+    // Settings hides the key boxes for it and says what to do instead.
+    Q_INVOKABLE bool providerNeedsKey(const QString &providerKindName) const;
+
     // The nickname of the provider's (first) key; empty when none.
     Q_INVOKABLE QString providerKeyNickname(const QString &providerKindName) const;
 

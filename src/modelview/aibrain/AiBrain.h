@@ -142,6 +142,11 @@ private:
     // client has not been written yet.
     AiBrainProvider *providerFor(AiProviderKind providerKind) const;
 
+    // The credential to use for a provider: the first switched-on key in the
+    // roster, or, for Ollama, a stand-in, because Ollama runs on this computer
+    // and has no key. found is false when there is nothing to use.
+    AiCredential credentialToUse(AiProviderKind providerKind, bool &found) const;
+
     // The brain that answers right now: the user's explicit choice when they
     // have made one, otherwise the first selectable brain in routing order
     // (default-until-first-choice — registering one key should not also
@@ -168,6 +173,8 @@ private:
     std::unique_ptr<AiBrainProvider> anthropicProvider;
     std::unique_ptr<AiBrainProvider> openRouterProvider;
     std::unique_ptr<AiBrainProvider> geminiProvider;
+    std::unique_ptr<AiBrainProvider> openAiProvider;
+    std::unique_ptr<AiBrainProvider> ollamaProvider;
 
     // The stored choice: empty means "never chosen" (adopt the default),
     // "none" means the user deliberately chose no brain, anything else is a

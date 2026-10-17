@@ -40,6 +40,10 @@ public:
     // Stops watching. Jobs already found stay where they are.
     Q_INVOKABLE void stopFollowing(const QString &employerKey);
 
+    // Watches every company on the C++ and Qt starter list that Job Crush can
+    // read. The sentence that says what happened lands in lastActionText.
+    Q_INVOKABLE void followTheCppQtStarterList();
+
 signals:
     void followedEmployersChanged();
     void lastActionTextChanged();
