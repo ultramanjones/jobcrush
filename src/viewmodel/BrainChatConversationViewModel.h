@@ -11,7 +11,7 @@ class BrainChatSession;
 // Serves the Brain Chat transcript to the view as list rows, plus the small
 // state the chat page binds to (is the brain responding? is one configured
 // at all?). Translation and organization only — the conversation itself
-// lives below, in BrainChatSession (ModelView).
+// lives below, in BrainChatSession (Logic layer).
 //
 // Named for the data it serves: the Brain Chat conversation. (Qt vocabulary
 // note: QAbstractListModel is Qt's name; in our architecture this class is a

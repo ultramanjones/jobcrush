@@ -3,7 +3,7 @@
 #include <QClipboard>
 #include <QGuiApplication>
 
-#include "../modelview/aiapps/AiAppConnection.h"
+#include "../logic/aiapps/AiAppConnection.h"
 
 AiAppConnectionViewModel::AiAppConnectionViewModel(AiAppConnection &aiAppConnection,
                                                    QObject *parent)

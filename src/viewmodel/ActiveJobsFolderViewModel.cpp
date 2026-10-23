@@ -6,7 +6,7 @@
 #include <QGuiApplication>
 #include <QUrl>
 
-#include "../modelview/activejobs/ActiveJobsFolder.h"
+#include "../logic/activejobs/ActiveJobsFolder.h"
 
 namespace {
 

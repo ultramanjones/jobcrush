@@ -3,9 +3,9 @@
 #include <QTest>
 
 #include "IsolatedTestSettings.h"
-#include "modelview/jobscout/JobSearchProfile.h"
-#include "modelview/jobscout/ClearanceDetector.h"
-#include "modelview/jobscout/ProspectScorer.h"
+#include "logic/jobscout/JobSearchProfile.h"
+#include "logic/jobscout/ClearanceDetector.h"
+#include "logic/jobscout/ProspectScorer.h"
 
 namespace {
 

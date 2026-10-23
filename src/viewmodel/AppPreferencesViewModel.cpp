@@ -3,9 +3,9 @@
 #include <QDesktopServices>
 #include <QUrl>
 
-#include "../modelview/AppPreferences.h"
-#include "../modelview/aibrain/AiBrainSoul.h"
-#include "../modelview/brainchat/MoonlightHints.h"
+#include "../logic/AppPreferences.h"
+#include "../logic/aibrain/AiBrainSoul.h"
+#include "../logic/brainchat/MoonlightHints.h"
 
 AppPreferencesViewModel::AppPreferencesViewModel(AppPreferences &appPreferences,
                                                  AiBrainSoul &aiBrainSoul,

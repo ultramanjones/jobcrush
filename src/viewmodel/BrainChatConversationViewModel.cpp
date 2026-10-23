@@ -1,7 +1,7 @@
 #include "BrainChatConversationViewModel.h"
 
-#include "../modelview/aibrain/AiBrain.h"
-#include "../modelview/brainchat/BrainChatSession.h"
+#include "../logic/aibrain/AiBrain.h"
+#include "../logic/brainchat/BrainChatSession.h"
 
 namespace {
 // The author enum translated for QML delegates.

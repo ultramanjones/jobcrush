@@ -2,10 +2,10 @@
 
 #include <QVariantMap>
 
-#include "../modelview/jobscout/AtsBoardIdentity.h"
-#include "../modelview/jobscout/JobSourceDescriptor.h"
+#include "../logic/jobscout/AtsBoardIdentity.h"
+#include "../logic/jobscout/JobSourceDescriptor.h"
 
-#include "../modelview/activejobs/ActiveJobsFolder.h"
+#include "../logic/activejobs/ActiveJobsFolder.h"
 
 #include <QDateTime>
 #include <QDesktopServices>
@@ -14,11 +14,11 @@
 #include <QUrl>
 
 #include "../model/StagedDocumentRepository.h"
-#include "../modelview/AppPreferences.h"
-#include "../modelview/exporting/ExportFolder.h"
-#include "../modelview/exporting/PacketExporter.h"
-#include "../modelview/pipelines/JobPipelines.h"
-#include "../modelview/tasks/StagingWorkbench.h"
+#include "../logic/AppPreferences.h"
+#include "../logic/exporting/ExportFolder.h"
+#include "../logic/exporting/PacketExporter.h"
+#include "../logic/pipelines/JobPipelines.h"
+#include "../logic/tasks/StagingWorkbench.h"
 
 namespace {
 

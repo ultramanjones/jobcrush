@@ -3,7 +3,7 @@
 #include <QTest>
 
 #include "IsolatedTestSettings.h"
-#include "modelview/jobscout/JobSearchProfile.h"
+#include "logic/jobscout/JobSearchProfile.h"
 
 // Tests for JobSearchProfile: what the user is looking for, and how it is
 // cleaned up and saved.

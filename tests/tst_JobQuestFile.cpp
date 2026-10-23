@@ -1,6 +1,6 @@
 #include <QtTest>
 
-#include "modelview/activejobs/JobQuestFile.h"
+#include "logic/activejobs/JobQuestFile.h"
 
 // Tests for JobQuestFile: reading and writing the JobQuest.txt file that an
 // outside AI writes for each job.
@@ -37,14 +37,18 @@ private slots:
 
     void acceptsOtherNamesAndAnyCase()
     {
-        const QString fileText = QStringLiteral(
+        // The file's raw bytes, as a Windows editor would save them: a byte
+        // order mark first, then Windows line endings. Kept as plain bytes on
+        // purpose. Inside QStringLiteral, the \x escapes can come out
+        // differently on the Windows compiler, and this test failed only there.
+        const QByteArray fileBytes(
             "\xEF\xBB\xBF" "COMPANY: Acme\r\n"
             "job title: Qt Dev\r\n"
             "URL: https://example.com/job\r\n"
             "location: Pittsburgh, PA\r\n"
             "salary: 120k\r\n");
         const JobQuestFile::ReadResult result =
-            JobQuestFile::readQuestText(QString::fromUtf8(fileText.toLatin1()));
+            JobQuestFile::readQuestText(QString::fromUtf8(fileBytes));
         QVERIFY(result.hasWhatTheBoardNeeds);
         QCOMPARE(result.quest.companyName, QStringLiteral("Acme"));
         QCOMPARE(result.quest.positionTitle, QStringLiteral("Qt Dev"));

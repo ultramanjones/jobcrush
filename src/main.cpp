@@ -14,25 +14,25 @@
 #include "model/StagedDocumentRepository.h"
 #include "model/ActiveJobFolderRepository.h"
 
-#include "modelview/AppPreferences.h"
-#include "modelview/activejobs/ActiveJobsFolder.h"
-#include "modelview/aiapps/AiAppConnection.h"
-#include "modelview/aiapps/AiAppRequests.h"
-#include "modelview/aibrain/AiBrain.h"
-#include "modelview/aibrain/AiBrainSoul.h"
+#include "logic/AppPreferences.h"
+#include "logic/activejobs/ActiveJobsFolder.h"
+#include "logic/aiapps/AiAppConnection.h"
+#include "logic/aiapps/AiAppRequests.h"
+#include "logic/aibrain/AiBrain.h"
+#include "logic/aibrain/AiBrainSoul.h"
 #include "model/PostingSourceRepository.h"
-#include "modelview/pipelines/JobPipelines.h"
-#include "modelview/pipelines/PostingStillListedChecker.h"
-#include "modelview/aibrain/AiCredentialRoster.h"
-#include "modelview/brainchat/BrainChatSession.h"
-#include "modelview/jobscout/JobScout.h"
-#include "modelview/jobscout/JobSearchProfile.h"
-#include "modelview/jobscout/FollowedEmployerRoster.h"
-#include "modelview/jobscout/JobSourceRoster.h"
-#include "modelview/prodocs/MoonlightDocumentCleanup.h"
-#include "modelview/prodocs/ProDocsIntake.h"
-#include "modelview/stats/JobSearchStatistics.h"
-#include "modelview/tasks/StagingWorkbench.h"
+#include "logic/pipelines/JobPipelines.h"
+#include "logic/pipelines/PostingStillListedChecker.h"
+#include "logic/aibrain/AiCredentialRoster.h"
+#include "logic/brainchat/BrainChatSession.h"
+#include "logic/jobscout/JobScout.h"
+#include "logic/jobscout/JobSearchProfile.h"
+#include "logic/jobscout/FollowedEmployerRoster.h"
+#include "logic/jobscout/JobSourceRoster.h"
+#include "logic/prodocs/MoonlightDocumentCleanup.h"
+#include "logic/prodocs/ProDocsIntake.h"
+#include "logic/stats/JobSearchStatistics.h"
+#include "logic/tasks/StagingWorkbench.h"
 
 #include "viewmodel/ActiveJobsFolderViewModel.h"
 #include "viewmodel/AiAppConnectionViewModel.h"
@@ -57,7 +57,7 @@
 // This is the ONE place where the layers get wired together, by hand,
 // in stack order from the metal up:
 //
-//     database -> repositories -> modelviews -> viewmodels -> QML engine
+//     database -> repositories -> logic classes -> viewmodels -> QML engine
 //
 // No dependency framework, no container — just constructors.
 int main(int argc, char *argv[])
@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
     //  so the startup path is proven end to end.)
     Q_UNUSED(jobApplicationRepository);
 
-    // --- ModelView layer: preferences, AIBrain, Brain Chat -----------------
+    // --- Logic layer: preferences, AIBrain, Brain Chat -----------------
     AppPreferences appPreferences;
     appPreferences.loadFromSettings();
 

@@ -1,6 +1,6 @@
 #include <QTest>
 
-#include "modelview/pipelines/TypedDateReader.h"
+#include "logic/pipelines/TypedDateReader.h"
 
 // Tests for TypedDateReader, which reads the date a user types into the
 // "Applied on" box on a board card.

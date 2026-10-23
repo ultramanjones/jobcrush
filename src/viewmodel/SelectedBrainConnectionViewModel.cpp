@@ -1,6 +1,6 @@
 #include "SelectedBrainConnectionViewModel.h"
 
-#include "../modelview/aibrain/AiBrain.h"
+#include "../logic/aibrain/AiBrain.h"
 
 SelectedBrainConnectionViewModel::SelectedBrainConnectionViewModel(
     AiBrain &aiBrain, QObject *parent)
@@ -17,7 +17,7 @@ SelectedBrainConnectionViewModel::SelectedBrainConnectionViewModel(
     connect(&brain, &AiBrain::connectionStateChanged, this, announceChange);
 
     // A refusal the user is owed an explanation for. Held here rather than
-    // shown from below: the ModelView states the fact, the view decides how
+    // shown from below: the Logic layer states the fact, the view decides how
     // loudly to say it.
     connect(&brain, &AiBrain::connectionAttemptRefused, this,
             [this](const QString &vendorName, const QString &plainReason,

@@ -7,7 +7,7 @@
 #include <QString>
 
 #include "../model/StagedDocument.h"
-#include "../modelview/tasks/AiBrainTask.h"
+#include "../logic/tasks/AiBrainTask.h"
 
 class ActiveJobsFolder;
 class AppPreferences;

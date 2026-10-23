@@ -2,8 +2,8 @@
 
 #include <QVariantMap>
 
-#include "../modelview/stats/JobSearchStatistics.h"
-#include "../modelview/tasks/StagingWorkbench.h"
+#include "../logic/stats/JobSearchStatistics.h"
+#include "../logic/tasks/StagingWorkbench.h"
 
 JobSearchStatsViewModel::JobSearchStatsViewModel(JobSearchStatistics &statistics,
                                                  StagingWorkbench &workbench,

@@ -170,7 +170,7 @@ button for scans, which needs a brain that reads images.
 For each, find its Workday site (or other feed), check it live, and add the
 followLink. Workday guesses that failed on 2026-10-16:
 bostonscientific.wd1/BSCCareers and garmin.wd1/Garmin. The Greenhouse board named "ics" is a cooling company, not ICS the Qt
-consultancy. Johnson & Johnson MedTech was on the starter list in
+consultancy. One medical company was on the starter list in
 `docs/job-crush-handoff.md` and was left off the shipped file on purpose (see
 the questions in the handoff).
 
@@ -245,6 +245,23 @@ bridge.
 is feature ready. One very fast video: set up Job Crush and get started. Then
 a few short optional ones: AI Buddy Mode, and making resumes and cover letters
 with Job Crush. Short and quick, each one.
+
+**30. Say why a job was closed.** Ultra, 2026-10-19. When a card goes to
+Closed, offer a reason. It is optional. The user can skip it. Reasons:
+- They said no (rejected).
+- Not a good fit.
+- The posting came down and they never contacted me.
+- I withdrew.
+- I turned down an offer.
+- Other, with a short note.
+
+Store the reason with the card, show it on the card, and let the user change
+it later. Add a "Closed because:" line to JobQuest.txt and to the AI Buddy Mode
+text, so an outside AI (like the Make Money Now project, which now makes job
+quests from Gmail) can fill it in too. This also answers the open question
+from 2026-09-15: a job dropped after a closer look and a rejected application
+both land in Closed, and the Stats page cannot tell them apart. With a reason,
+it can.
 
 ---
 

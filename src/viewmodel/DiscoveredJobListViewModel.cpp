@@ -1,19 +1,19 @@
 #include "DiscoveredJobListViewModel.h"
 
-#include "../modelview/pipelines/JobPipelines.h"
+#include "../logic/pipelines/JobPipelines.h"
 
 #include <QDate>
 #include <QDesktopServices>
 #include <QLocale>
 
-#include "../modelview/pipelines/TypedDateReader.h"
+#include "../logic/pipelines/TypedDateReader.h"
 
-#include "../modelview/jobscout/ClearanceDetector.h"
+#include "../logic/jobscout/ClearanceDetector.h"
 #include <QUrl>
 
-#include "../modelview/jobscout/JobPostingTextCleanup.h"
-#include "../modelview/jobscout/AtsBoardIdentity.h"
-#include "../modelview/jobscout/JobSourceDescriptor.h"
+#include "../logic/jobscout/JobPostingTextCleanup.h"
+#include "../logic/jobscout/AtsBoardIdentity.h"
+#include "../logic/jobscout/JobSourceDescriptor.h"
 
 namespace {
 

@@ -20,32 +20,32 @@ endfunction()
 
 add_job_crush_test(tst_ProspectScorer
     tst_ProspectScorer.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/ProspectScorer.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/JobSearchProfile.h
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/JobSearchProfile.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/ProspectScorer.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/JobSearchProfile.h
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/JobSearchProfile.cpp
 )
 
 add_job_crush_test(tst_JobSearchProfile
     tst_JobSearchProfile.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/JobSearchProfile.h
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/JobSearchProfile.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/JobSearchProfile.h
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/JobSearchProfile.cpp
 )
 
 add_job_crush_test(tst_TypedDateReader
     tst_TypedDateReader.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/TypedDateReader.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/pipelines/TypedDateReader.cpp
 )
 
 add_job_crush_test(tst_WorkdayBoardSource
     tst_WorkdayBoardSource.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/JobScoutReply.h
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/WorkdayBoardSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/JobScoutReply.h
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/WorkdayBoardSource.cpp
 )
 
 add_job_crush_test(tst_JobQuestFile
     tst_JobQuestFile.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/JobQuestFile.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/TypedDateReader.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/activejobs/JobQuestFile.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/pipelines/TypedDateReader.cpp
 )
 
 # The Active Jobs folder and the AI app actions need the board and the
@@ -59,28 +59,28 @@ add_job_crush_test(tst_ActiveJobsFolder
     ${CMAKE_SOURCE_DIR}/src/model/JobApplicationRepository.cpp
     ${CMAKE_SOURCE_DIR}/src/model/PostingSourceRepository.cpp
     ${CMAKE_SOURCE_DIR}/src/model/ActiveJobFolderRepository.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/JobPipelines.h
-    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/JobPipelines.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/pipelines/TypedDateReader.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/JobQuestFile.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/OlderJobFolderReader.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/ActiveJobsFolder.h
-    ${CMAKE_SOURCE_DIR}/src/modelview/activejobs/ActiveJobsFolder.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/aiapps/AiAppRequests.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/pipelines/JobPipelines.h
+    ${CMAKE_SOURCE_DIR}/src/logic/pipelines/JobPipelines.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/pipelines/TypedDateReader.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/activejobs/JobQuestFile.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/activejobs/OlderJobFolderReader.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/activejobs/ActiveJobsFolder.h
+    ${CMAKE_SOURCE_DIR}/src/logic/activejobs/ActiveJobsFolder.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/aiapps/AiAppRequests.cpp
 )
 find_package(Qt6 REQUIRED COMPONENTS Sql)
 target_link_libraries(tst_ActiveJobsFolder PRIVATE Qt6::Sql)
 
 add_job_crush_test(tst_SmartRecruitersBoardSource
     tst_SmartRecruitersBoardSource.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/JobScoutReply.h
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/SmartRecruitersBoardSource.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/JobScoutReply.h
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/SmartRecruitersBoardSource.cpp
 )
 
 # Reads the shipped data files, so a typo in one fails here.
 add_job_crush_test(tst_CompanyList
     tst_CompanyList.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/CompanyList.cpp
-    ${CMAKE_SOURCE_DIR}/src/modelview/jobscout/CareerPreset.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/CompanyList.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/jobscout/CareerPreset.cpp
 )
 target_compile_definitions(tst_CompanyList PRIVATE JOBCRUSH_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

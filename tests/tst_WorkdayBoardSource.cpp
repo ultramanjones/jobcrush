@@ -2,8 +2,8 @@
 #include <QJsonObject>
 #include <QTest>
 
-#include "modelview/jobscout/AtsBoardDetector.h"
-#include "modelview/jobscout/WorkdayBoardSource.h"
+#include "logic/jobscout/AtsBoardDetector.h"
+#include "logic/jobscout/WorkdayBoardSource.h"
 
 // Tests for reading Workday.
 //

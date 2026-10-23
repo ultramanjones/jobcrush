@@ -4,7 +4,7 @@
 #include <QList>
 #include <QString>
 
-#include "../modelview/pipelines/JobPipelines.h"
+#include "../logic/pipelines/JobPipelines.h"
 
 class StagedDocumentRepository;
 class StagingWorkbench;

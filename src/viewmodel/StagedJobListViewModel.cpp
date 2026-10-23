@@ -1,7 +1,7 @@
 #include "StagedJobListViewModel.h"
 
 #include "../model/StagedDocumentRepository.h"
-#include "../modelview/tasks/StagingWorkbench.h"
+#include "../logic/tasks/StagingWorkbench.h"
 
 namespace {
 

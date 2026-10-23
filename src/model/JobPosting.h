@@ -10,7 +10,7 @@
 // only a JobApplication (created when the user hits CRUSH) puts it there.
 //
 // A JobScout discovery IS one of these — there is deliberately no separate
-// "discovery" entity, because a found job and a hand-entered job are the same
+// "discovery" data record, because a found job and a hand-entered job are the same
 // thing in the world. What separates them is only where they came from and
 // whether the user has ever targeted one.
 struct JobPosting {

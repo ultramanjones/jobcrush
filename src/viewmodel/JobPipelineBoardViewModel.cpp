@@ -6,13 +6,13 @@
 #include <QUrlQuery>
 #include <QVariantMap>
 
-#include "../modelview/activejobs/ActiveJobsFolder.h"
-#include "../modelview/jobscout/AtsBoardIdentity.h"
-#include "../modelview/jobscout/JobScout.h"
-#include "../modelview/jobscout/JobSourceDescriptor.h"
-#include "../modelview/pipelines/JobPipelines.h"
-#include "../modelview/pipelines/PostingStillListedChecker.h"
-#include "../modelview/pipelines/TypedDateReader.h"
+#include "../logic/activejobs/ActiveJobsFolder.h"
+#include "../logic/jobscout/AtsBoardIdentity.h"
+#include "../logic/jobscout/JobScout.h"
+#include "../logic/jobscout/JobSourceDescriptor.h"
+#include "../logic/pipelines/JobPipelines.h"
+#include "../logic/pipelines/PostingStillListedChecker.h"
+#include "../logic/pipelines/TypedDateReader.h"
 
 namespace {
 

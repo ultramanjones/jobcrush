@@ -3,7 +3,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 
-#include "../modelview/aibrain/AiCredentialRoster.h"
+#include "../logic/aibrain/AiCredentialRoster.h"
 
 namespace {
 // "sk-ant-api03-…k3F9" — enough to recognize, never enough to steal.

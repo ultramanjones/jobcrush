@@ -14,7 +14,7 @@ class AiBrain;
 //
 // Named for the data it serves — the selected brain's connection — not for
 // the screen that shows it. Translation and organization only: the selection
-// rules and the verification plumbing live below, in AiBrain (ModelView).
+// rules and the verification plumbing live below, in AiBrain (Logic layer).
 class SelectedBrainConnectionViewModel : public QObject {
     Q_OBJECT
 

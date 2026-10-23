@@ -47,7 +47,7 @@ LinkedIn, Indeed, Glassdoor, ZipRecruiter, and paywall boards like FlexJobs and 
 These are companies known to hire C++ and Qt developers. This list is a starting point from memory, not verified. For each one, the Job Crush project should find which hiring system it uses and the feed link, and confirm it still hires for C++/Qt.
 
 **Medical devices and surgical robotics**
-Stryker, Intuitive Surgical, Medtronic, Johnson & Johnson MedTech (Verb Surgical), GE HealthCare, Philips (including Philips Respironics, Pittsburgh), Siemens Healthineers, Boston Scientific, Zimmer Biomet, Smith+Nephew, Abbott, Baxter
+Stryker, Intuitive Surgical, Medtronic, GE HealthCare, Philips (including Philips Respironics, Pittsburgh), Siemens Healthineers, Boston Scientific, Zimmer Biomet, Smith+Nephew, Abbott, Baxter
 
 **Defense, aerospace, and simulation**
 L3Harris, CAE, Lockheed Martin, Northrop Grumman, General Dynamics Mission Systems, Collins Aerospace, BAE Systems, Leidos, Textron Systems, Kratos, AeroVironment, Shield AI, Anduril

@@ -10,10 +10,10 @@
 #include "model/JobCrushDatabase.h"
 #include "model/JobPostingRepository.h"
 #include "model/PostingSourceRepository.h"
-#include "modelview/activejobs/ActiveJobsFolder.h"
-#include "modelview/aiapps/AiAppRequests.h"
-#include "modelview/aiapps/AiAppTools.h"
-#include "modelview/pipelines/JobPipelines.h"
+#include "logic/activejobs/ActiveJobsFolder.h"
+#include "logic/aiapps/AiAppRequests.h"
+#include "logic/aiapps/AiAppTools.h"
+#include "logic/pipelines/JobPipelines.h"
 
 namespace {
 

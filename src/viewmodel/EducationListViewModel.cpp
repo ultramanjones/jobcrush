@@ -1,7 +1,7 @@
 #include "EducationListViewModel.h"
 
 #include "../model/CareerHistoryRepository.h"
-#include "../modelview/prodocs/ProDocsIntake.h"
+#include "../logic/prodocs/ProDocsIntake.h"
 
 EducationListViewModel::EducationListViewModel(
     CareerHistoryRepository &careerRepository, ProDocsIntake &intake, QObject *parent)

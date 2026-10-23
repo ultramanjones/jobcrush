@@ -1,8 +1,8 @@
 #include <QTest>
 
-#include "modelview/jobscout/AtsBoardDetector.h"
-#include "modelview/jobscout/CareerPreset.h"
-#include "modelview/jobscout/CompanyList.h"
+#include "logic/jobscout/AtsBoardDetector.h"
+#include "logic/jobscout/CareerPreset.h"
+#include "logic/jobscout/CompanyList.h"
 
 // Tests for the shipped data files: the company list and the career preset.
 // They read the real files in data/, so a typo in a file fails here instead

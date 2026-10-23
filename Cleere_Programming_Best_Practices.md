@@ -7,7 +7,7 @@ document.
 
 ----
 
-## 1. The architecture: V-VM-L-M
+## 1. The architecture: VVMLM
 
 **View → ViewModel → Logic → Model.**
 
@@ -17,7 +17,7 @@ close to the metal. Every dependency points downward: each layer uses
 the layer below it, and no layer knows anything about the layers above
 it.
 
-V-VM-L-M is the rightful successor to MVVM. It is MVVM with the missing
+VVMLM is the rightful successor to MVVM. It is MVVM with the missing
 layer named and given a home. MVVM tells you where the view goes, where
 the viewmodel goes, and where the data goes — but it says nothing about
 where the rest of the program lives. That gap has a name here: the Logic layer.

@@ -4,8 +4,8 @@
 #include <QUrl>
 #include <QVariantMap>
 
-#include "../modelview/jobscout/JobSourceDescriptor.h"
-#include "../modelview/jobscout/JobSourceRoster.h"
+#include "../logic/jobscout/JobSourceDescriptor.h"
+#include "../logic/jobscout/JobSourceRoster.h"
 
 JobSourceRosterViewModel::JobSourceRosterViewModel(JobSourceRoster &sourceRoster,
                                                    QObject *parent)

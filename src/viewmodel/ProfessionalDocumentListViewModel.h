@@ -6,7 +6,7 @@
 #include <QStringList>
 
 #include "../model/ProfessionalDocument.h"
-#include "../modelview/exporting/DocumentConverter.h"
+#include "../logic/exporting/DocumentConverter.h"
 
 class AppPreferences;
 class MoonlightDocumentCleanup;
@@ -19,7 +19,7 @@ class ProfessionalDocumentRepository;
 // state — what was just dropped and what Job Crush made of it.
 //
 // Translation and organization only: copying, reading and classifying all
-// happen below, in ProDocsIntake (ModelView).
+// happen below, in ProDocsIntake (Logic layer).
 class ProfessionalDocumentListViewModel : public QAbstractListModel {
     Q_OBJECT
 

@@ -1,6 +1,6 @@
 #include "ProfessionalDocumentListViewModel.h"
 
-#include "../modelview/prodocs/MoonlightDocumentCleanup.h"
+#include "../logic/prodocs/MoonlightDocumentCleanup.h"
 
 #include <QDate>
 #include <QDesktopServices>
@@ -12,11 +12,11 @@
 #include <QUrl>
 
 #include "../model/ProfessionalDocumentRepository.h"
-#include "../modelview/AppPreferences.h"
-#include "../modelview/exporting/ExportFolder.h"
-#include "../modelview/exporting/ExportFormat.h"
-#include "../modelview/prodocs/DocumentKind.h"
-#include "../modelview/prodocs/ProDocsIntake.h"
+#include "../logic/AppPreferences.h"
+#include "../logic/exporting/ExportFolder.h"
+#include "../logic/exporting/ExportFormat.h"
+#include "../logic/prodocs/DocumentKind.h"
+#include "../logic/prodocs/ProDocsIntake.h"
 
 namespace {
 

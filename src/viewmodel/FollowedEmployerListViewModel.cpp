@@ -2,8 +2,8 @@
 
 #include <QVariantMap>
 
-#include "../modelview/jobscout/FollowedEmployer.h"
-#include "../modelview/jobscout/FollowedEmployerRoster.h"
+#include "../logic/jobscout/FollowedEmployer.h"
+#include "../logic/jobscout/FollowedEmployerRoster.h"
 
 FollowedEmployerListViewModel::FollowedEmployerListViewModel(
     FollowedEmployerRoster &followedRoster, QObject *parent)

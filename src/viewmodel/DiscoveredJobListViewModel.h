@@ -6,7 +6,7 @@
 #include <QList>
 #include <QString>
 
-#include "../modelview/jobscout/JobScout.h"
+#include "../logic/jobscout/JobScout.h"
 
 class JobPipelines;
 
@@ -22,7 +22,7 @@ class JobPipelines;
 // progress, summary) — that is the same subject, not a second one.
 //
 // Translation and organization only: the fetching, storing, deduplicating and
-// scoring all happen below, in JobScout (ModelView).
+// scoring all happen below, in JobScout (Logic layer).
 class DiscoveredJobListViewModel : public QAbstractListModel {
     Q_OBJECT
 

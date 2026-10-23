@@ -1,11 +1,11 @@
 #include "JobSearchProfileViewModel.h"
 
-#include "../modelview/jobscout/CareerPreset.h"
+#include "../logic/jobscout/CareerPreset.h"
 
 #include <QRegularExpression>
 
-#include "../modelview/jobscout/JobSearchProfile.h"
-#include "../modelview/jobscout/KnownWorkLocations.h"
+#include "../logic/jobscout/JobSearchProfile.h"
+#include "../logic/jobscout/KnownWorkLocations.h"
 
 namespace {
 

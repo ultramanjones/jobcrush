@@ -34,7 +34,7 @@
 #include <io.h>
 #endif
 
-#include "modelview/aiapps/AiAppTools.h"
+#include "logic/aiapps/AiAppTools.h"
 
 namespace {
 
