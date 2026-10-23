@@ -263,6 +263,11 @@ from 2026-09-15: a job dropped after a closer look and a rejected application
 both land in Closed, and the Stats page cannot tell them apart. With a reason,
 it can.
 
+**31. Staging shows closed jobs at the top.** Ultra, 2026-10-23. The Staging
+page lists jobs that are in the Closed column first. Closed jobs should not be
+at the top, and may not belong on Staging at all. Ultra has not used Staging
+much, so look at the whole page with him before changing it.
+
 ---
 
 ## Shipped

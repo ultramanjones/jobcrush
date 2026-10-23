@@ -26,9 +26,9 @@ class PostedJobPageReader;
 
 // ScoredJobPosting
 //
-// A posting together with how it stood up against the profile. Bundled so the
-// list travels as one thing instead of two lists the caller has to keep lined
-// up — which is the sort of bookkeeping that eventually gets out of step.
+// A posting and its score against the search profile, kept together. One
+// list of these is simpler than two lists the caller must keep in the same
+// order.
 struct ScoredJobPosting {
     JobPosting jobPosting;
     ProspectMatchResult matchResult;
@@ -36,14 +36,12 @@ struct ScoredJobPosting {
 
 // SearchAreaScope
 //
-// Which side of the location filter a caller wants. Two lists, one set of
-// findings — the jobs that sit where the user said they will work, and the
-// ones held back because they don't.
+// Which side of the location filter a caller wants: the jobs where the user
+// said they will work, or the jobs held back because they are somewhere else.
 //
-// OutsideSearchArea exists so those jobs are never simply destroyed. Hiding
-// something the user might want, with no way to look at it, is the app making
-// the decision for them; keeping the other half addressable means a tab can
-// show it whenever they ask.
+// OutsideSearchArea exists so the held-back jobs can still be looked at, on
+// their own tab. Hiding jobs with no way to see them would be the app making
+// the decision for the user.
 enum class SearchAreaScope {
     InsideSearchArea,
     OutsideSearchArea
@@ -51,19 +49,19 @@ enum class SearchAreaScope {
 
 // JobScout
 //
-// The front door of job discovery — a Logic layer class, and AIBrain's
-// opposite number. Everything above it asks JobScout and never touches a job
-// site, an HTTP request, or the scoring arithmetic directly.
+// Finds jobs. A Logic layer class. Everything above it asks JobScout for jobs
+// and never touches a job site, an HTTP request, or the scoring directly.
 //
-// Responsibilities, and nothing more:
-//  - run a sweep across the sites the user ticked, one reply per site,
-//  - hand every find to the repository, which knows what it has seen before,
-//  - rank what is stored against the search profile,
-//  - report honest progress with real numbers while it works.
+// What it does:
+//  - runs a sweep across the sites the user ticked, one reply per site,
+//  - saves every job found through the repository, which knows which jobs
+//    it has seen before,
+//  - ranks the stored jobs against the search profile,
+//  - reports progress with real numbers while it works,
+//  - finds the employer's own posting for a job the user adds by hand.
 //
-// THE BOARD IS SACRED: nothing here ever creates a JobApplication. A found
-// job reaches the pipeline only when the user hits CRUSH. JobScout finds; the
-// human decides.
+// JobScout never creates a JobApplication. A found job goes on the board
+// only when the user presses CRUSH. JobScout finds jobs; the user decides.
 class JobScout : public QObject {
     Q_OBJECT
 public:
@@ -72,7 +70,7 @@ public:
     // to know where that is.
     JobScout(JobPostingRepository &jobPostingRepository,
              PostingSourceRepository &postingSourceRepository,
-             JobSourceRoster &sourceRoster,
+             JobSourceRoster &jobSourceRoster,
              FollowedEmployerRoster &followedEmployerRoster,
              JobSearchProfile &searchProfile,
              AiBrain &aiBrain,
@@ -83,43 +81,41 @@ public:
     // True while at least one site is still answering.
     bool sweepIsRunning() const;
 
-    // What is happening, in real numbers — never a spinner, never a lie.
-    // "Remotive: 43 found, 11 new · Arbeitnow: looking…"
+    // What is happening, in real numbers, for the page to show in place of a
+    // spinner: "Remotive: 43 found, 11 new · Arbeitnow: looking…"
     QString sweepProgressText() const;
 
     // How the last finished sweep went, kept on screen afterward so the user
     // can see what a run actually produced.
     QString lastSweepSummaryText() const;
 
-    // Any site that could not answer, and what it said — kept AFTER the sweep
-    // ends rather than being replaced by the summary. A source that quietly
-    // fails and then erases its own explanation is worse than one that never
-    // ran: the user is left knowing something is wrong and unable to say what.
+    // Any site that could not answer, and what it said. This is kept after
+    // the sweep ends, instead of being replaced by the summary, so the user
+    // can still see what went wrong.
     QString lastSweepTroubleText() const;
 
-    // What a site SAID that was not a count and not a fault — most often a
-    // site asking to be left alone for a while, and being left alone. The
-    // user still needs told, or an untouched tab is a mystery, but painting
-    // it as a failure would send them looking for a fault that is not there.
+    // A message from a site that is neither a count nor a fault. Most often a
+    // site asked Job Crush to wait before asking again, and Job Crush is
+    // waiting. The page shows it, but not as an error, because nothing is
+    // broken.
     QString lastSweepNoticeText() const;
 
-    // Sweeps every ticked site. Does nothing while a sweep is already running
-    // — one at a time, so the numbers on screen always mean something.
+    // Sweeps every ticked site. Does nothing while a sweep is already running,
+    // so the numbers on screen always belong to one sweep.
     void startSweep();
 
     // --- Adding one job by hand ---
     //
-    // This is the way around the sites Job Crush is not allowed to read. The
-    // user pastes a link, or types the company and the job title straight off
-    // a LinkedIn alert, and Job Crush goes and finds that same job: on the
-    // employer's own board first, then by reading the pasted page itself,
-    // then by asking the AI brain to search the web when one is connected.
+    // This is how the user adds a job from a site Job Crush is not allowed to
+    // read. The user pastes a link, or types the company and the job title
+    // off a LinkedIn alert. Job Crush then looks for the same job: on the
+    // employer's own board first, then by reading the pasted page, then by
+    // asking the AI brain to search the web, when one is connected.
     //
-    // When the job cannot be found, what the user typed is saved anyway. A
-    // paste that appears to do nothing is worse than a plain no.
+    // When the job cannot be found, what the user gave is saved anyway, so
+    // the user's work is never lost.
     //
-    // One at a time, same as a sweep, so the status line always means one
-    // thing.
+    // One job at a time, so the status line is always about one job.
     void addJobFromLink(const QString &pastedLink);
     void addJobFromCompanyAndTitle(const QString &companyName,
                                    const QString &positionTitle);
@@ -171,12 +167,10 @@ public:
 
     // Every job the user added by hand, newest added first.
     //
-    // There is no search-area argument and that is deliberate. The location
-    // filter exists to keep a sweep from burying the user in jobs on the wrong
-    // side of the country. A job the user went and fetched themselves was
-    // asked for by name, and hiding it because the employer's office is far
-    // away would take the one list that is supposed to be findable and make
-    // the job disappear from it.
+    // There is no search-area argument, on purpose. The location filter keeps
+    // a sweep from filling the list with jobs in the wrong part of the
+    // country. A job the user added by hand is one they asked for, so the
+    // filter never hides it.
     QList<ScoredJobPosting> handAddedJobPostings() const;
 
     // The job the user added by hand most recently, so the page can go
@@ -184,17 +178,17 @@ public:
     qint64 mostRecentlyHandAddedJobPostingId() const;
 
     // How many stored discoveries the location filter is holding back right
-    // now. Shown to the user, always: a filter that quietly eats jobs and
-    // never admits it is indistinguishable from a broken sweep.
+    // now. The page always shows this number. Without it, a filter that hides
+    // most jobs would look like a sweep that is broken.
     int jobPostingCountOutsideSearchArea() const;
 
     // True when the user has named any place at all — that is, when the
     // filter is doing anything.
     bool searchAreaIsNarrowed() const;
 
-    // True once the search profile says enough for a ranking to mean
-    // something. Asked through JobScout so nothing above has to reach past it
-    // to the profile — the front door stays the only door.
+    // True once the search profile has enough in it to rank by. The
+    // viewmodel asks JobScout rather than the profile, so JobScout stays the
+    // one class it talks to for discovery.
     bool searchProfileCanRank() const;
 
 signals:
@@ -235,23 +229,19 @@ private:
     void keepTheRealPosting(const JobLead &jobLead, const JobPosting &realPosting,
                             bool theBrainFoundTheLink, bool onlyThePageTitleWasRead);
 
-    // Saves one posting and returns the sentence to show the user. An empty
-    // board name means the user handed this job over rather than a board
-    // giving it up.
-    // The job the user added by hand most recently, so the page can jump
-    // straight to it. 0 means there is nowhere to jump.
-    qint64 lastHandAddedJobPostingId = 0;
-
-    // Keeps one more way of reaching a job the user already has. Safe to call
-    // with something already recorded.
+    // Keeps one more place where the user can apply for a job they already
+    // have. Safe to call with a place already recorded.
     void rememberRouteToThisJob(qint64 jobPostingId, const QString &boardName,
                                 const QString &externalId, const QString &postingUrl);
 
+    // Saves one hand-added posting and returns the sentence to show the
+    // user. An empty boardItCameFrom means no board had the job, and the user
+    // gave Job Crush the details.
     QString storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
                                               const QString &boardItCameFrom);
 
     // Saves the job as the user typed or pasted it, for when the real posting
-    // could not be found, and says why in the same breath.
+    // could not be found. The returned sentence also says why.
     QString keepWhatTheUserGaveUs(const JobLead &jobLead,
                                   const QString &whyTheRealOneIsMissing);
 
@@ -261,64 +251,67 @@ private:
     // Used to turn down a second request while the first is still out.
     void sayThisAboutTheLead(const QString &statusTextForTheUser);
 
-    // Stores one site's finds, counting what was genuinely new.
-    // Marks the jobs that have gone from a company's board. Only for sources
-    // that read whole boards (companies you follow): a job from one of those
-    // companies that the board no longer lists has been taken down. A job
-    // that comes back loses the mark. Nothing is deleted.
+    // Marks the jobs that are gone from a company's board. Only for sources
+    // that read a company's whole board, like the companies the user follows.
+    // A job from one of those companies that the board no longer lists has
+    // been taken down. A job that comes back loses the mark. Nothing is
+    // deleted.
     void markJobsGoneFromBoardsReadInFull(const QString &sourceStorageName,
                                           const QStringList &employersReadInFull,
                                           const QList<JobPosting> &foundJobPostings);
 
-    void recordFindingsFromSource(const QString &sourceStorageName,
-                                  const QList<JobPosting> &foundJobPostings);
+    // Saves one site's finds, and counts how many were new.
+    void recordFindingsFromSource(const QList<JobPosting> &foundJobPostings);
 
     void finishSourceAndReportProgress(const QString &sourceStorageName,
                                        const QString &sourceOutcomeText,
                                        bool sourceHadTrouble);
 
     // Writes what every site said during the sweep that just ended to
-    // lastSweep.log, replacing the previous one.
+    // lastSweep.log, replacing the last one.
     //
-    // Because a status line on a screen is a terrible place to keep the one
-    // fact somebody needs later. When a site quietly stops working, the
-    // question is always "what did it actually say?", and the honest answer
-    // has to survive being scrolled past, alt-tabbed away from, or read at
-    // two in the morning by someone who is tired.
+    // The status line on the page is gone once the next sweep starts. When a
+    // site stops working, the first question is what it said, and this file
+    // keeps the answer.
     void writeSweepLog() const;
 
     const QString sweepLogFolderPath;
 
-    JobPostingRepository &discoveredJobPostingRepository;
-    PostingSourceRepository &jobRouteRepository;
-    JobSourceRoster &registeredSourceRoster;
-    FollowedEmployerRoster &watchedEmployerRoster;
-    JobSearchProfile &userSearchProfile;
+    JobPostingRepository &jobPostingRepository;
+    PostingSourceRepository &postingSourceRepository;
+    JobSourceRoster &jobSourceRoster;
+    FollowedEmployerRoster &followedEmployerRoster;
+    JobSearchProfile &searchProfile;
 
-    // A plain vector rather than a keyed container: QHash is implicitly
-    // shared and so needs a copyable value, which a unique_ptr is not. No
-    // loss — every provider already knows its own storage name, so looking
-    // one up by asking is simpler than keeping a second list of keys in step
-    // with this one, and there will only ever be a handful of them.
+    // A plain vector, not a QHash, because QHash needs values it can copy and
+    // a unique_ptr cannot be copied. Every provider knows its own storage
+    // name, so providerFor() finds one by asking each. There are only a
+    // handful.
     std::vector<std::unique_ptr<JobSourceProvider>> builtJobSourceProviders;
 
-    // Built once and kept, same as the site clients. Held by pointer so this
-    // header does not have to drag in all three board readers.
+    // Built once and kept, the same as the site clients. Held by pointer so
+    // this header does not have to include every board reader.
     std::unique_ptr<CanonicalPostingResolver> employerBoardResolver;
 
     // Reads a job off a pasted web page. Same lifetime as the resolver.
     std::unique_ptr<PostedJobPageReader> postedPageReader;
 
     // Asks the connected brain to search the web. Same lifetime.
-    std::unique_ptr<BrainJobFinder> webSearchingBrain;
+    std::unique_ptr<BrainJobFinder> brainJobFinder;
+
+    // Moonlight reading pasted text into a form, and the form so far.
     std::unique_ptr<PastedTextJobReader> pastedTextReader;
     bool pastedTextBeingRead = false;
     QString storedPastedTextStatus;
     JobPosting storedFilledForm;
 
-    // Live bookkeeping for one pasted job.
+    // Live bookkeeping for one hand-added job.
     bool aLeadIsBeingResolved = false;
     QString storedLeadStatusText;
+
+    // The job the user added by hand most recently, so the page can jump
+    // straight to it. 0 means there is nowhere to jump.
+    qint64 lastHandAddedJobPostingId = 0;
 
     // Live sweep bookkeeping. Cleared when a sweep ends.
     QStringList sourcesStillSweeping;

@@ -1,10 +1,9 @@
 #pragma once
 
-#include <QVariantMap>
-
 #include <QAbstractListModel>
 #include <QList>
 #include <QString>
+#include <QVariantMap>
 
 #include "../logic/jobscout/JobScout.h"
 
@@ -12,77 +11,105 @@ class JobPipelines;
 
 // DiscoveredJobListViewModel
 //
-// Serves the Discoveries page its rows: either one job site's finds, or the
-// ranked Top Prospects across all of them. One instance serves every tab,
-// because only one tab is on screen at a time — switching tabs sets
-// activeTabSourceName and the rows are rebuilt. Five near-identical viewmodels
-// would be five things to keep in step for no gain.
+// Serves the Discoveries page its rows. The rows are one of these:
+//  - Top Prospects: every job found, ranked best match first,
+//  - Manual Add: the jobs the user added by hand,
+//  - Outside your area: the jobs the location filter holds back,
+//  - one job site's finds.
 //
-// It also carries the state of the sweep that produces those rows (running,
-// progress, summary) — that is the same subject, not a second one.
+// One instance serves every tab, because only one tab is on screen at a
+// time. Setting activeTabSourceName rebuilds the rows for that tab.
 //
-// Translation and organization only: the fetching, storing, deduplicating and
-// scoring all happen below, in JobScout (Logic layer).
+// It also carries the state of the sweep that finds those jobs (running,
+// progress, summary), and the state of adding one job by hand.
+//
+// This class translates and organizes only. Finding, saving, removing
+// duplicates and scoring all happen below, in JobScout (Logic layer).
 class DiscoveredJobListViewModel : public QAbstractListModel {
     Q_OBJECT
 
-    // Which tab is showing. Empty string means Top Prospects — the ranked
-    // list across every site. The Manual Add name below means the jobs the
-    // user brought in by hand. Any other value is a site's storage name.
+    // --- Which tab is showing ---
+
+    // Empty string means Top Prospects. manualAddTabSourceName means Manual
+    // Add, and outsideSearchAreaTabSourceName means Outside your area. Any
+    // other value is a job site's storage name.
     Q_PROPERTY(QString activeTabSourceName READ activeTabSourceName
                    WRITE setActiveTabSourceName NOTIFY activeTabSourceNameChanged)
 
-    // The reserved name for the Manual Add tab, so the page never has to
-    // spell the string itself and the two can never drift apart.
+    // The reserved tab names. The page reads them from here, so each name is
+    // spelled in one place only.
     Q_PROPERTY(QString manualAddTabSourceName READ manualAddTabSourceName CONSTANT)
-
-    // True while the Manual Add tab is the one showing.
-    Q_PROPERTY(bool showingManualAdd READ showingManualAdd
-                   NOTIFY activeTabSourceNameChanged)
-
-    // The reserved name for the "Outside your area" tab: every job the
-    // location filter holds back, from every site, ranked. The tab only
-    // exists while the user has named at least one place.
     Q_PROPERTY(QString outsideSearchAreaTabSourceName READ outsideSearchAreaTabSourceName
                    CONSTANT)
 
+    Q_PROPERTY(bool showingManualAdd READ showingManualAdd
+                   NOTIFY activeTabSourceNameChanged)
+    Q_PROPERTY(bool showingOutsideSearchArea READ showingOutsideSearchArea
+                   NOTIFY activeTabSourceNameChanged)
+
+    // --- The rows ---
+
     Q_PROPERTY(int discoveredJobCount READ rowCountForProperty NOTIFY discoveredJobsChanged)
 
-    // True while sites are still answering. The page shows real numbers off
-    // sweepProgressText while this is true — never a spinner.
-    Q_PROPERTY(bool sweepIsRunning READ sweepIsRunning NOTIFY sweepProgressChanged)
-    Q_PROPERTY(QString sweepProgressText READ sweepProgressText NOTIFY sweepProgressChanged)
-    Q_PROPERTY(QString lastSweepSummaryText READ lastSweepSummaryText
-                   NOTIFY sweepProgressChanged)
-
-    // Any site that could not answer, and what it said. Outlives the sweep,
-    // so a failure is never erased by the summary that follows it.
-    Q_PROPERTY(QString lastSweepTroubleText READ lastSweepTroubleText
-                   NOTIFY sweepProgressChanged)
-
-    // What a site said that was neither a count nor a fault — a site asking to
-    // be left alone for an hour, most often. Shown, but not painted as a
-    // failure.
-    Q_PROPERTY(QString lastSweepNoticeText READ lastSweepNoticeText
-                   NOTIFY sweepProgressChanged)
-
-    // False until the user has told Job Crush what they are looking for. Top
-    // Prospects says so plainly rather than showing a meaningless order.
+    // False until the user has told Job Crush what they are looking for. The
+    // page says so on Top Prospects, instead of showing an order that means
+    // nothing.
     Q_PROPERTY(bool canRankProspects READ canRankProspects NOTIFY discoveredJobsChanged)
 
     // How many jobs the location filter is holding back, and whether it is
-    // filtering at all. The page states this out loud — a filter that quietly
-    // eats jobs and never admits it looks exactly like a broken sweep, and
-    // the user would go hunting for a bug that isn't there.
+    // filtering at all. The page always shows the count. Without it, a filter
+    // that hides most jobs would look like a broken sweep.
     Q_PROPERTY(int jobCountOutsideSearchArea READ jobCountOutsideSearchArea
                    NOTIFY discoveredJobsChanged)
     Q_PROPERTY(bool searchAreaIsNarrowed READ searchAreaIsNarrowed
                    NOTIFY discoveredJobsChanged)
 
-    // True while the "Outside your area" tab is the one showing. Every other
-    // tab shows only jobs inside the area.
-    Q_PROPERTY(bool showingOutsideSearchArea READ showingOutsideSearchArea
-                   NOTIFY activeTabSourceNameChanged)
+    // --- The sweep ---
+
+    // True while sites are still answering. While this is true, the page
+    // shows the real numbers in sweepProgressText instead of a spinner.
+    Q_PROPERTY(bool sweepIsRunning READ sweepIsRunning NOTIFY sweepProgressChanged)
+    Q_PROPERTY(QString sweepProgressText READ sweepProgressText NOTIFY sweepProgressChanged)
+    Q_PROPERTY(QString lastSweepSummaryText READ lastSweepSummaryText
+                   NOTIFY sweepProgressChanged)
+
+    // Any site that could not answer, and what it said. Kept after the sweep
+    // ends, so the summary does not replace it.
+    Q_PROPERTY(QString lastSweepTroubleText READ lastSweepTroubleText
+                   NOTIFY sweepProgressChanged)
+
+    // A message from a site that is neither a count nor a fault, most often
+    // a site asking Job Crush to wait. Shown, but not as an error.
+    Q_PROPERTY(QString lastSweepNoticeText READ lastSweepNoticeText
+                   NOTIFY sweepProgressChanged)
+
+    // --- Adding one job by hand ---
+
+    // True while Job Crush is looking for one hand-added job. The page says
+    // what Job Crush is doing instead of showing a spinner.
+    Q_PROPERTY(bool leadIsBeingResolved READ leadIsBeingResolved NOTIFY leadStatusChanged)
+
+    // What happened, in one sentence. It always ends with something the user
+    // can do next.
+    Q_PROPERTY(QString leadStatusText READ leadStatusText NOTIFY leadStatusChanged)
+
+    // True when there is a hand-added job to jump to, so the "show me" button
+    // only appears when it has somewhere to go.
+    Q_PROPERTY(bool hasSomewhereToJumpTo READ hasSomewhereToJumpTo
+                   NOTIFY leadStatusChanged)
+
+    // --- Pasted text, read into a form by Moonlight ---
+
+    Q_PROPERTY(bool pastedTextIsBeingRead READ pastedTextIsBeingRead
+                   NOTIFY pastedTextFormChanged)
+    Q_PROPERTY(QString pastedTextStatusText READ pastedTextStatusText
+                   NOTIFY pastedTextFormChanged)
+    Q_PROPERTY(bool aBrainCanReadPastedText READ aBrainCanReadPastedText
+                   NOTIFY pastedTextFormChanged)
+
+    // The filled form: companyName, positionTitle, sourceUrl, locationText,
+    // salaryText, postedText, isRemoteRole, descriptionText, and hasForm.
+    Q_PROPERTY(QVariantMap filledForm READ filledForm NOTIFY pastedTextFormChanged)
 
 public:
     enum DiscoveredJobRole {
@@ -92,40 +119,47 @@ public:
         SalaryTextRole,
         SummaryLineRole,
         SourceDisplayNameRole,
-        PostedDayTextRole,      // the section header: "Today", "Aug 21"
-        MatchScoreRole,         // 0-100
+        PostedDayTextRole,      // the section header: "Today", "August 21"
+        MatchScoreRole,         // 0 to 100
         MatchReasonsTextRole,   // why it scored that, in plain words
+
+        // "strong", "fair" or "weak", for the color of the score badge. The
+        // cutoffs live in ProspectScorer with the weights.
+        MatchStrengthRole,
+
         IsRemoteRoleRole,
 
         // Which board the posting was read off, ready to show: "Ashby",
-        // "Lever". Empty when nothing was read off any board.
+        // "Lever". Empty when it was not read off any board.
         PostingSourceDisplayNameRole,
 
-        // True when the user added this one by hand.
+        // True when the user added this job by hand.
         WasAddedByHandRole,
 
-        // True when the user added it AND no board had it. These rows are the
-        // ones that still need the user to fill in the rest, and the page
-        // marks them so nobody mistakes a stub for a whole posting.
+        // True when the user added it AND no board had it. These rows still
+        // need the user to fill in the rest, and the page marks them.
         IsManualAllTheWayRole,
 
-        // The database id, so a row can be found again by something that only
+        // The database id, so a row can be found by something that only
         // knows which job it wants.
         JobPostingIdRole,
 
         // The company's own board no longer lists this job, as of the last
-        // sweep that read their whole board. The row says so.
+        // sweep that read their whole board.
         PostingSeemsGoneRole,
         PostingGoneTextRole,
 
         // The posting asks for a security clearance. Flagged, never hidden.
-        AsksForClearanceRole
+        AsksForClearanceRole,
+
+        // The job is already on the board, so the row shows "on your board"
+        // instead of a CRUSH button.
+        IsOnTheBoardRole
     };
 
-    // Takes the board as well as the scout: a discovery's whole purpose is to
-    // become something on the board, and the button that does it belongs on
-    // the row where the job is, not on a screen the user has to go and find.
-    DiscoveredJobListViewModel(JobScout &jobScout, JobPipelines &pipelines,
+    // Takes the board as well as JobScout, because the CRUSH button on each
+    // row puts that job on the board.
+    DiscoveredJobListViewModel(JobScout &jobScout, JobPipelines &jobPipelines,
                                QObject *parent = nullptr);
 
     int rowCount(const QModelIndex &parentIndex = QModelIndex()) const override;
@@ -135,82 +169,63 @@ public:
     QString activeTabSourceName() const;
     void setActiveTabSourceName(const QString &sourceStorageName);
     QString manualAddTabSourceName() const;
+    QString outsideSearchAreaTabSourceName() const;
     bool showingManualAdd() const;
-
-    // Where the job the user added most recently sits in the rows showing
-    // now, or -1 when it is not among them. The page scrolls to it and
-    // highlights it, instead of announcing that the job is somewhere in a
-    // list of a thousand.
-    Q_INVOKABLE int rowOfMostRecentlyHandAddedJob() const;
-
-    // True when there is a hand-added job to go to at all, so the button that
-    // offers the trip only exists when the trip does.
-    Q_PROPERTY(bool hasSomewhereToJumpTo READ hasSomewhereToJumpTo
-                   NOTIFY leadStatusChanged)
-    bool hasSomewhereToJumpTo() const;
+    bool showingOutsideSearchArea() const;
 
     int rowCountForProperty() const;
+    bool canRankProspects() const;
+    int jobCountOutsideSearchArea() const;
+    bool searchAreaIsNarrowed() const;
+
     bool sweepIsRunning() const;
     QString sweepProgressText() const;
     QString lastSweepSummaryText() const;
     QString lastSweepTroubleText() const;
     QString lastSweepNoticeText() const;
-    bool canRankProspects() const;
-    int jobCountOutsideSearchArea() const;
-    bool searchAreaIsNarrowed() const;
-    bool showingOutsideSearchArea() const;
-    QString outsideSearchAreaTabSourceName() const;
-
-    // The "scout now" action. Discovery is on demand by design — Job Crush
-    // does not sit in the background hammering other people's free APIs.
-    Q_INVOKABLE void startSweep();
-
-    // Opens the posting on the site that published it. Job Crush never
-    // reproduces a posting as if it were its own.
-    Q_INVOKABLE void openJobPostingInBrowser(int rowIndex) const;
-
-    // CRUSH. Puts this job on the board at Crushed. Returns the sentence to
-    // show the user — it says what happened either way, including "already on
-    // your board", which is information rather than a failure.
-    Q_INVOKABLE QString crushJobPostingAt(int rowIndex);
-
-    // Whether this row is already on the board, so the row can say so instead
-    // of offering a button that will only decline.
-    Q_INVOKABLE bool jobPostingAtIsOnTheBoard(int rowIndex) const;
 
     bool leadIsBeingResolved() const;
     QString leadStatusText() const;
-
-    // Paste a job link. Works for a link Job Crush can read directly and for
-    // one it cannot — a LinkedIn link still names the job well enough to go
-    // looking for it elsewhere.
-    Q_INVOKABLE void addJobFromLink(const QString &pastedLink);
-
-    // Type the company and the job title, straight off an alert email.
-    Q_INVOKABLE void addJobFromCompanyAndTitle(const QString &companyName,
-                                               const QString &positionTitle);
-
-    // --- Paste any text and let Moonlight fill the form in ---
-    Q_PROPERTY(bool pastedTextIsBeingRead READ pastedTextIsBeingRead
-                   NOTIFY pastedTextFormChanged)
-    Q_PROPERTY(QString pastedTextStatusText READ pastedTextStatusText
-                   NOTIFY pastedTextFormChanged)
-    Q_PROPERTY(bool aBrainCanReadPastedText READ aBrainCanReadPastedText
-                   NOTIFY pastedTextFormChanged)
-    // The filled form: companyName, positionTitle, sourceUrl, locationText,
-    // salaryText, postedText, isRemoteRole, descriptionText, and hasForm.
-    Q_PROPERTY(QVariantMap filledForm READ filledForm NOTIFY pastedTextFormChanged)
+    bool hasSomewhereToJumpTo() const;
 
     bool pastedTextIsBeingRead() const;
     QString pastedTextStatusText() const;
     bool aBrainCanReadPastedText() const;
     QVariantMap filledForm() const;
 
+    // Starts a sweep of every ticked site. Sweeps only run when the user
+    // asks. Job Crush does not keep calling other people's free job feeds in
+    // the background.
+    Q_INVOKABLE void startSweep();
+
+    // Opens the posting on the site that published it. Job Crush links to
+    // the employer's posting and never shows it as its own.
+    Q_INVOKABLE void openJobPostingInBrowser(int rowIndex) const;
+
+    // CRUSH: puts this job on the board, in the Crushed column. Returns the
+    // sentence to show the user. It says what happened either way, including
+    // "already on your board".
+    Q_INVOKABLE QString crushJobPostingAt(int rowIndex);
+
+    // Where the job the user added most recently is in the rows showing now,
+    // or -1 when it is not among them. The page scrolls to that row and
+    // marks it.
+    Q_INVOKABLE int rowOfMostRecentlyHandAddedJob() const;
+
+    // Paste a job link. This works for a link Job Crush can read, and for one
+    // it cannot. A LinkedIn link still names the job well enough to look for
+    // it somewhere else.
+    Q_INVOKABLE void addJobFromLink(const QString &pastedLink);
+
+    // Type the company and the job title, for example off an alert email.
+    Q_INVOKABLE void addJobFromCompanyAndTitle(const QString &companyName,
+                                               const QString &positionTitle);
+
     Q_INVOKABLE void readPastedText(const QString &pastedText);
     Q_INVOKABLE void clearFilledForm();
 
     // Adds the job from the form as the user left it. postedText is read the
-    // same forgiving way as the applied date on a card.
+    // same forgiving way as the applied date on a board card.
     Q_INVOKABLE void addJobFromFilledForm(const QString &companyName,
                                           const QString &positionTitle,
                                           const QString &sourceUrl,
@@ -219,27 +234,7 @@ public:
                                           const QString &postedText,
                                           bool isRemoteRole);
 
-    // --- Adding one job by hand ---
-    //
-    // The way around the sites Job Crush is not allowed to read: paste the
-    // link, or type the company and the title off a LinkedIn alert, and Job
-    // Crush goes and finds the same job on the employer's own board.
-
-    // True while Job Crush is out looking for one pasted job. The page says
-    // what it is doing rather than showing a spinner.
-    Q_PROPERTY(bool leadIsBeingResolved READ leadIsBeingResolved NOTIFY leadStatusChanged)
-
-    // What happened, in one sentence. Always ends with something to do next.
-    Q_PROPERTY(QString leadStatusText READ leadStatusText NOTIFY leadStatusChanged)
-
-    // Bumped whenever the board changes, so the per-row bindings above
-    // re-evaluate. Same technique as the credential roster.
-    Q_PROPERTY(int boardRevision READ boardRevision NOTIFY boardChanged)
-    int boardRevision() const;
-
 signals:
-    void boardChanged();
-
     void activeTabSourceNameChanged();
     void discoveredJobsChanged();
     void sweepProgressChanged();
@@ -249,9 +244,12 @@ signals:
 private:
     void rebuildRowsFromJobScout();
 
+    // The board changed, so "is it on the board" may have changed on any
+    // row. Tells the page to read that role again for every row.
+    void refreshIsOnTheBoardForEveryRow();
+
     JobScout &discoveryJobScout;
-    JobPipelines &board;
-    int boardChangeCounter = 0;
-    QString storedActiveTabSourceName;   // empty = Top Prospects
+    JobPipelines &jobPipelines;
+    QString storedActiveTabSourceName;   // empty means Top Prospects
     QList<ScoredJobPosting> displayedJobPostings;
 };

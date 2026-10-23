@@ -1,15 +1,15 @@
 #include "JobPostingRepository.h"
 
 #include <QDebug>
-#include <QSqlQuery>
 #include <QSqlError>
+#include <QSqlQuery>
 #include <QVariant>
 
 #include "JobCrushDatabase.h"
 
 namespace {
 
-// One place that knows how a query row becomes a JobPosting.
+// The one place that turns a query row into a JobPosting.
 JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
 {
     JobPosting jobPosting;
@@ -33,32 +33,68 @@ JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
     return jobPosting;
 }
 
-// A QString that was never assigned is NULL, not empty — and binding a null
-// to a NOT NULL column makes SQLite reject the whole row.
+// A QString that was never given a value is NULL, not empty. Binding a NULL
+// to a NOT NULL column makes SQLite refuse the whole row.
 //
-// This is not a hypothetical: Arbeitnow publishes no salary field, so every
-// posting from it arrived with an unassigned salaryText and every insert was
-// refused. 175 jobs a day silently hit the floor, and the only visible symptom
-// was an empty tab. Any field a source does not publish takes this path, so
-// the conversion belongs here, once, rather than at each call site where the
-// next missing field would be missed again.
+// This really happened. Arbeitnow sends no salary field, so every posting
+// from it had a NULL salaryText, and every insert was refused. About 175
+// jobs a day were lost, and the only sign was an empty tab. Any field a
+// source does not send goes through here, so the fix lives in one place.
 QString textOrEmpty(const QString &possiblyNullText)
 {
-    return possiblyNullText.isNull() ? QString::fromLatin1("") : possiblyNullText;
+    return possiblyNullText.isNull() ? QStringLiteral("") : possiblyNullText;
 }
 
-// Newest first, by the date the EMPLOYER posted — falling back to the date
-// Job Crush found it, because a source that omits a posting date should not
-// sink to the bottom of the list forever.
+// A date as stored text, or an empty string for "no date".
+QString timestampTextOrEmpty(const QDateTime &timestamp)
+{
+    return timestamp.isValid() ? timestamp.toString(Qt::ISODate) : QStringLiteral("");
+}
+
+// Newest first, by the date the EMPLOYER posted the job. A posting with no
+// posting date uses the date Job Crush found it instead, so it does not sink
+// to the bottom of the list for good.
 const QString newestPostingFirstOrdering = QStringLiteral(
     " ORDER BY CASE WHEN postedTimestamp <> '' THEN postedTimestamp "
     "               ELSE discoveredTimestamp END DESC");
+
+// How a posting is named in a log line: its title and company, and its id
+// once it has one.
+QString describeJobPosting(const JobPosting &jobPosting)
+{
+    const QString titleAndCompany = QStringLiteral("\"%1\" at %2")
+                                        .arg(jobPosting.positionTitle, jobPosting.companyName);
+    if (jobPosting.jobPostingId == 0) {
+        return titleAndCompany;
+    }
+    return QStringLiteral("job posting %1, %2").arg(jobPosting.jobPostingId)
+                                                .arg(titleAndCompany);
+}
 
 } // namespace
 
 JobPostingRepository::JobPostingRepository(JobCrushDatabase &database)
     : jobCrushDatabase(database)
 {
+}
+
+bool JobPostingRepository::runQuery(QSqlQuery &query, const char *methodName,
+                                    const QString &whatItWasFor)
+{
+    if (query.exec()) {
+        return true;
+    }
+    recordFailure(methodName, whatItWasFor, query.lastError().text());
+    return false;
+}
+
+void JobPostingRepository::recordFailure(const char *methodName,
+                                         const QString &whatItWasFor,
+                                         const QString &errorText)
+{
+    lastErrorDescription = errorText;
+    qWarning().noquote() << QStringLiteral("JobPostingRepository::%1: failed for %2 — %3")
+                                .arg(QLatin1String(methodName), whatItWasFor, errorText);
 }
 
 bool JobPostingRepository::insertJobPosting(JobPosting &jobPosting)
@@ -90,25 +126,21 @@ bool JobPostingRepository::insertJobPosting(JobPosting &jobPosting)
                           textOrEmpty(jobPosting.fullDescriptionText));
     insertQuery.bindValue(QStringLiteral(":postingSource"),
                           textOrEmpty(jobPosting.postingSource));
-    // A posting that reached here without anyone saying who found it came off
-    // a sweep. Storing an empty string would put a row in the database that
-    // answers neither question.
+    // A posting with no scout source came from a sweep. An empty string would
+    // tell nobody who found it.
     insertQuery.bindValue(QStringLiteral(":scoutSource"),
                           jobPosting.scoutSource.trimmed().isEmpty()
                               ? ScoutSourceText::Scout
                               : jobPosting.scoutSource);
     insertQuery.bindValue(QStringLiteral(":discoveredTimestamp"),
-                          textOrEmpty(jobPosting.discoveredTimestamp.toString(Qt::ISODate)));
+                          timestampTextOrEmpty(jobPosting.discoveredTimestamp));
     insertQuery.bindValue(QStringLiteral(":externalSourceId"),
                           textOrEmpty(jobPosting.externalSourceId));
     insertQuery.bindValue(QStringLiteral(":postedTimestamp"),
-                          jobPosting.postedTimestamp.isValid()
-                              ? jobPosting.postedTimestamp.toString(Qt::ISODate)
-                              : QString::fromLatin1(""));
+                          timestampTextOrEmpty(jobPosting.postedTimestamp));
     insertQuery.bindValue(QStringLiteral(":isRemoteRole"), jobPosting.isRemoteRole ? 1 : 0);
 
-    if (!insertQuery.exec()) {
-        lastErrorDescription = insertQuery.lastError().text();
+    if (!runQuery(insertQuery, "insertJobPosting", describeJobPosting(jobPosting))) {
         return false;
     }
 
@@ -118,29 +150,27 @@ bool JobPostingRepository::insertJobPosting(JobPosting &jobPosting)
 
 bool JobPostingRepository::insertDiscoveryIfNew(JobPosting &jobPosting, bool &wasAlreadyKnown)
 {
-    // Ask first rather than relying on the unique index to reject the insert:
-    // "have I seen this before?" is a question with a legitimate answer, not
-    // a failure to be caught.
+    wasAlreadyKnown = false;
+
+    // Look first, instead of letting the unique index refuse the insert. A
+    // job seen before is a normal answer, and should not show up as an error.
     QSqlQuery existingDiscoveryQuery(jobCrushDatabase.connection());
     existingDiscoveryQuery.prepare(QStringLiteral(
         "SELECT jobPostingId FROM jobPosting "
         "WHERE postingSource = :postingSource "
         "  AND externalSourceId = :externalSourceId"));
-    // textOrEmpty on BOTH, same as the insert.
+    // textOrEmpty on both, the same as the insert does.
     //
-    // A QString nobody assigned is null, and a null binds as SQL NULL — and
-    // in SQLite nothing equals NULL, not even NULL. So the lookup would miss
-    // every time, the insert would store "" instead, and the same job would
-    // be stored again on every sweep, forever. The insert learned this lesson
-    // already; the lookup beside it did not.
+    // A NULL never equals anything in SQLite, not even another NULL. Without
+    // textOrEmpty here, this lookup would never find the row the insert
+    // stored with "", and the same job would be stored again on every sweep.
     existingDiscoveryQuery.bindValue(QStringLiteral(":postingSource"),
                                      textOrEmpty(jobPosting.postingSource));
     existingDiscoveryQuery.bindValue(QStringLiteral(":externalSourceId"),
                                      textOrEmpty(jobPosting.externalSourceId));
 
-    if (!existingDiscoveryQuery.exec()) {
-        lastErrorDescription = existingDiscoveryQuery.lastError().text();
-        wasAlreadyKnown = false;
+    if (!runQuery(existingDiscoveryQuery, "insertDiscoveryIfNew",
+                  describeJobPosting(jobPosting))) {
         return false;
     }
 
@@ -150,7 +180,6 @@ bool JobPostingRepository::insertDiscoveryIfNew(JobPosting &jobPosting, bool &wa
         return true;
     }
 
-    wasAlreadyKnown = false;
     return insertJobPosting(jobPosting);
 }
 
@@ -159,8 +188,11 @@ QList<JobPosting> JobPostingRepository::loadAllJobPostings()
     QList<JobPosting> allJobPostings;
 
     QSqlQuery selectQuery(jobCrushDatabase.connection());
-    selectQuery.exec(QStringLiteral(
+    selectQuery.prepare(QStringLiteral(
         "SELECT * FROM jobPosting ORDER BY discoveredTimestamp DESC"));
+    if (!runQuery(selectQuery, "loadAllJobPostings", QStringLiteral("every job posting"))) {
+        return allJobPostings;
+    }
 
     while (selectQuery.next()) {
         allJobPostings.append(jobPostingFromQueryRow(selectQuery));
@@ -178,7 +210,10 @@ QList<JobPosting> JobPostingRepository::loadJobPostingsFromSource(
         "SELECT * FROM jobPosting WHERE postingSource = :postingSource")
         + newestPostingFirstOrdering);
     selectQuery.bindValue(QStringLiteral(":postingSource"), postingSource);
-    selectQuery.exec();
+    if (!runQuery(selectQuery, "loadJobPostingsFromSource",
+                  QStringLiteral("source \"%1\"").arg(postingSource))) {
+        return jobPostingsFromSource;
+    }
 
     while (selectQuery.next()) {
         jobPostingsFromSource.append(jobPostingFromQueryRow(selectQuery));
@@ -195,11 +230,8 @@ bool JobPostingRepository::markJobPostingAsHandAdded(qint64 jobPostingId)
     updateQuery.bindValue(QStringLiteral(":scoutSource"), ScoutSourceText::You);
     updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
 
-    if (!updateQuery.exec()) {
-        lastErrorDescription = updateQuery.lastError().text();
-        return false;
-    }
-    return true;
+    return runQuery(updateQuery, "markJobPostingAsHandAdded",
+                    QStringLiteral("job posting %1").arg(jobPostingId));
 }
 
 bool JobPostingRepository::updateJobPostingDetails(const JobPosting &jobPosting)
@@ -223,11 +255,7 @@ bool JobPostingRepository::updateJobPostingDetails(const JobPosting &jobPosting)
     updateQuery.bindValue(QStringLiteral(":isRemoteRole"), jobPosting.isRemoteRole ? 1 : 0);
     updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPosting.jobPostingId);
 
-    if (!updateQuery.exec()) {
-        lastErrorDescription = updateQuery.lastError().text();
-        return false;
-    }
-    return true;
+    return runQuery(updateQuery, "updateJobPostingDetails", describeJobPosting(jobPosting));
 }
 
 bool JobPostingRepository::updatePostingGoneSince(qint64 jobPostingId,
@@ -235,38 +263,32 @@ bool JobPostingRepository::updatePostingGoneSince(qint64 jobPostingId,
 {
     QSqlQuery updateQuery(jobCrushDatabase.connection());
     updateQuery.prepare(QStringLiteral(
-        "UPDATE jobPosting SET postingGoneSinceTimestamp = :goneSince "
+        "UPDATE jobPosting SET postingGoneSinceTimestamp = :postingGoneSinceTimestamp "
         "WHERE jobPostingId = :jobPostingId"));
-    updateQuery.bindValue(QStringLiteral(":goneSince"),
-                          goneSinceTimestamp.isValid()
-                              ? goneSinceTimestamp.toString(Qt::ISODate)
-                              : QString::fromLatin1(""));
+    updateQuery.bindValue(QStringLiteral(":postingGoneSinceTimestamp"),
+                          timestampTextOrEmpty(goneSinceTimestamp));
     updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
 
-    if (!updateQuery.exec()) {
-        lastErrorDescription = updateQuery.lastError().text();
-        qWarning().noquote() << QStringLiteral(
-            "JobPostingRepository::updatePostingGoneSince: update failed for job posting "
-            "%1 — %2").arg(jobPostingId).arg(lastErrorDescription);
-        return false;
-    }
-    return true;
+    return runQuery(updateQuery, "updatePostingGoneSince",
+                    QStringLiteral("job posting %1").arg(jobPostingId));
 }
 
 QList<JobPosting> JobPostingRepository::loadHandAddedJobPostings()
 {
     QList<JobPosting> handAddedJobPostings;
 
-    // Ordered by when the USER added it, not by when the employer posted it.
-    // The whole point of this list is that the job you just added is the first
-    // thing on it, and an old posting you added a minute ago is still the one
-    // you are looking for.
+    // Ordered by when the USER added the job, not when the employer posted
+    // it. An old posting added a minute ago is still the one the user is
+    // looking for.
     QSqlQuery selectQuery(jobCrushDatabase.connection());
     selectQuery.prepare(QStringLiteral(
         "SELECT * FROM jobPosting WHERE scoutSource = :scoutSource "
         "ORDER BY discoveredTimestamp DESC, jobPostingId DESC"));
     selectQuery.bindValue(QStringLiteral(":scoutSource"), ScoutSourceText::You);
-    selectQuery.exec();
+    if (!runQuery(selectQuery, "loadHandAddedJobPostings",
+                  QStringLiteral("the hand-added job postings"))) {
+        return handAddedJobPostings;
+    }
 
     while (selectQuery.next()) {
         handAddedJobPostings.append(jobPostingFromQueryRow(selectQuery));
@@ -279,9 +301,13 @@ QList<JobPosting> JobPostingRepository::loadAllDiscoveredJobPostings()
     QList<JobPosting> discoveredJobPostings;
 
     QSqlQuery selectQuery(jobCrushDatabase.connection());
-    selectQuery.exec(QStringLiteral(
+    selectQuery.prepare(QStringLiteral(
         "SELECT * FROM jobPosting WHERE externalSourceId <> ''")
         + newestPostingFirstOrdering);
+    if (!runQuery(selectQuery, "loadAllDiscoveredJobPostings",
+                  QStringLiteral("every discovered job posting"))) {
+        return discoveredJobPostings;
+    }
 
     while (selectQuery.next()) {
         discoveredJobPostings.append(jobPostingFromQueryRow(selectQuery));
@@ -289,20 +315,25 @@ QList<JobPosting> JobPostingRepository::loadAllDiscoveredJobPostings()
     return discoveredJobPostings;
 }
 
-JobPosting JobPostingRepository::loadJobPostingById(qint64 jobPostingId, bool &found)
+JobPosting JobPostingRepository::loadJobPostingById(qint64 jobPostingId,
+                                                    bool &jobPostingWasFound)
 {
+    jobPostingWasFound = false;
+
     QSqlQuery selectQuery(jobCrushDatabase.connection());
     selectQuery.prepare(QStringLiteral(
         "SELECT * FROM jobPosting WHERE jobPostingId = :jobPostingId"));
     selectQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
-    selectQuery.exec();
-
-    if (selectQuery.next()) {
-        found = true;
-        return jobPostingFromQueryRow(selectQuery);
+    if (!runQuery(selectQuery, "loadJobPostingById",
+                  QStringLiteral("job posting %1").arg(jobPostingId))) {
+        return JobPosting{};
     }
-    found = false;
-    return JobPosting{};
+
+    if (!selectQuery.next()) {
+        return JobPosting{};
+    }
+    jobPostingWasFound = true;
+    return jobPostingFromQueryRow(selectQuery);
 }
 
 QString JobPostingRepository::lastErrorText() const
@@ -313,7 +344,8 @@ QString JobPostingRepository::lastErrorText() const
 bool JobPostingRepository::beginManyChanges()
 {
     if (!jobCrushDatabase.connection().transaction()) {
-        lastErrorDescription = jobCrushDatabase.connection().lastError().text();
+        recordFailure("beginManyChanges", QStringLiteral("starting a batch of changes"),
+                      jobCrushDatabase.connection().lastError().text());
         return false;
     }
     return true;
@@ -322,7 +354,8 @@ bool JobPostingRepository::beginManyChanges()
 bool JobPostingRepository::finishManyChanges()
 {
     if (!jobCrushDatabase.connection().commit()) {
-        lastErrorDescription = jobCrushDatabase.connection().lastError().text();
+        recordFailure("finishManyChanges", QStringLiteral("saving a batch of changes"),
+                      jobCrushDatabase.connection().lastError().text());
         return false;
     }
     return true;

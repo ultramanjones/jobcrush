@@ -86,6 +86,28 @@ private slots:
         QCOMPARE(result.matchScoreOutOfOneHundred, 0);
     }
 
+    // The first "java" here is inside "JavaScript". The second one is a whole
+    // word and must still be found.
+    void javaIsFoundAfterJavaScript()
+    {
+        JobSearchProfile profile;
+        profile.setSkillKeywords({ QStringLiteral("Java") });
+        const ProspectScorer scorer(profile);
+
+        const ProspectMatchResult result = scorer.scoreJobPosting(
+            postingWith(QStringLiteral("Web Developer"),
+                        QStringLiteral("We use JavaScript on the front and Java on the back.")));
+        QCOMPARE(result.matchScoreOutOfOneHundred, 35);
+    }
+
+    void matchStrengthCutoffs()
+    {
+        QCOMPARE(ProspectScorer::matchStrengthFor(60), ProspectMatchStrength::Strong);
+        QCOMPARE(ProspectScorer::matchStrengthFor(59), ProspectMatchStrength::Fair);
+        QCOMPARE(ProspectScorer::matchStrengthFor(30), ProspectMatchStrength::Fair);
+        QCOMPARE(ProspectScorer::matchStrengthFor(29), ProspectMatchStrength::Weak);
+    }
+
     void cPlusPlusMatchesEvenWithSymbols()
     {
         JobSearchProfile profile;

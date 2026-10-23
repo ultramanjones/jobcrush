@@ -1,34 +1,37 @@
 #include "DiscoveredJobListViewModel.h"
 
-#include "../logic/pipelines/JobPipelines.h"
-
 #include <QDate>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QLocale>
-
-#include "../logic/pipelines/TypedDateReader.h"
-
-#include "../logic/jobscout/ClearanceDetector.h"
 #include <QUrl>
 
-#include "../logic/jobscout/JobPostingTextCleanup.h"
 #include "../logic/jobscout/AtsBoardIdentity.h"
+#include "../logic/jobscout/ClearanceDetector.h"
+#include "../logic/jobscout/JobPostingTextCleanup.h"
 #include "../logic/jobscout/JobSourceDescriptor.h"
+#include "../logic/pipelines/JobPipelines.h"
+#include "../logic/pipelines/TypedDateReader.h"
 
 namespace {
 
-// The section header a row sits under. Recent days get words, because "Today"
-// is what a person actually thinks, and older ones get a date.
+// The reserved tab names. Neither can ever match a real source's storage
+// name, because every real one is a plain word with no hyphen.
+const QString manualAddTabName = QStringLiteral("jobcrush-manual-add");
+const QString outsideSearchAreaTabName = QStringLiteral("jobcrush-outside-area");
+
+// The section header a row sits under. The last two days get words, because
+// "Today" is easier to read than a date. Older days get a date.
 QString postedDayTextFor(const JobPosting &jobPosting)
 {
-    const QDateTime stampToShow = jobPosting.postedTimestamp.isValid()
+    const QDateTime timestampToShow = jobPosting.postedTimestamp.isValid()
         ? jobPosting.postedTimestamp
         : jobPosting.discoveredTimestamp;
-    if (!stampToShow.isValid()) {
+    if (!timestampToShow.isValid()) {
         return QStringLiteral("No date given");
     }
 
-    const QDate postedDate = stampToShow.date();
+    const QDate postedDate = timestampToShow.date();
     const QDate todayDate = QDate::currentDate();
 
     if (postedDate == todayDate) {
@@ -40,18 +43,10 @@ QString postedDayTextFor(const JobPosting &jobPosting)
     return QLocale().toString(postedDate, QStringLiteral("MMMM d"));
 }
 
-// The reserved tab name. Not a real source storage name, and it never can be
-// one: every real source name is a plain word, and this one carries a hyphen
-// and a prefix nothing else uses.
-const QString manualAddTabName = QStringLiteral("jobcrush-manual-add");
-
-// The reserved name for the "Outside your area" tab. Same rule as above.
-const QString outsideSearchAreaTabName = QStringLiteral("jobcrush-outside-area");
-
-// A posting's source is either one of the job SITES Job Crush sweeps, or one
-// of the employer BOARDS it reads. Two separate rosters, and asking only the
-// first one is how "ashby" reached the screen in lowercase, looking like a
-// bug in a row the user had just added.
+// The name to show for where a posting came from. A source is either a job
+// SITE that Job Crush sweeps, or an employer BOARD it reads. They are listed
+// in two different places, so both are asked. Asking only the first once put
+// "ashby" on screen in lowercase.
 QString sourceDisplayNameFor(const QString &sourceStorageName)
 {
     bool descriptorFound = false;
@@ -66,69 +61,69 @@ QString sourceDisplayNameFor(const QString &sourceStorageName)
         return boardDisplayName;
     }
 
-    // Unknown to both. Show what is stored rather than nothing — a blank
-    // where a source belongs looks like a fault.
+    // Unknown to both lists. Show the stored name, because a blank where the
+    // source belongs looks like a fault.
     return sourceStorageName;
+}
+
+QString matchStrengthTextFor(int matchScoreOutOfOneHundred)
+{
+    switch (ProspectScorer::matchStrengthFor(matchScoreOutOfOneHundred)) {
+    case ProspectMatchStrength::Strong: return QStringLiteral("strong");
+    case ProspectMatchStrength::Fair:   return QStringLiteral("fair");
+    case ProspectMatchStrength::Weak:   return QStringLiteral("weak");
+    }
+    return QStringLiteral("weak");
 }
 
 } // namespace
 
 DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
-                                                       JobPipelines &pipelines,
+                                                       JobPipelines &jobPipelines,
                                                        QObject *parent)
     : QAbstractListModel(parent)
     , discoveryJobScout(jobScout)
-    , board(pipelines)
+    , jobPipelines(jobPipelines)
 {
-    connect(&discoveryJobScout, &JobScout::discoveriesChanged, this, [this]() {
-        rebuildRowsFromJobScout();
-    });
-
-    connect(&discoveryJobScout, &JobScout::sweepProgressChanged, this, [this]() {
-        emit sweepProgressChanged();
-    });
-
+    connect(&discoveryJobScout, &JobScout::discoveriesChanged,
+            this, &DiscoveredJobListViewModel::rebuildRowsFromJobScout);
+    connect(&discoveryJobScout, &JobScout::sweepProgressChanged,
+            this, &DiscoveredJobListViewModel::sweepProgressChanged);
     connect(&discoveryJobScout, &JobScout::pastedTextFormChanged,
             this, &DiscoveredJobListViewModel::pastedTextFormChanged);
+    connect(&discoveryJobScout, &JobScout::leadStatusChanged,
+            this, &DiscoveredJobListViewModel::leadStatusChanged);
 
-    connect(&discoveryJobScout, &JobScout::leadStatusChanged, this, [this]() {
-        emit leadStatusChanged();
-    });
-
-    // The CRUSH button on a row asks the board whether this job is already on
-    // it. Removing that job over on Job Pipelines has to reach back here, or
-    // the row goes on saying "on your board" and the button stays dead.
-    connect(&board, &JobPipelines::boardChanged, this, [this]() {
-        ++boardChangeCounter;
-        emit boardChanged();
-    });
+    // A job can be put on the board, or taken off it, from this page or from
+    // Job Pipelines. Either way, every row's CRUSH button has to update.
+    connect(&jobPipelines, &JobPipelines::boardChanged,
+            this, &DiscoveredJobListViewModel::refreshIsOnTheBoardForEveryRow);
 
     rebuildRowsFromJobScout();
 }
 
 void DiscoveredJobListViewModel::rebuildRowsFromJobScout()
 {
-    // The "Outside your area" tab only exists while a location filter does.
-    // Clear the last place in Settings while it is showing and the tab
-    // disappears. Leaving it selected would show an empty list with no tab
-    // to explain it, so the page goes back to Top Prospects.
+    // The "Outside your area" tab exists only while the user has named a
+    // place. If they clear the last place in Settings while that tab is
+    // showing, the tab goes away, so the page goes back to Top Prospects
+    // instead of showing an empty list under no tab.
     if (storedActiveTabSourceName == outsideSearchAreaTabName
             && !discoveryJobScout.searchAreaIsNarrowed()) {
         storedActiveTabSourceName.clear();
         emit activeTabSourceNameChanged();
     }
 
-    // The lists are small and rebuilt only when something genuinely changed
-    // (a sweep finished, a tab switched, the profile was edited), so a full
-    // reset keeps this translation layer honest and simple.
+    // A full reset is simple and fast enough here. The rows are rebuilt only
+    // when a sweep finishes, the tab changes, a job is added, or the profile
+    // is edited.
     beginResetModel();
     if (storedActiveTabSourceName == manualAddTabName) {
-        // No search-area scope. These are the jobs the user asked for by
-        // name, and the location filter has no business hiding one.
+        // No search-area filter. The user asked for these jobs by name.
         displayedJobPostings = discoveryJobScout.handAddedJobPostings();
     } else if (storedActiveTabSourceName == outsideSearchAreaTabName) {
-        // Every held-back job from every site, ranked the same way as Top
-        // Prospects, so the best of them is still at the top.
+        // Every held-back job from every site, ranked like Top Prospects, so
+        // the best of them is still at the top.
         displayedJobPostings =
             discoveryJobScout.rankedTopProspects(SearchAreaScope::OutsideSearchArea);
     } else if (storedActiveTabSourceName.isEmpty()) {
@@ -143,10 +138,18 @@ void DiscoveredJobListViewModel::rebuildRowsFromJobScout()
     emit discoveredJobsChanged();
 }
 
+void DiscoveredJobListViewModel::refreshIsOnTheBoardForEveryRow()
+{
+    if (displayedJobPostings.isEmpty()) {
+        return;
+    }
+    emit dataChanged(index(0), index(displayedJobPostings.count() - 1), { IsOnTheBoardRole });
+}
+
 int DiscoveredJobListViewModel::rowCount(const QModelIndex &parentIndex) const
 {
     if (parentIndex.isValid()) {
-        return 0; // flat list, no children
+        return 0; // a flat list, so no row has children
     }
     return displayedJobPostings.count();
 }
@@ -159,6 +162,7 @@ QVariant DiscoveredJobListViewModel::data(const QModelIndex &modelIndex, int rol
 
     const ScoredJobPosting &scoredJobPosting = displayedJobPostings.at(modelIndex.row());
     const JobPosting &jobPosting = scoredJobPosting.jobPosting;
+    const int matchScore = scoredJobPosting.matchResult.matchScoreOutOfOneHundred;
 
     switch (role) {
     case PositionTitleRole:     return jobPosting.positionTitle;
@@ -167,6 +171,12 @@ QVariant DiscoveredJobListViewModel::data(const QModelIndex &modelIndex, int rol
     case SalaryTextRole:        return jobPosting.salaryText;
     case SummaryLineRole:       return oneLineSummaryFrom(jobPosting.fullDescriptionText);
     case SourceDisplayNameRole: return sourceDisplayNameFor(jobPosting.postingSource);
+    case PostedDayTextRole:     return postedDayTextFor(jobPosting);
+    case MatchScoreRole:        return matchScore;
+    case MatchReasonsTextRole:
+        return scoredJobPosting.matchResult.matchReasons.join(QStringLiteral(" · "));
+    case MatchStrengthRole:     return matchStrengthTextFor(matchScore);
+    case IsRemoteRoleRole:      return jobPosting.isRemoteRole;
     case PostingSourceDisplayNameRole:
         return jobPosting.postingSource.trimmed().isEmpty()
             ? QString()
@@ -175,19 +185,15 @@ QVariant DiscoveredJobListViewModel::data(const QModelIndex &modelIndex, int rol
     case IsManualAllTheWayRole: return jobPosting.isManualAllTheWay();
     case JobPostingIdRole:      return jobPosting.jobPostingId;
     case PostingSeemsGoneRole:  return jobPosting.postingGoneSinceTimestamp.isValid();
-    case AsksForClearanceRole:  return ClearanceDetector::asksForClearance(jobPosting);
     case PostingGoneTextRole:
         return jobPosting.postingGoneSinceTimestamp.isValid()
             ? QStringLiteral("Gone from the company's own board since %1. It may be "
                              "filled.")
                   .arg(QLocale().toString(jobPosting.postingGoneSinceTimestamp.date(),
-                                          QStringLiteral("d MMM")))
+                                          QStringLiteral("MMMM d")))
             : QString();
-    case PostedDayTextRole:     return postedDayTextFor(jobPosting);
-    case MatchScoreRole:        return scoredJobPosting.matchResult.matchScoreOutOfOneHundred;
-    case MatchReasonsTextRole:
-        return scoredJobPosting.matchResult.matchReasons.join(QStringLiteral(" · "));
-    case IsRemoteRoleRole:      return jobPosting.isRemoteRole;
+    case AsksForClearanceRole:  return ClearanceDetector::asksForClearance(jobPosting);
+    case IsOnTheBoardRole:      return jobPipelines.jobPostingIsOnTheBoard(jobPosting.jobPostingId);
     }
     return QVariant();
 }
@@ -195,24 +201,25 @@ QVariant DiscoveredJobListViewModel::data(const QModelIndex &modelIndex, int rol
 QHash<int, QByteArray> DiscoveredJobListViewModel::roleNames() const
 {
     return {
-        { PositionTitleRole,     QByteArrayLiteral("positionTitle") },
-        { CompanyNameRole,       QByteArrayLiteral("companyName") },
-        { LocationTextRole,      QByteArrayLiteral("locationText") },
-        { SalaryTextRole,        QByteArrayLiteral("salaryText") },
-        { SummaryLineRole,       QByteArrayLiteral("summaryLine") },
-        { SourceDisplayNameRole, QByteArrayLiteral("sourceDisplayName") },
-        { PostedDayTextRole,     QByteArrayLiteral("postedDayText") },
-        { MatchScoreRole,        QByteArrayLiteral("matchScore") },
-        { MatchReasonsTextRole,  QByteArrayLiteral("matchReasonsText") },
-        { IsRemoteRoleRole,      QByteArrayLiteral("isRemoteRole") },
-        { PostingSourceDisplayNameRole,
-                                 QByteArrayLiteral("postingSourceDisplayName") },
-        { WasAddedByHandRole,    QByteArrayLiteral("wasAddedByHand") },
-        { IsManualAllTheWayRole, QByteArrayLiteral("isManualAllTheWay") },
-        { JobPostingIdRole,      QByteArrayLiteral("jobPostingId") },
-        { PostingSeemsGoneRole,  QByteArrayLiteral("postingSeemsGone") },
-        { PostingGoneTextRole,   QByteArrayLiteral("postingGoneText") },
-        { AsksForClearanceRole,  QByteArrayLiteral("asksForClearance") },
+        { PositionTitleRole,            QByteArrayLiteral("positionTitle") },
+        { CompanyNameRole,              QByteArrayLiteral("companyName") },
+        { LocationTextRole,             QByteArrayLiteral("locationText") },
+        { SalaryTextRole,               QByteArrayLiteral("salaryText") },
+        { SummaryLineRole,              QByteArrayLiteral("summaryLine") },
+        { SourceDisplayNameRole,        QByteArrayLiteral("sourceDisplayName") },
+        { PostedDayTextRole,            QByteArrayLiteral("postedDayText") },
+        { MatchScoreRole,               QByteArrayLiteral("matchScore") },
+        { MatchReasonsTextRole,         QByteArrayLiteral("matchReasonsText") },
+        { MatchStrengthRole,            QByteArrayLiteral("matchStrength") },
+        { IsRemoteRoleRole,             QByteArrayLiteral("isRemoteRole") },
+        { PostingSourceDisplayNameRole, QByteArrayLiteral("postingSourceDisplayName") },
+        { WasAddedByHandRole,           QByteArrayLiteral("wasAddedByHand") },
+        { IsManualAllTheWayRole,        QByteArrayLiteral("isManualAllTheWay") },
+        { JobPostingIdRole,             QByteArrayLiteral("jobPostingId") },
+        { PostingSeemsGoneRole,         QByteArrayLiteral("postingSeemsGone") },
+        { PostingGoneTextRole,          QByteArrayLiteral("postingGoneText") },
+        { AsksForClearanceRole,         QByteArrayLiteral("asksForClearance") },
+        { IsOnTheBoardRole,             QByteArrayLiteral("isOnTheBoard") },
     };
 }
 
@@ -236,35 +243,39 @@ QString DiscoveredJobListViewModel::manualAddTabSourceName() const
     return manualAddTabName;
 }
 
+QString DiscoveredJobListViewModel::outsideSearchAreaTabSourceName() const
+{
+    return outsideSearchAreaTabName;
+}
+
 bool DiscoveredJobListViewModel::showingManualAdd() const
 {
     return storedActiveTabSourceName == manualAddTabName;
 }
 
-bool DiscoveredJobListViewModel::hasSomewhereToJumpTo() const
+bool DiscoveredJobListViewModel::showingOutsideSearchArea() const
 {
-    return discoveryJobScout.mostRecentlyHandAddedJobPostingId() != 0;
-}
-
-int DiscoveredJobListViewModel::rowOfMostRecentlyHandAddedJob() const
-{
-    const qint64 wantedJobPostingId =
-        discoveryJobScout.mostRecentlyHandAddedJobPostingId();
-    if (wantedJobPostingId == 0) {
-        return -1;
-    }
-    for (int rowIndex = 0; rowIndex < displayedJobPostings.count(); ++rowIndex) {
-        if (displayedJobPostings.at(rowIndex).jobPosting.jobPostingId
-                == wantedJobPostingId) {
-            return rowIndex;
-        }
-    }
-    return -1;
+    return storedActiveTabSourceName == outsideSearchAreaTabName;
 }
 
 int DiscoveredJobListViewModel::rowCountForProperty() const
 {
     return displayedJobPostings.count();
+}
+
+bool DiscoveredJobListViewModel::canRankProspects() const
+{
+    return discoveryJobScout.searchProfileCanRank();
+}
+
+int DiscoveredJobListViewModel::jobCountOutsideSearchArea() const
+{
+    return discoveryJobScout.jobPostingCountOutsideSearchArea();
+}
+
+bool DiscoveredJobListViewModel::searchAreaIsNarrowed() const
+{
+    return discoveryJobScout.searchAreaIsNarrowed();
 }
 
 bool DiscoveredJobListViewModel::sweepIsRunning() const
@@ -292,80 +303,6 @@ QString DiscoveredJobListViewModel::lastSweepNoticeText() const
     return discoveryJobScout.lastSweepNoticeText();
 }
 
-bool DiscoveredJobListViewModel::canRankProspects() const
-{
-    return discoveryJobScout.searchProfileCanRank();
-}
-
-int DiscoveredJobListViewModel::jobCountOutsideSearchArea() const
-{
-    return discoveryJobScout.jobPostingCountOutsideSearchArea();
-}
-
-bool DiscoveredJobListViewModel::searchAreaIsNarrowed() const
-{
-    return discoveryJobScout.searchAreaIsNarrowed();
-}
-
-bool DiscoveredJobListViewModel::showingOutsideSearchArea() const
-{
-    return storedActiveTabSourceName == outsideSearchAreaTabName;
-}
-
-QString DiscoveredJobListViewModel::outsideSearchAreaTabSourceName() const
-{
-    return outsideSearchAreaTabName;
-}
-
-void DiscoveredJobListViewModel::startSweep()
-{
-    discoveryJobScout.startSweep();
-}
-
-void DiscoveredJobListViewModel::openJobPostingInBrowser(int rowIndex) const
-{
-    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
-        return;
-    }
-    const QString sourceUrl = displayedJobPostings.at(rowIndex).jobPosting.sourceUrl;
-    if (sourceUrl.isEmpty()) {
-        return;
-    }
-    QDesktopServices::openUrl(QUrl(sourceUrl));
-}
-
-int DiscoveredJobListViewModel::boardRevision() const
-{
-    return boardChangeCounter;
-}
-
-QString DiscoveredJobListViewModel::crushJobPostingAt(int rowIndex)
-{
-    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
-        return QStringLiteral("That job isn't on this list any more — run a sweep and "
-                              "try again.");
-    }
-
-    QString reasonText;
-    board.crushJobPosting(displayedJobPostings.at(rowIndex).jobPosting.jobPostingId,
-                          reasonText);
-
-    // Either outcome is worth saying out loud. "Already on your board" is not
-    // a failure — it is the answer to the question the user just asked.
-    ++boardChangeCounter;
-    emit boardChanged();
-    return reasonText;
-}
-
-bool DiscoveredJobListViewModel::jobPostingAtIsOnTheBoard(int rowIndex) const
-{
-    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
-        return false;
-    }
-    return board.jobPostingIsOnTheBoard(
-        displayedJobPostings.at(rowIndex).jobPosting.jobPostingId);
-}
-
 bool DiscoveredJobListViewModel::leadIsBeingResolved() const
 {
     return discoveryJobScout.leadIsBeingResolved();
@@ -376,15 +313,9 @@ QString DiscoveredJobListViewModel::leadStatusText() const
     return discoveryJobScout.leadStatusText();
 }
 
-void DiscoveredJobListViewModel::addJobFromLink(const QString &pastedLink)
+bool DiscoveredJobListViewModel::hasSomewhereToJumpTo() const
 {
-    discoveryJobScout.addJobFromLink(pastedLink);
-}
-
-void DiscoveredJobListViewModel::addJobFromCompanyAndTitle(const QString &companyName,
-                                                           const QString &positionTitle)
-{
-    discoveryJobScout.addJobFromCompanyAndTitle(companyName, positionTitle);
+    return discoveryJobScout.mostRecentlyHandAddedJobPostingId() != 0;
 }
 
 bool DiscoveredJobListViewModel::pastedTextIsBeingRead() const
@@ -404,23 +335,101 @@ bool DiscoveredJobListViewModel::aBrainCanReadPastedText() const
 
 QVariantMap DiscoveredJobListViewModel::filledForm() const
 {
-    const JobPosting form = discoveryJobScout.filledFormFromPastedText();
-    const bool hasForm = !form.companyName.isEmpty() || !form.positionTitle.isEmpty()
-                         || !form.fullDescriptionText.isEmpty();
+    const JobPosting pastedTextForm = discoveryJobScout.filledFormFromPastedText();
+    const bool hasForm = !pastedTextForm.companyName.isEmpty()
+                         || !pastedTextForm.positionTitle.isEmpty()
+                         || !pastedTextForm.fullDescriptionText.isEmpty();
     QVariantMap formFields;
     formFields.insert(QStringLiteral("hasForm"), hasForm);
-    formFields.insert(QStringLiteral("companyName"), form.companyName);
-    formFields.insert(QStringLiteral("positionTitle"), form.positionTitle);
-    formFields.insert(QStringLiteral("sourceUrl"), form.sourceUrl);
-    formFields.insert(QStringLiteral("locationText"), form.locationText);
-    formFields.insert(QStringLiteral("salaryText"), form.salaryText);
+    formFields.insert(QStringLiteral("companyName"), pastedTextForm.companyName);
+    formFields.insert(QStringLiteral("positionTitle"), pastedTextForm.positionTitle);
+    formFields.insert(QStringLiteral("sourceUrl"), pastedTextForm.sourceUrl);
+    formFields.insert(QStringLiteral("locationText"), pastedTextForm.locationText);
+    formFields.insert(QStringLiteral("salaryText"), pastedTextForm.salaryText);
     formFields.insert(QStringLiteral("postedText"),
-                      form.postedTimestamp.isValid()
-                          ? TypedDateReader::editableDateTextFor(form.postedTimestamp.date())
+                      pastedTextForm.postedTimestamp.isValid()
+                          ? TypedDateReader::editableDateTextFor(
+                                pastedTextForm.postedTimestamp.date())
                           : QString());
-    formFields.insert(QStringLiteral("isRemoteRole"), form.isRemoteRole);
-    formFields.insert(QStringLiteral("descriptionText"), form.fullDescriptionText);
+    formFields.insert(QStringLiteral("isRemoteRole"), pastedTextForm.isRemoteRole);
+    formFields.insert(QStringLiteral("descriptionText"), pastedTextForm.fullDescriptionText);
     return formFields;
+}
+
+void DiscoveredJobListViewModel::startSweep()
+{
+    discoveryJobScout.startSweep();
+}
+
+void DiscoveredJobListViewModel::openJobPostingInBrowser(int rowIndex) const
+{
+    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
+        qWarning().noquote() << QStringLiteral(
+            "DiscoveredJobListViewModel::openJobPostingInBrowser: row %1 is not on "
+            "the list, which has %2 rows").arg(rowIndex).arg(displayedJobPostings.count());
+        return;
+    }
+    const JobPosting &jobPosting = displayedJobPostings.at(rowIndex).jobPosting;
+    if (jobPosting.sourceUrl.isEmpty()) {
+        return; // a hand-added job with no link has nothing to open
+    }
+
+    // Only web links are opened. The link came from a job board, not from
+    // the user, and a link like file:// or a program's own scheme could make
+    // the computer do something other than show a web page.
+    const QUrl postingUrl(jobPosting.sourceUrl);
+    const QString urlScheme = postingUrl.scheme().toLower();
+    if (urlScheme != QStringLiteral("https") && urlScheme != QStringLiteral("http")) {
+        qWarning().noquote() << QStringLiteral(
+            "DiscoveredJobListViewModel::openJobPostingInBrowser: refused to open "
+            "\"%1\" for job posting %2, because it is not a web link")
+                .arg(jobPosting.sourceUrl).arg(jobPosting.jobPostingId);
+        return;
+    }
+    QDesktopServices::openUrl(postingUrl);
+}
+
+QString DiscoveredJobListViewModel::crushJobPostingAt(int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
+        return QStringLiteral("That job isn't on this list any more. Run a sweep and "
+                              "try again.");
+    }
+
+    // The sentence comes back whether the crush worked or not. "Already on
+    // your board" is an answer for the user, not an error. When the crush
+    // works, the board sends boardChanged, and every row's button updates.
+    QString crushOutcomeText;
+    jobPipelines.crushJobPosting(displayedJobPostings.at(rowIndex).jobPosting.jobPostingId,
+                                 crushOutcomeText);
+    return crushOutcomeText;
+}
+
+int DiscoveredJobListViewModel::rowOfMostRecentlyHandAddedJob() const
+{
+    const qint64 wantedJobPostingId =
+        discoveryJobScout.mostRecentlyHandAddedJobPostingId();
+    if (wantedJobPostingId == 0) {
+        return -1;
+    }
+    for (int rowIndex = 0; rowIndex < displayedJobPostings.count(); ++rowIndex) {
+        if (displayedJobPostings.at(rowIndex).jobPosting.jobPostingId
+                == wantedJobPostingId) {
+            return rowIndex;
+        }
+    }
+    return -1;
+}
+
+void DiscoveredJobListViewModel::addJobFromLink(const QString &pastedLink)
+{
+    discoveryJobScout.addJobFromLink(pastedLink);
+}
+
+void DiscoveredJobListViewModel::addJobFromCompanyAndTitle(const QString &companyName,
+                                                           const QString &positionTitle)
+{
+    discoveryJobScout.addJobFromCompanyAndTitle(companyName, positionTitle);
 }
 
 void DiscoveredJobListViewModel::readPastedText(const QString &pastedText)
@@ -441,17 +450,22 @@ void DiscoveredJobListViewModel::addJobFromFilledForm(const QString &companyName
                                                       const QString &postedText,
                                                       bool isRemoteRole)
 {
-    JobPosting formFields = discoveryJobScout.filledFormFromPastedText();
-    formFields.companyName = companyName;
-    formFields.positionTitle = positionTitle;
-    formFields.sourceUrl = sourceUrl;
-    formFields.locationText = locationText;
-    formFields.salaryText = salaryText;
-    formFields.isRemoteRole = isRemoteRole;
+    // Start from what Moonlight filled in, so the description it found is
+    // kept, then apply the boxes as the user left them.
+    JobPosting jobPostingFromForm = discoveryJobScout.filledFormFromPastedText();
+    jobPostingFromForm.companyName = companyName;
+    jobPostingFromForm.positionTitle = positionTitle;
+    jobPostingFromForm.sourceUrl = sourceUrl;
+    jobPostingFromForm.locationText = locationText;
+    jobPostingFromForm.salaryText = salaryText;
+    jobPostingFromForm.isRemoteRole = isRemoteRole;
+
+    // A typed date is stored at noon, so a time zone change cannot move it
+    // to the day before or after.
     QDate postedDate;
-    formFields.postedTimestamp =
+    jobPostingFromForm.postedTimestamp =
         TypedDateReader::readTypedDate(postedText, QDate::currentDate(), QLocale(), postedDate)
             ? QDateTime(postedDate, QTime(12, 0))
             : QDateTime();
-    discoveryJobScout.addJobFromFilledForm(formFields);
+    discoveryJobScout.addJobFromFilledForm(jobPostingFromForm);
 }

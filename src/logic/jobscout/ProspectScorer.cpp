@@ -7,9 +7,9 @@
 
 namespace {
 
-// Words too common to mean anything when they appear in a job title. Matching
-// "Senior" against "Senior Accountant" would be a false signal, and false
-// signals in a ranking are worse than no ranking at all.
+// Words that appear in so many job titles that matching on them says nothing.
+// Without this list, "Senior" in the user's target title would match "Senior
+// Accountant", and that job would rank as a partial title match.
 const QStringList meaninglessTitleWords = {
     QStringLiteral("senior"), QStringLiteral("junior"), QStringLiteral("lead"),
     QStringLiteral("staff"),  QStringLiteral("principal"), QStringLiteral("i"),
@@ -18,10 +18,10 @@ const QStringList meaninglessTitleWords = {
     QStringLiteral("mid"),    QStringLiteral("level"),  QStringLiteral("remote"),
 };
 
-// The role nouns that appear in half the job titles ever written. They are
-// not meaningless — "Developer" genuinely separates a job from "Nurse" — but a
-// target title that matched ONLY on one of these has told us nothing about
-// whether the job fits. "JavaScript Developer" is not a hit for "Qt Developer".
+// Common role words. Unlike the words above, these do mean something:
+// "Developer" is a different job from "Nurse". But a title that matches a
+// target title ONLY on one of these words is a weak match. "JavaScript
+// Developer" is not a good match for "Qt Developer".
 const QStringList genericRoleWords = {
     QStringLiteral("developer"),   QStringLiteral("engineer"),
     QStringLiteral("programmer"),  QStringLiteral("manager"),
@@ -32,7 +32,9 @@ const QStringList genericRoleWords = {
     QStringLiteral("software"),
 };
 
-// Splits a phrase into the words worth matching on.
+// Splits a phrase into the words worth matching on: lowercase, longer than
+// one letter, and not in meaninglessTitleWords. Plus and hash signs count as
+// part of a word, so "C++" and "C#" stay whole.
 QStringList significantWordsOf(const QString &phrase)
 {
     static const QRegularExpression nonWordCharacterPattern(QStringLiteral("[^a-z0-9+#]+"));
@@ -46,48 +48,81 @@ QStringList significantWordsOf(const QString &phrase)
     return significantWords;
 }
 
-// True when the text contains the term as a WHOLE word. Substring matching
-// would score "Java" against "JavaScript" — a mistake that would quietly
-// poison every ranking it touched.
+// True when the text contains the term as a WHOLE word, anywhere in the text.
+// Both strings must already be lowercase.
+//
+// How it works:
+//  1. Find the next place the term appears, starting from the left.
+//  2. Check the character just before it. It must be the start of the text,
+//     or a character that is not a letter or a number.
+//  3. Check the character just after it the same way. A term that ends in a
+//     symbol, like "c++" or "c#", skips this check, because the symbol is
+//     already the end of the word.
+//  4. If both checks pass, the term is there as a whole word. If not, search
+//     again from one character further on.
+//
+// Checking every place the term appears matters. In "javascript and java",
+// the first "java" is part of "javascript" and fails, but the second one is
+// a whole word and must count.
 bool textContainsWholeTerm(const QString &loweredText, const QString &loweredTerm)
 {
-    const int termPosition = loweredText.indexOf(loweredTerm);
-    if (termPosition < 0) {
+    if (loweredTerm.isEmpty()) {
         return false;
     }
 
-    // A term made of symbols ("c++", "c#") has no word boundary to check on
-    // its right-hand side, so finding it at all is the answer.
     const QChar lastTermCharacter = loweredTerm.at(loweredTerm.length() - 1);
     const bool termEndsInSymbol = !lastTermCharacter.isLetterOrNumber();
 
-    const int characterBefore = termPosition - 1;
-    const int characterAfter = termPosition + loweredTerm.length();
+    int searchFromPosition = 0;
+    while (true) {
+        const int termPosition = loweredText.indexOf(loweredTerm, searchFromPosition);
+        if (termPosition < 0) {
+            return false;
+        }
 
-    const bool boundaryBefore = characterBefore < 0
-        || !loweredText.at(characterBefore).isLetterOrNumber();
-    const bool boundaryAfter = termEndsInSymbol
-        || characterAfter >= loweredText.length()
-        || !loweredText.at(characterAfter).isLetterOrNumber();
+        const int positionBefore = termPosition - 1;
+        const int positionAfter = termPosition + loweredTerm.length();
 
-    return boundaryBefore && boundaryAfter;
+        const bool wordStartsHere = positionBefore < 0
+            || !loweredText.at(positionBefore).isLetterOrNumber();
+        const bool wordEndsHere = termEndsInSymbol
+            || positionAfter >= loweredText.length()
+            || !loweredText.at(positionAfter).isLetterOrNumber();
+
+        if (wordStartsHere && wordEndsHere) {
+            return true;
+        }
+        searchFromPosition = termPosition + 1;
+    }
 }
 
 } // namespace
 
 ProspectScorer::ProspectScorer(const JobSearchProfile &searchProfile)
-    : profile(searchProfile)
+    : searchProfile(searchProfile)
 {
+}
+
+ProspectMatchStrength ProspectScorer::matchStrengthFor(int matchScoreOutOfOneHundred)
+{
+    if (matchScoreOutOfOneHundred >= strongMatchSmallestScore) {
+        return ProspectMatchStrength::Strong;
+    }
+    if (matchScoreOutOfOneHundred >= fairMatchSmallestScore) {
+        return ProspectMatchStrength::Fair;
+    }
+    return ProspectMatchStrength::Weak;
 }
 
 int ProspectScorer::scoreTitleMatch(const QString &loweredPositionTitle,
                                     QStringList &matchReasons) const
 {
-    const QStringList targetJobTitles = profile.targetJobTitles();
+    const QStringList targetJobTitles = searchProfile.targetJobTitles();
     if (targetJobTitles.isEmpty()) {
         return 0;
     }
 
+    // Each target title is scored on its own, and the best one counts.
     int bestTitleScore = 0;
     QString bestMatchingTitle;
 
@@ -100,11 +135,12 @@ int ProspectScorer::scoreTitleMatch(const QString &loweredPositionTitle,
         int thisTitleScore = 0;
 
         if (loweredPositionTitle.contains(loweredTargetTitle)) {
-            // The whole phrase, intact: the strongest thing a title can say.
+            // The posting's title holds the whole target title: full points.
             thisTitleScore = titleMatchMaximumPoints;
         } else {
-            // Otherwise, how much of the target title survived? "C++ Engineer"
-            // against "Software Engineer, C++" should still score well.
+            // Otherwise, count how many of the target title's words are in
+            // the posting's title. "C++ Engineer" against "Software Engineer,
+            // C++" should still score well.
             const QStringList targetWords = significantWordsOf(loweredTargetTitle);
             if (!targetWords.isEmpty()) {
                 int matchedWordCount = 0;
@@ -119,16 +155,14 @@ int ProspectScorer::scoreTitleMatch(const QString &loweredPositionTitle,
                     }
                 }
 
-                // Proportional, and capped just under a full-phrase match so a
-                // partial hit never ties an exact one.
-                thisTitleScore = (titleMatchMaximumPoints - 5) * matchedWordCount
-                                 / targetWords.count();
+                // Points in proportion to the words matched, out of a maximum
+                // a little below a full-phrase match.
+                thisTitleScore = (titleMatchMaximumPoints - partialTitleMatchShortfall)
+                                 * matchedWordCount / targetWords.count();
 
-                // Matched on nothing but the generic role noun? That is the
-                // difference between "Qt Developer" and "JavaScript
-                // Developer", and it deserves a token score, not most of one.
+                // Matched only on a common role word like "Developer".
                 if (matchedDistinctiveWordCount == 0) {
-                    thisTitleScore /= 4;
+                    thisTitleScore /= genericWordOnlyTitleDivisor;
                 }
             }
         }
@@ -142,9 +176,9 @@ int ProspectScorer::scoreTitleMatch(const QString &loweredPositionTitle,
     if (bestTitleScore >= titleMatchMaximumPoints) {
         matchReasons.append(QStringLiteral("Title is a direct match for %1")
                                 .arg(bestMatchingTitle));
-    } else if (bestTitleScore >= 8) {
-        // Below this the overlap is too thin to be worth claiming — a reason
-        // the user would disagree with costs more trust than it earns.
+    } else if (bestTitleScore >= smallestTitleScoreWorthAReason) {
+        // A weaker match gets no reason on the row, because the user would
+        // read it and disagree.
         matchReasons.append(QStringLiteral("Title overlaps %1").arg(bestMatchingTitle));
     }
     return bestTitleScore;
@@ -153,7 +187,7 @@ int ProspectScorer::scoreTitleMatch(const QString &loweredPositionTitle,
 int ProspectScorer::scoreSkillMatch(const QString &loweredSearchableText,
                                     QStringList &matchReasons) const
 {
-    const QStringList skillKeywords = profile.skillKeywords();
+    const QStringList skillKeywords = searchProfile.skillKeywords();
     if (skillKeywords.isEmpty()) {
         return 0;
     }
@@ -164,9 +198,9 @@ int ProspectScorer::scoreSkillMatch(const QString &loweredSearchableText,
         if (loweredSkill.isEmpty()) {
             continue;
         }
-        // Each skill counts ONCE no matter how often the posting repeats it.
-        // Otherwise a description that says "Qt" nine times would outrank a
-        // job that genuinely wants everything the user can do.
+        // Each skill counts once, however often the posting repeats it.
+        // Otherwise a posting that says "Qt" nine times would outrank one
+        // that asks for every skill the user has.
         if (textContainsWholeTerm(loweredSearchableText, loweredSkill)) {
             matchedSkills.append(skillKeyword);
         }
@@ -187,42 +221,36 @@ int ProspectScorer::scoreSkillMatch(const QString &loweredSearchableText,
 int ProspectScorer::scoreRemoteFit(const JobPosting &jobPosting,
                                    QStringList &matchReasons) const
 {
-    if (!profile.remoteRolesOnly()) {
-        if (jobPosting.isRemoteRole) {
-            matchReasons.append(QStringLiteral("Remote"));
-            return remoteFitMaximumPoints;
-        }
-        // Remote is not required, so an on-site job is not penalized —
-        // it simply earns nothing here.
+    // An on-site job earns nothing here, but loses nothing either. The
+    // penalty for "remote only" is applied once, in scoreJobPosting.
+    if (!jobPosting.isRemoteRole) {
         return 0;
     }
-
-    if (jobPosting.isRemoteRole) {
-        matchReasons.append(QStringLiteral("Remote, which is what you asked for"));
-        return remoteFitMaximumPoints;
-    }
-    return 0;
+    matchReasons.append(searchProfile.remoteRolesOnly()
+                            ? QStringLiteral("Remote, which is what you asked for")
+                            : QStringLiteral("Remote"));
+    return remoteFitMaximumPoints;
 }
 
 QString ProspectScorer::matchedWorkLocationFor(const JobPosting &jobPosting) const
 {
-    const QStringList preferredWorkLocations = profile.preferredWorkLocations();
+    const QStringList preferredWorkLocations = searchProfile.preferredWorkLocations();
     if (preferredWorkLocations.isEmpty() || jobPosting.locationText.isEmpty()) {
         return QString();
     }
 
     const QString loweredLocationText = jobPosting.locationText.toLower();
 
-    // Any one of the places the user named is a hit — they are alternatives,
-    // not requirements. Matching is loose on purpose: boards write locations
-    // every possible way ("Pittsburgh, PA", "Pittsburgh PA, USA", "Greater
-    // Pittsburgh Area"), and a strict comparison would reject far more real
-    // matches than it caught. Since this answer now HIDES jobs rather than
-    // just ranking them, erring loose is the safer mistake by a mile.
+    // Matching any one of the user's places is enough. The match is loose on
+    // purpose, because boards write the same place many ways: "Pittsburgh,
+    // PA", "Pittsburgh PA, USA", "Greater Pittsburgh Area". This answer
+    // decides whether a job is hidden, so a loose match that shows a few
+    // extra jobs is better than a strict one that hides real ones.
     for (const QString &preferredLocation : preferredWorkLocations) {
         for (const QString &locationWord : significantWordsOf(preferredLocation)) {
-            // Short tokens are state codes ("PA", "TX"). Those must match as
-            // whole words or "PA" starts matching "Palo Alto" and "Panama".
+            // Words of three letters or fewer are usually state codes ("PA",
+            // "TX"). They must match as whole words, or "PA" would match
+            // "Palo Alto" and "Panama".
             const bool wordMatched = locationWord.length() <= 3
                 ? textContainsWholeTerm(loweredLocationText, locationWord)
                 : loweredLocationText.contains(locationWord);
@@ -236,26 +264,23 @@ QString ProspectScorer::matchedWorkLocationFor(const JobPosting &jobPosting) con
 
 bool ProspectScorer::jobPostingIsInsideSearchArea(const JobPosting &jobPosting) const
 {
-    // Nobody named a place, so nothing is being filtered.
-    if (profile.preferredWorkLocations().isEmpty()) {
+    // The user named no places, so nothing is filtered.
+    if (searchProfile.preferredWorkLocations().isEmpty()) {
         return true;
     }
 
-    // A remote job is not somewhere else — it is nowhere, which is inside
-    // everybody's search area. Filtering these out because the posting also
-    // happens to name a head office in Berlin would throw away exactly the
-    // jobs a location-constrained person most wants.
+    // A remote job can be done from anywhere, so it is inside every search
+    // area. This holds even when the posting also names a head office far
+    // away. People who can only work in one place want these jobs most.
     if (jobPosting.isRemoteRole) {
         return true;
     }
 
-    // A posting that names no place at all cannot be somewhere else. This
-    // filter is meant to hold back jobs in the wrong CITY, and holding one
-    // back for saying nothing turns silence into a rejection.
+    // A posting that names no location is shown. The filter is for jobs in
+    // the wrong city, and this posting has not said it is in one.
     //
-    // It matters most for a job the user typed in by hand: they gave a
-    // company and a title and no location, and having it vanish from the
-    // page they just added it to would look like the app losing their work.
+    // This matters most for a job the user typed in by hand with a company
+    // and a title but no location. Hiding it would look like the app lost it.
     if (jobPosting.locationText.trimmed().isEmpty()) {
         return true;
     }
@@ -277,13 +302,13 @@ int ProspectScorer::scoreLocationFit(const JobPosting &jobPosting,
 int ProspectScorer::scoreSalaryFit(const QString &salaryText,
                                    QStringList &matchReasons) const
 {
-    const int minimumSalary = profile.minimumAcceptableSalary();
+    const int minimumSalary = searchProfile.minimumAcceptableSalary();
     if (minimumSalary <= 0 || salaryText.isEmpty()) {
-        return 0; // no floor set, or the posting is silent — no verdict either way
+        return 0; // no floor set, or the posting gives no pay
     }
 
-    // Salary text is free-form ("$120,000 - $150,000 USD"). Pull out the
-    // numbers and take the largest, which is the top of an advertised range.
+    // Salary text is free-form, like "$120,000 - $150,000 USD". Pull out
+    // every number and keep the largest, which is the top of the range.
     static const QRegularExpression salaryNumberPattern(QStringLiteral("[0-9][0-9,\\.]*"));
     QRegularExpressionMatchIterator numberIterator =
         salaryNumberPattern.globalMatch(salaryText);
@@ -292,8 +317,9 @@ int ProspectScorer::scoreSalaryFit(const QString &salaryText,
     while (numberIterator.hasNext()) {
         QString figureText = numberIterator.next().captured();
         figureText.remove(QLatin1Char(','));
-        // Drop a decimal tail: "150.000" in some locales, "150.5k" in others —
-        // neither is worth guessing at.
+        // Drop anything after a period. "150.000" is 150 thousand in some
+        // countries, and "150.5k" is 150.5 thousand. Neither can be read
+        // safely, and the whole-number part is close enough.
         figureText = figureText.section(QLatin1Char('.'), 0, 0);
         const qint64 figure = figureText.toLongLong();
         if (figure > largestAdvertisedFigure) {
@@ -301,14 +327,14 @@ int ProspectScorer::scoreSalaryFit(const QString &salaryText,
         }
     }
 
-    // Some boards quote in thousands ("120k" arrives as 120). A figure that
-    // small cannot be a yearly salary, so read it as thousands.
-    if (largestAdvertisedFigure > 0 && largestAdvertisedFigure < 1000) {
+    // Some boards give pay in thousands, so "120k" arrives here as 120.
+    if (largestAdvertisedFigure > 0
+            && largestAdvertisedFigure < smallestFigureReadAsWholeDollars) {
         largestAdvertisedFigure *= 1000;
     }
 
     if (largestAdvertisedFigure >= minimumSalary) {
-        matchReasons.append(QStringLiteral("Advertised pay clears your floor"));
+        matchReasons.append(QStringLiteral("Advertised pay meets your minimum"));
         return salaryFitMaximumPoints;
     }
     return 0;
@@ -324,23 +350,23 @@ int ProspectScorer::scoreFreshness(const JobPosting &jobPosting,
     const qint64 daysSincePosted =
         jobPosting.postedTimestamp.daysTo(QDateTime::currentDateTime());
 
-    // A posting's odds fall off fast; this curve says so without pretending
-    // to more precision than anyone has.
-    if (daysSincePosted <= 1) {
-        matchReasons.append(QStringLiteral("Posted today"));
+    // Older postings are more likely to be filled already, so newer ones
+    // score higher.
+    if (daysSincePosted <= postedWithinOneDay) {
+        matchReasons.append(QStringLiteral("Posted in the last day"));
         return freshnessMaximumPoints;
     }
-    if (daysSincePosted <= 3) {
+    if (daysSincePosted <= postedWithinThreeDays) {
         matchReasons.append(QStringLiteral("Posted in the last few days"));
         return freshnessMaximumPoints - 1;
     }
-    if (daysSincePosted <= 7) {
+    if (daysSincePosted <= postedWithinOneWeek) {
         return freshnessMaximumPoints - 2;
     }
-    if (daysSincePosted <= 14) {
+    if (daysSincePosted <= postedWithinTwoWeeks) {
         return freshnessMaximumPoints - 3;
     }
-    if (daysSincePosted <= 30) {
+    if (daysSincePosted <= postedWithinOneMonth) {
         return freshnessMaximumPoints - 4;
     }
     return 0;
@@ -352,8 +378,8 @@ ProspectMatchResult ProspectScorer::scoreJobPosting(const JobPosting &jobPosting
 
     const QString loweredPositionTitle = jobPosting.positionTitle.toLower();
 
-    // Skills are hunted in the title AND the description: a title says what
-    // the job is called, the description says what it actually needs.
+    // Skills are looked for in the title AND the description. The title says
+    // what the job is called. The description says what it needs.
     const QString loweredSearchableText =
         loweredPositionTitle + QStringLiteral("\n") + jobPosting.fullDescriptionText.toLower();
 
@@ -365,12 +391,11 @@ ProspectMatchResult ProspectScorer::scoreJobPosting(const JobPosting &jobPosting
     totalScore += scoreSalaryFit(jobPosting.salaryText, matchResult.matchReasons);
     totalScore += scoreFreshness(jobPosting, matchResult.matchReasons);
 
-    // "Remote only" is the user telling Job Crush something, not hinting at
-    // it. A job that isn't remote sinks hard — but it is NOT hidden, because
-    // boards mislabel this constantly and quietly burying a real match would
-    // be the app overruling the person. It sinks; they still get to look.
-    if (profile.remoteRolesOnly() && !jobPosting.isRemoteRole) {
-        totalScore /= 2;
+    // The user asked for remote jobs only, and this one is not listed as
+    // remote. It drops far down the list but is still shown, because boards
+    // often label remote jobs wrong. The user decides, not the app.
+    if (searchProfile.remoteRolesOnly() && !jobPosting.isRemoteRole) {
+        totalScore /= notRemoteScoreDivisor;
         matchResult.matchReasons.append(QStringLiteral("Not listed as remote"));
     }
 
