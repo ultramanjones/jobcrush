@@ -343,7 +343,7 @@ Rectangle {
     }
 
     // ------------------------------------------------------------------
-    // Tabs: Top Prospects, Manual Add, Outside your area, then one per site
+    // Tabs: Top Prospects, Manual Add, one per site, then Outside your area
     // ------------------------------------------------------------------
     Row {
         id: discoveryTabRow
@@ -370,21 +370,6 @@ Rectangle {
             onTabClicked: discoveriesPage.selectTab(discoveriesPage.manualAddTabSourceName)
         }
 
-        // The jobs the location filter holds back, from every site. Shown
-        // only while the user has named a place. With no place named, nothing
-        // is held back, so the tab would always be empty.
-        DiscoveryTabButton {
-            visible: discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
-            labelText: "Outside your area ("
-                       + discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea
-                       + ")"
-            isActiveTab: discoveriesPage.showingOutsideSearchArea
-            idleBorderColor: JobCrushTheme.noticeTextColor
-            idleLabelColor: JobCrushTheme.noticeTextColor
-            onTabClicked: discoveriesPage.selectTab(
-                discoveriesPage.outsideSearchAreaTabSourceName)
-        }
-
         Repeater {
             model: discoveriesPage.jobSourceRosterViewModel.enabledJobSourceTabs
 
@@ -398,6 +383,23 @@ Rectangle {
                 activeBorderColor: JobCrushTheme.accentColor
                 onTabClicked: discoveriesPage.selectTab(jobSourceTab.modelData.storageName)
             }
+        }
+
+        // The jobs the location filter holds back, from every site. It is
+        // last in the row because it looks different from the other tabs:
+        // gold, because it holds jobs the user does not see anywhere else.
+        // The tab shows only while the user has named a place. With no place
+        // named, no job is held back, so the tab would always be empty.
+        DiscoveryTabButton {
+            visible: discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
+            labelText: "Outside your area ("
+                       + discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea
+                       + ")"
+            isActiveTab: discoveriesPage.showingOutsideSearchArea
+            idleBorderColor: JobCrushTheme.noticeTextColor
+            idleLabelColor: JobCrushTheme.noticeTextColor
+            onTabClicked: discoveriesPage.selectTab(
+                discoveriesPage.outsideSearchAreaTabSourceName)
         }
     }
 
