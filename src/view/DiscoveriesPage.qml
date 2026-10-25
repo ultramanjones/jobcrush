@@ -102,10 +102,18 @@ Rectangle {
         }
     }
 
-    // Whether the "add one job by hand" panel is open. Closed at first,
-    // because most jobs come from a sweep, and an open panel pushes the rows
-    // down.
+    // Whether the form for adding one job by hand is open. The form opens
+    // when the user goes to the Manual Add tab, and it closes when the user
+    // goes to any other tab. The Close button hides it while the user stays
+    // on Manual Add. On other tabs the form would only push the rows down.
     property bool addOneJobPanelIsOpen: false
+
+    // True when the Manual Add tab is the one showing.
+    readonly property bool manualAddTabIsShowing:
+        activeTabSourceName === manualAddTabSourceName
+
+    onManualAddTabIsShowingChanged: addOneJobPanelIsOpen = manualAddTabIsShowing
+    Component.onCompleted: addOneJobPanelIsOpen = manualAddTabIsShowing
 
     // When the user unticks the site whose tab is showing, go back to Top
     // Prospects instead of leaving a tab that no longer exists selected.
@@ -136,7 +144,10 @@ Rectangle {
 
         property string labelText
         property bool isActiveTab: false
-        property color activeBorderColor: JobCrushTheme.callToActionColor
+        // Every selected tab has the accent color (cyan in the Classic
+        // theme), the same color as a selected item on other pages. Pink is
+        // kept for buttons that do something, like CRUSH and Scout now.
+        property color activeBorderColor: JobCrushTheme.accentColor
         property color idleBorderColor: JobCrushTheme.hairlineBorderColor
         property color idleLabelColor: JobCrushTheme.secondaryTextColor
 
@@ -256,6 +267,10 @@ Rectangle {
 
         // Add one job by hand. It sits next to Scout now, because these are
         // the two ways jobs get onto this page.
+        //
+        // When the form is closed, the button says "Add a job". Pressing it
+        // goes to the Manual Add tab, and the form opens there. When the form
+        // is open, the button says "Close", and pressing it hides the form.
         Rectangle {
             id: addOneJobButton
 
@@ -276,7 +291,7 @@ Rectangle {
             Text {
                 id: addOneJobButtonLabel
                 anchors.centerIn: parent
-                text: discoveriesPage.addOneJobPanelIsOpen ? "Done adding" : "Add a job"
+                text: discoveriesPage.addOneJobPanelIsOpen ? "Close" : "Add a job"
                 color: discoveriesPage.addOneJobPanelIsOpen
                     ? JobCrushTheme.primaryTextColor : JobCrushTheme.secondaryTextColor
                 font.pixelSize: JobCrushTheme.bodyFontSize
@@ -288,8 +303,17 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: discoveriesPage.addOneJobPanelIsOpen
-                    = !discoveriesPage.addOneJobPanelIsOpen
+                onClicked: {
+                    if (discoveriesPage.addOneJobPanelIsOpen) {
+                        discoveriesPage.addOneJobPanelIsOpen = false
+                    } else if (!discoveriesPage.manualAddTabIsShowing) {
+                        // Changing the tab opens the form. See
+                        // onManualAddTabIsShowingChanged above.
+                        discoveriesPage.selectTab(discoveriesPage.manualAddTabSourceName)
+                    } else {
+                        discoveriesPage.addOneJobPanelIsOpen = true
+                    }
+                }
             }
         }
 
@@ -380,7 +404,6 @@ Rectangle {
 
                 labelText: modelData.displayName
                 isActiveTab: discoveriesPage.activeTabSourceName === modelData.storageName
-                activeBorderColor: JobCrushTheme.accentColor
                 onTabClicked: discoveriesPage.selectTab(jobSourceTab.modelData.storageName)
             }
         }

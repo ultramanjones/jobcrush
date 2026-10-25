@@ -100,7 +100,10 @@ Rectangle {
         }
     }
 
-    // The panel's buttons. Grayed out, and clicks do nothing, while canBePressed is false.
+    // The panel's buttons. Grayed out, and clicks do nothing, while
+    // canBePressed is false. Each label starts with an arrow that points
+    // left, at the box the button works on. A button uses only the box on
+    // its own row.
     component GoButton: Rectangle {
         id: goButton
 
@@ -186,7 +189,7 @@ Rectangle {
                 id: findByLinkButton
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                labelText: addOneJobPanel.isBusy ? "looking…" : "Find it"
+                labelText: addOneJobPanel.isBusy ? "looking…" : "← Add this job"
                 canBePressed: !addOneJobPanel.isBusy && linkBox.typedText.trim().length > 0
                 onPressed: {
                     addOneJobPanel.discoveredJobListViewModel.addJobFromLink(linkBox.typedText)
@@ -240,7 +243,7 @@ Rectangle {
                 id: findByNameButton
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                labelText: addOneJobPanel.isBusy ? "looking…" : "Go find it"
+                labelText: addOneJobPanel.isBusy ? "looking…" : "← Add this job"
                 canBePressed: !addOneJobPanel.isBusy
                               && companyBox.typedText.trim().length > 0
                               && titleBox.typedText.trim().length > 0
@@ -331,7 +334,7 @@ Rectangle {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 labelText: addOneJobPanel.discoveredJobListViewModel.pastedTextIsBeingRead
-                    ? "reading…" : "Have Moonlight fill it in"
+                    ? "reading…" : "← Have Moonlight fill it in"
                 canBePressed: addOneJobPanel.discoveredJobListViewModel.aBrainCanReadPastedText
                               && !addOneJobPanel.discoveredJobListViewModel.pastedTextIsBeingRead
                               && pastedTextInput.text.trim().length > 0
