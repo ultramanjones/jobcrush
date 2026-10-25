@@ -13,8 +13,10 @@
 // Design notes:
 //  - Timestamps are stored as ISO 8601 text and the pipeline stage as plain
 //    words, so a human opening the database file can read their own data.
-//  - The schema is created on first open. Future schema migrations will live
-//    here too, versioned by the schemaVersion table.
+//  - The schema is checked on every open. Missing tables are made, and
+//    columns added since are put into older files in place, so no rows are
+//    lost. The schemaVersion table holds 1 and is not yet used to choose
+//    what to change.
 class JobCrushDatabase {
 public:
     JobCrushDatabase() = default;
@@ -25,19 +27,35 @@ public:
     JobCrushDatabase(const JobCrushDatabase &) = delete;
     JobCrushDatabase &operator=(const JobCrushDatabase &) = delete;
 
-    // Opens (creating if necessary) the database file and ensures the schema
-    // exists. Returns false, with the reason in lastErrorText(), on failure.
+    // Opens the database file, making it if needed, and makes any missing
+    // part of the schema. Returns false, with the reason in lastErrorText(),
+    // on failure.
     bool openAtFilePath(const QString &databaseFilePath);
+
+    // Opens a second connection to a database file that openAtFilePath has
+    // already set up, under its own connection name. Used by the background
+    // thread that saves and ranks jobs: Qt lets a connection be used only on
+    // the thread that opened it, so that thread needs its own. It does not
+    // create or change the schema. Must be called on the thread that will
+    // use it.
+    bool openExtraConnection(const QString &databaseFilePath, const QString &connectionName);
 
     // The live connection, for repositories only.
     QSqlDatabase &connection();
 
+    // Why the last open or schema step failed.
     QString lastErrorText() const;
 
     bool isOpen() const;
 
 private:
+    // Makes every table and index that is missing, and adds or renames the
+    // columns that changed since older builds. Safe to run on every open.
     bool createSchemaIfMissing();
+
+    // Sets this connection's sync mode to NORMAL. Used only on the
+    // background connection. See the .cpp for why.
+    void useNormalSyncMode();
 
     // Adds a column to an existing table only if it is not already there.
     // This is how the schema grows without throwing away anyone's data: a

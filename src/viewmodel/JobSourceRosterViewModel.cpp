@@ -1,5 +1,6 @@
 #include "JobSourceRosterViewModel.h"
 
+#include <QDebug>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QVariantMap>
@@ -57,6 +58,11 @@ QVariantList JobSourceRosterViewModel::enabledJobSourceTabs() const
         const JobSourceDescriptor descriptor =
             jobSourceDescriptorFor(sourceStorageName, descriptorFound);
         if (!descriptorFound) {
+            // A ticked name the catalog does not know, such as a site that was
+            // removed from Job Crush. It gets no tab.
+            qWarning().noquote() << QStringLiteral(
+                "JobSourceRosterViewModel::enabledJobSourceTabs: no catalog entry for "
+                "ticked source \"%1\" — it gets no tab").arg(sourceStorageName);
             continue;
         }
         QVariantMap jobSourceTab;
@@ -110,9 +116,17 @@ void JobSourceRosterViewModel::openSourceWebsite(const QString &sourceStorageNam
     const JobSourceDescriptor descriptor =
         jobSourceDescriptorFor(sourceStorageName, descriptorFound);
     if (!descriptorFound || descriptor.officialSiteUrl.isEmpty()) {
+        qWarning().noquote() << QStringLiteral(
+            "JobSourceRosterViewModel::openSourceWebsite: no web site known for source "
+            "\"%1\"").arg(sourceStorageName);
         return;
     }
-    QDesktopServices::openUrl(QUrl(descriptor.officialSiteUrl));
+    if (!QDesktopServices::openUrl(QUrl(descriptor.officialSiteUrl))) {
+        qWarning().noquote() << QStringLiteral(
+            "JobSourceRosterViewModel::openSourceWebsite: could not open \"%1\" for "
+            "source \"%2\" — the system browser refused it")
+                .arg(descriptor.officialSiteUrl, sourceStorageName);
+    }
 }
 
 void JobSourceRosterViewModel::setAccessKey(const QString &sourceStorageName,
@@ -133,9 +147,17 @@ void JobSourceRosterViewModel::openAccessKeySignup(const QString &sourceStorageN
     const JobSourceDescriptor descriptor =
         jobSourceDescriptorFor(sourceStorageName, descriptorFound);
     if (!descriptorFound || descriptor.accessKeySignupUrl.isEmpty()) {
+        qWarning().noquote() << QStringLiteral(
+            "JobSourceRosterViewModel::openAccessKeySignup: no key sign-up page known "
+            "for source \"%1\"").arg(sourceStorageName);
         return;
     }
-    QDesktopServices::openUrl(QUrl(descriptor.accessKeySignupUrl));
+    if (!QDesktopServices::openUrl(QUrl(descriptor.accessKeySignupUrl))) {
+        qWarning().noquote() << QStringLiteral(
+            "JobSourceRosterViewModel::openAccessKeySignup: could not open \"%1\" for "
+            "source \"%2\" — the system browser refused it")
+                .arg(descriptor.accessKeySignupUrl, sourceStorageName);
+    }
 }
 
 int JobSourceRosterViewModel::accessKeyRevision() const

@@ -1,5 +1,6 @@
 #include "UsaJobsJobSource.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -28,9 +29,21 @@ const QString usaJobsSearchEndpointUrl = QStringLiteral("https://data.usajobs.go
 // small enough to come back quickly on a home connection.
 constexpr int usaJobsMaximumResultsPerSweep = 100;
 
+// The two answers USAJOBS gives for a bad key or a wrong email.
+constexpr int httpStatusUnauthorized = 401;
+constexpr int httpStatusForbidden = 403;
+
+// An amount is treated as having cents when it is more than this far from a
+// whole number. A little over zero, so floating-point dust on a whole number
+// does not print as ".00".
+constexpr double smallestCentsWorthShowing = 0.004;
+
 // How pay is counted. USAJOBS sends the number and the interval separately,
 // and printing the number without the interval is wrong by a factor of two
 // thousand — $45 an hour read as $45 a year.
+//
+// The codes are USAJOBS's own: PA per year, PH per hour, PD per day, PW per
+// week, BW every two weeks, PM per month, SY per school year.
 QString payIntervalWordsFor(const QString &rateIntervalCode)
 {
     const QString code = rateIntervalCode.trimmed().toUpper();
@@ -46,6 +59,8 @@ QString payIntervalWordsFor(const QString &rateIntervalCode)
     return QString();
 }
 
+// The pay line, from the first entry in PositionRemuneration. That entry has
+// MinimumRange, MaximumRange and RateIntervalCode.
 QString payLineFrom(const QJsonArray &remunerationArray)
 {
     if (remunerationArray.isEmpty()) {
@@ -55,7 +70,7 @@ QString payLineFrom(const QJsonArray &remunerationArray)
 
     // WC is "without compensation" — a volunteer posting. It comes through
     // with zeroes in the money fields, so without this it would look exactly
-    // like a job that simply did not publish its pay. That is worth saying
+    // like a job that did not publish its pay. That is worth saying
     // out loud: somebody who applies for a paid job and finds out later that
     // it is unpaid has lost the afternoon this app exists to save them.
     const QString rateIntervalCode =
@@ -78,7 +93,7 @@ QString payLineFrom(const QJsonArray &remunerationArray)
     // rounding $23.50 an hour to $24 changes the number the user is deciding
     // on — and hourly rates are exactly where the cents are real.
     auto writtenOut = [&plainLocale](double amount) {
-        const bool hasCents = qAbs(amount - qRound(amount)) > 0.004;
+        const bool hasCents = qAbs(amount - qRound(amount)) > smallestCentsWorthShowing;
         return QStringLiteral("$") + plainLocale.toString(amount, 'f', hasCents ? 2 : 0);
     };
 
@@ -117,6 +132,13 @@ QString whoMayApplyLineFrom(const QJsonObject &detailsObject)
     return QStringLiteral("Who may apply: %1").arg(whoMayApply);
 }
 
+// The description, built from the parts USAJOBS sends separately. The order
+// is: who may apply, the job summary, the major duties under "What you would
+// do", the qualifications under "What they are looking for", and the
+// requirements. Empty parts are left out. Parts are split by a blank line.
+//
+// Most of these live under UserArea.Details. QualificationSummary sits one
+// level up, on the descriptor itself.
 QString wholeDescriptionFrom(const QJsonObject &descriptorObject)
 {
     const QJsonObject detailsObject = descriptorObject.value(QStringLiteral("UserArea"))
@@ -170,6 +192,8 @@ QString wholeDescriptionFrom(const QJsonObject &descriptorObject)
     return descriptionParts.join(QStringLiteral("\n\n"));
 }
 
+// One job out of USAJOBS's JSON. Each search result item holds its id at the
+// top and everything else under MatchedObjectDescriptor.
 JobPosting postingFromUsaJobsItem(const QJsonObject &searchResultItem,
                                   const QDateTime &sweepTimestamp)
 {
@@ -202,12 +226,15 @@ JobPosting postingFromUsaJobsItem(const QJsonObject &searchResultItem,
     jobPosting.locationText =
         descriptorObject.value(QStringLiteral("PositionLocationDisplay")).toString().trimmed();
 
+    // The announcement page first. The apply link only when there is no page.
     jobPosting.sourceUrl =
         descriptorObject.value(QStringLiteral("PositionURI")).toString().trimmed();
     if (jobPosting.sourceUrl.isEmpty()) {
-        jobPosting.sourceUrl =
-            descriptorObject.value(QStringLiteral("ApplyURI")).toArray()
-                .first().toString().trimmed();
+        const QJsonArray applyLinks =
+            descriptorObject.value(QStringLiteral("ApplyURI")).toArray();
+        if (!applyLinks.isEmpty()) {
+            jobPosting.sourceUrl = applyLinks.first().toString().trimmed();
+        }
     }
 
     jobPosting.salaryText = payLineFrom(
@@ -223,7 +250,7 @@ JobPosting postingFromUsaJobsItem(const QJsonObject &searchResultItem,
     // you can ask WITH and never get back, so this is read from the location
     // words. It is right often enough to be worth having and is never used to
     // hide a job — the location filter only ever holds jobs back, and a job
-    // wrongly unmarked simply gets judged on its city instead.
+    // wrongly unmarked gets judged on its city instead.
     const QString locationLowered = jobPosting.locationText.toLower();
     jobPosting.isRemoteRole = locationLowered.contains(QStringLiteral("remote"))
                            || locationLowered.contains(QStringLiteral("telework"))
@@ -242,9 +269,23 @@ UsaJobsJobSource::UsaJobsJobSource(const JobSourceRoster &sourceRoster)
 
 JobSourceDescriptor UsaJobsJobSource::descriptor() const
 {
-    bool found = false;
-    return jobSourceDescriptorFor(usaJobsStorageName, found);
+    bool descriptorWasFound = false;
+    const JobSourceDescriptor descriptor =
+        jobSourceDescriptorFor(usaJobsStorageName, descriptorWasFound);
+    if (!descriptorWasFound) {
+        qWarning().noquote() << QStringLiteral(
+            "UsaJobsJobSource::descriptor: no catalog entry for \"%1\" — "
+            "the source catalog is missing it")
+                .arg(usaJobsStorageName);
+    }
+    return descriptor;
 }
+
+// Steps: stop early if the key or email is missing. Otherwise build one GET
+// with the page size, full fields, newest first, the first title, and the
+// first real place. Send the key and the email in their own headers. The
+// answer is {"SearchResult":{"SearchResultItems":[...]}}, and each item goes
+// through postingFromUsaJobsItem.
 
 JobScoutReply *UsaJobsJobSource::searchForJobs(const JobSearchProfile &searchProfile,
                                                QObject *replyParent)
@@ -326,7 +367,7 @@ JobScoutReply *UsaJobsJobSource::searchForJobs(const JobSearchProfile &searchPro
 
         // 401 and 403 both mean the same thing to the person reading it, and
         // the fix is the same one. Say it once, plainly.
-        if (httpStatusCode == 401 || httpStatusCode == 403) {
+        if (httpStatusCode == httpStatusUnauthorized || httpStatusCode == httpStatusForbidden) {
             scoutReply->markFailed(QStringLiteral(
                 "turned the request down. Check the key in Settings, and check that the "
                 "email there is the exact one you registered the key with — USAJOBS "

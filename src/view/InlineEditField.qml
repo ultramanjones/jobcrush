@@ -3,7 +3,7 @@ import JobCrush
 
 // InlineEditField
 //
-// A labelled text box that saves what you typed the moment you leave it.
+// A labeled text box that saves what you typed the moment you leave it.
 //
 // Used everywhere the user corrects something Job Crush read out of their
 // documents. No Save button anywhere near it — settings and corrections are
@@ -26,7 +26,7 @@ Item {
     property bool allowsMultipleLines: false
 
     // Where growing stops and scrolling starts. Generous on purpose — a
-    // twelve-line description of a job should simply be twelve lines.
+    // twelve-line description of a job should be twelve lines.
     property int tallestBeforeItScrolls: 420
 
     readonly property int shortestFrameHeight: 32
@@ -59,8 +59,10 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
 
-        // The whole point: the frame is as tall as the words inside it, until
-        // it hits the ceiling and hands the rest over to scrolling.
+        // The frame is as tall as the words inside it, until it reaches
+        // tallestBeforeItScrolls. Past that, the box scrolls. It is never
+        // shorter than shortestFrameHeight. The extra 14 pixels are the 7
+        // pixel top and bottom margins of the text inside.
         height: inlineEditField.allowsMultipleLines
             ? Math.min(inlineEditField.tallestBeforeItScrolls,
                        Math.max(inlineEditField.shortestFrameHeight,
@@ -88,7 +90,10 @@ Item {
             clip: true
 
             // Follows the cursor, so typing at the bottom of a long entry
-            // never disappears under the edge of the frame.
+            // never disappears under the edge of the frame. If the cursor is
+            // above the visible part, scroll up to its top. If it is below,
+            // scroll down until its bottom edge is on screen. Otherwise leave
+            // the scroll alone.
             function keepCursorInView() {
                 const cursor = fieldInput.cursorRectangle
                 if (cursor.y < contentY) {
@@ -122,6 +127,8 @@ Item {
 
                 onCursorRectangleChanged: fieldScroller.keepCursorInView()
 
+                // Sends the typed text up only when it differs from what is
+                // stored, so leaving an untouched box does not save again.
                 function commitIfChanged() {
                     if (text !== inlineEditField.fieldText) {
                         inlineEditField.editingCommitted(text)

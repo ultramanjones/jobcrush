@@ -15,8 +15,32 @@ namespace {
 // not a heading.
 constexpr int longestPlausibleHeadingLength = 60;
 
+// A piece longer than this is prose, not a name.
+constexpr int longestNameBeforeItIsProse = 60;
+
+// A piece ending in a full stop is prose when it has more words than this,
+// or when its last word is longer than this. "Acme Robotics, Inc." passes:
+// three words, and "Inc" is short.
+constexpr int mostWordsInANameEndingInAFullStop = 4;
+constexpr int longestAbbreviationAtTheEnd = 4;
+
+// A skill is 2 to 40 characters. Shorter is punctuation noise. Longer is a
+// sentence about skills, not a skill.
+constexpr int shortestSkill = 2;
+constexpr int longestSkill = 40;
+
+// A plain name used as a school must be at least this long.
+constexpr int shortestUnlabelledSchoolName = 3;
+
+// How many recent lines are kept, for entries whose name sits on a line
+// above. Only the last one is read today.
+constexpr int recentLinesKept = 4;
+
 enum class SectionKind { Unknown, Experience, Education, Skills, OtherKnown };
 
+// The line in lowercase, with every character that is not a letter or a
+// space turned into a space, and runs of spaces made single. "WORK
+// EXPERIENCE:" becomes "work experience", ready to compare with the lists.
 QString headingKeyOf(const QString &line)
 {
     static const QRegularExpression nonLetterPattern(QStringLiteral("[^a-z ]+"));
@@ -77,6 +101,20 @@ SectionKind sectionKindForHeading(const QString &line)
 // A date range is the most reliable anchor in a resume: almost every job and
 // degree carries one, and almost nothing else does. It is what marks where
 // one entry stops and the next begins.
+//
+// The pieces:
+//   monthWordPattern      a month: its first three letters, any more
+//                         letters, and an optional full stop. "Jan",
+//                         "January", "Sept." all match.
+//   yearPattern           a year from 1900 to 2099.
+//   rangeEndpointPattern  an optional month and a space, then a year.
+//                         "2019" and "March 2019" both match.
+//   openEndedPattern      a word that means the range has not ended.
+//
+// dateRangePattern puts them together: an endpoint, a separator ("-", an
+// en or em dash, "to", "until", "through" or "thru", with optional spaces),
+// then a second endpoint or an open-ended word. captured(1) is the start
+// and captured(2) is the end, as the resume wrote them.
 const QString monthWordPattern =
     QStringLiteral("(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?");
 const QString yearPattern = QStringLiteral("(?:19|20)\\d{2}");
@@ -101,6 +139,10 @@ const QRegularExpression &dateRangePattern()
 // Both sit on the same line, in either order, separated by anything. Rather
 // than guess by position — which is wrong about half the time — look for what
 // each piece actually IS.
+//
+// Both tests below look for the word ANYWHERE in the piece, even inside a
+// longer word. So "lead" also matches "Leadership" and "inc" matches
+// "Lincoln".
 bool looksLikeRoleTitle(const QString &piece)
 {
     static const QStringList roleWords = {
@@ -177,6 +219,13 @@ bool splitCombinedEmployerAndRole(const QString &piece,
         return false;
     }
 
+    // Where the job title starts. Three parts, each optional except the
+    // last, with optional spaces between:
+    //   a rank       senior, junior, lead, principal, staff, chief, head
+    //   a field      software, systems, web, front end, back end, ...
+    //   a role noun  engineer, developer, manager, ...
+    // The match must start after the beginning of the piece, so there is an
+    // employer name in front of it to split off.
     static const QRegularExpression roleStartPattern(
         QStringLiteral("\\b(?:senior|junior|lead|principal|staff|chief|head)?\\s*"
                        "(?:software|systems?|web|front[- ]?end|back[- ]?end|full[- ]?stack"
@@ -195,14 +244,16 @@ bool splitCombinedEmployerAndRole(const QString &piece,
     return !employerOut.isEmpty() && !roleOut.isEmpty();
 }
 
-// Splits the non-date part of an entry line into its pieces.
 // Taking a date out of "Acme Technologies Inc. (Jan 2020 - Present)" leaves
 // "Acme Technologies Inc. ()". Sweeping up that debris keeps stray brackets
 // out of the employer box, where they look like a bug because they are one.
 QString withoutPunctuationDebris(const QString &text)
 {
+    // "()", "[]" or "{}", with only spaces inside.
     static const QRegularExpression emptyBracketsPattern(
         QStringLiteral("\\(\\s*\\)|\\[\\s*\\]|\\{\\s*\\}"));
+    // Spaces, separators and brackets at the very start (opening brackets)
+    // or the very end (closing brackets).
     static const QRegularExpression danglingEdgePattern(
         QStringLiteral("^[\\s,;:|\\-–—•·(\\[]+|[\\s,;:|\\-–—•·)\\]]+$"));
 
@@ -227,6 +278,15 @@ QString withoutPunctuationDebris(const QString &text)
     return cleanedText.simplified();
 }
 
+// Splits the non-date part of an entry line into its pieces, then cleans
+// each piece with withoutPunctuationDebris. Empty pieces are dropped.
+//
+// A separator is any one of these:
+//   a dash, "|", "·" or "•" with spaces on both sides
+//   the word "at" with spaces on both sides ("Engineer at Acme")
+//   a comma followed by a space
+//   one or more tabs
+//   three or more spaces (see below)
 QStringList piecesOfEntryLine(const QString &lineRemainder)
 {
     // A RUN OF SPACES is a separator too. Resumes lay their education and
@@ -254,7 +314,7 @@ QStringList piecesOfEntryLine(const QString &lineRemainder)
 // not in the employer box.
 bool looksLikeProse(const QString &piece)
 {
-    if (piece.length() > 60) {
+    if (piece.length() > longestNameBeforeItIsProse) {
         return true;
     }
     if (!piece.endsWith(QLatin1Char('.'))) {
@@ -270,15 +330,28 @@ bool looksLikeProse(const QString &piece)
     // A closing abbreviation is short. A sentence is not.
     const QStringList wordsOfThePiece =
         piece.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
-    if (wordsOfThePiece.count() > 4) {
+    if (wordsOfThePiece.count() > mostWordsInANameEndingInAFullStop) {
         return true;
     }
     QString lastWord = wordsOfThePiece.isEmpty() ? QString() : wordsOfThePiece.last();
     lastWord.remove(QRegularExpression(QStringLiteral("[^A-Za-z]")));
-    return lastWord.length() > 4;
+    return lastWord.length() > longestAbbreviationAtTheEnd;
 }
 
 // --- Education -----------------------------------------------------------
+
+// Finds a degree or credential on the line and returns it as written.
+//
+// The pattern is one list of alternatives, tried left to right at each
+// place in the line:
+//   - "Bachelor of Science", "Master of Arts", "Associate of Applied
+//     Science" and the like: a degree word, an optional "'s", "of", and
+//     one subject from a fixed list
+//   - PhD (with or without dots and a space) and "doctorate"
+//   - a bare "bachelor", "master" or "associate", with optional "'s"
+//   - the short forms MBA, BS, BSc, BA, MS, MA, AA, AAS, with or without dots
+//   - "certificate", "certification", "diploma", "GED"
+// The whole thing must stand as a word (\b at both ends).
 QString credentialPhraseIn(const QString &line)
 {
     // The alternatives are spelled out rather than using a loose "of
@@ -371,8 +444,8 @@ QStringList institutionNamesIn(const QString &text)
 {
     // UseUnicodeProperties because "\s" alone walks straight past a
     // non-breaking space. DocumentTextExtractor normalizes those away before
-    // the parser ever sees them; this is the second lock on the same door,
-    // for text that arrives from somewhere else one day.
+    // the parser ever sees them. This is a second guard against the same
+    // problem, for text that arrives from somewhere else one day.
     static const QRegularExpression anyWhitespacePattern(
         QStringLiteral("\\s+"), QRegularExpression::UseUnicodePropertiesOption);
     const QStringList words = text.split(anyWhitespacePattern, Qt::SkipEmptyParts);
@@ -452,6 +525,13 @@ QStringList institutionNamesIn(const QString &text)
 
 // The subject, when the line spells it out: "Bachelor of Science IN Computer
 // Science", "B.S., Computer Science". Never the school — see below.
+//
+// Steps:
+//   1. Take the text after the credential.
+//   2. Drop a lead-in: "in", "of", a comma, a colon or a dash.
+//   3. Cut at the next separator. What follows it is the school or a date.
+//   4. Throw the result away if it reads as prose, names a school, or has
+//      no letters in it.
 QString fieldOfStudyIn(const QString &line, const QString &credentialPhrase)
 {
     if (credentialPhrase.isEmpty()) {
@@ -508,11 +588,35 @@ QString fieldOfStudyIn(const QString &line, const QString &credentialPhrase)
 
 } // namespace
 
+// Reads the resume one line at a time, keeping track of which section it
+// is in. Blank lines are skipped.
+//
+// For each line:
+//   1. Is it a section heading? Then close any job being built, switch to
+//      that section, and go to the next line.
+//   2. In Skills: split the line on commas, semicolons, "|", bullets, "/"
+//      or wide gaps. Each piece of a sensible length is a skill. Repeats
+//      are skipped.
+//   3. In Experience:
+//      - A line with a date range starts a new job. The rest of the line is
+//        split into pieces, and each piece is judged: title, employer, or
+//        description. If the line has nothing but dates, the line above
+//        supplies the pieces. If the employer is still missing, the line
+//        above may be the employer.
+//      - Any other line, once a job has started, is more description.
+//   4. In Education: a line with a credential or a school word becomes an
+//      entry. A school on one line and its degree on the next are merged
+//      into one entry. A line naming several schools makes one entry per
+//      school. A line with only dates gives them to the entry above.
+//   5. Lines in any other section, or before the first heading, are only
+//      remembered as "the line above" for the next line.
+//
+// At the end, the job being built (if any) is closed.
 ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResumeText) const
 {
-    // Normalized HERE as well as at extraction, and that is not belt and
-    // braces — it is the only thing that helps a document imported by an
-    // older build. Its text is already sitting in the database full of
+    // Normalized HERE as well as at extraction. That is not extra caution.
+    // It is the only thing that helps a document imported by an older
+    // build. Its text is already sitting in the database full of
     // non-breaking spaces, and re-reading it would reproduce the same mangled
     // entries forever if the parser trusted what it was handed.
     const QString resumeText = withEveryLookalikeCharacterNormalized(rawResumeText);
@@ -559,13 +663,15 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResu
         }
 
         if (currentSection == SectionKind::Skills) {
+            // A comma, semicolon, "|", bullet, middle dot or "/", or three or
+            // more spaces.
             static const QRegularExpression skillSeparatorPattern(
                 QStringLiteral("[,;|•·/]|\\s{3,}"));
             for (const QString &rawSkill : line.split(skillSeparatorPattern, Qt::SkipEmptyParts)) {
                 const QString skillTerm = rawSkill.trimmed();
                 // One or two characters is punctuation noise; a long stretch
                 // is a sentence about skills, not a skill.
-                if (skillTerm.length() >= 2 && skillTerm.length() <= 40
+                if (skillTerm.length() >= shortestSkill && skillTerm.length() <= longestSkill
                         && !parsedInsights.skillTerms.contains(skillTerm, Qt::CaseInsensitive)) {
                     parsedInsights.skillTerms.append(skillTerm);
                 }
@@ -637,7 +743,7 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResu
                     }
                 }
 
-                // The commonest resume layout in the world puts the employer
+                // A very common resume layout puts the employer
                 // on its own line and the job title with the dates underneath:
                 //
                 //     Acme Robotics
@@ -676,7 +782,9 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResu
                     }
                 }
             } else if (buildingWorkEntry) {
-                // Bullets and description lines under the current job.
+                // Bullets and description lines under the current job. The
+                // bullet mark and the space after it are removed: "-", "•",
+                // "·", "*", "▪", or a lone "o" that some templates use.
                 QString descriptionLine = line;
                 static const QRegularExpression bulletPattern(
                     QStringLiteral("^[-•·*▪o]\\s+"));
@@ -694,7 +802,7 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResu
             if (credentialPhrase.isEmpty() && !lineNamesASchool) {
                 // Neither a credential nor a school. If it carries dates it is
                 // almost certainly the "2000 - 2001" line under the school
-                // just above, so give those dates to that entry rather than
+                // right above, so give those dates to that entry rather than
                 // leaving it looking undated.
                 if (dateMatch.hasMatch() && !parsedInsights.educationRecords.isEmpty()
                         && parsedInsights.educationRecords.last().endDateText.isEmpty()) {
@@ -807,13 +915,17 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResu
             // Plenty of places people study are not called a university, a
             // college or a school: "Tulsa Technology Center", "Le Cordon
             // Bleu", "Ivy Tech". Under an EDUCATION heading, a plain name
-            // sitting beside a credential is where somebody studied — and an
-            // empty school box on a certificate is this app reading a degree
-            // perfectly and shrugging at a trade.
+            // sitting beside a credential is where somebody studied. Without
+            // this, a trade certificate would be read with its school box
+            // left empty.
+            //
+            // A piece counts as that name when it is at least 3 characters,
+            // is not the credential or the subject, is not prose, has no
+            // digits, and starts with a capital letter.
             if (educationRecord.schoolName.isEmpty() && !credentialPhrase.isEmpty()) {
                 for (const QString &piece : piecesOfThisLine) {
                     const bool readsLikeAName =
-                        piece.length() >= 3
+                        piece.length() >= shortestUnlabelledSchoolName
                         && !piece.contains(credentialPhrase, Qt::CaseInsensitive)
                         && piece.compare(educationRecord.fieldOfStudyText,
                                          Qt::CaseInsensitive) != 0
@@ -857,11 +969,9 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResu
             }
 
             // Each extra school named on that line gets its own row, carrying
-            // the school and nothing else. The degree and the dates belonged
-            // to the FIRST school; guessing that they belong to a transfer
-            // school too would be a confident lie on the user's own history.
-            // The row arrives unconfirmed, which is exactly right — this is a
-            // guess, and the user is the one who knows.
+            // the school and, when they sit right after it, its own years.
+            // The row arrives unconfirmed, which is right — this is a guess,
+            // and the user is the one who knows.
             for (const SchoolFoundOnThisLine &additionalSchool : additionalSchoolsFound) {
                 if (additionalSchool.schoolName.isEmpty()) {
                     continue;
@@ -900,7 +1010,7 @@ ParsedResumeInsights ResumeInsightParser::parseResumeText(const QString &rawResu
         }
 
         recentNonEmptyLines.append(line);
-        if (recentNonEmptyLines.count() > 4) {
+        if (recentNonEmptyLines.count() > recentLinesKept) {
             recentNonEmptyLines.removeFirst();
         }
     }

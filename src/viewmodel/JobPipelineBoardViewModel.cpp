@@ -1,5 +1,6 @@
 #include "JobPipelineBoardViewModel.h"
 
+#include <QDebug>
 #include <QDesktopServices>
 #include <QLocale>
 #include <QUrl>
@@ -163,9 +164,24 @@ void JobPipelineBoardViewModel::searchTheWebForJob(qint64 jobApplicationId) cons
                                      .arg(targetedJob.posting.companyName,
                                           targetedJob.posting.positionTitle));
         searchUrl.setQuery(searchQuery);
-        QDesktopServices::openUrl(searchUrl);
+        if (!QDesktopServices::openUrl(searchUrl)) {
+            qWarning().noquote() << QStringLiteral(
+                "JobPipelineBoardViewModel::searchTheWebForJob: could not open the web "
+                "search for job application %1 — the system browser refused it")
+                    .arg(jobApplicationId);
+        }
         return;
     }
+    qWarning().noquote() << QStringLiteral(
+        "JobPipelineBoardViewModel::searchTheWebForJob: job application %1 is not on "
+        "the board").arg(jobApplicationId);
+}
+
+void JobPipelineBoardViewModel::userSaysJobIsStillOpen(qint64 jobApplicationId)
+{
+    // The board reloads when this works, and the card redraws without the
+    // amber mark. A failure is logged where it happens.
+    board.markStillOpenByUser(jobApplicationId);
 }
 
 void JobPipelineBoardViewModel::lookForOtherPlacesToApply(qint64 jobApplicationId)
@@ -180,13 +196,22 @@ void JobPipelineBoardViewModel::lookForOtherPlacesToApply(qint64 jobApplicationI
             return;
         }
     }
+    qWarning().noquote() << QStringLiteral(
+        "JobPipelineBoardViewModel::lookForOtherPlacesToApply: job application %1 is "
+        "not on the board").arg(jobApplicationId);
 }
 
 void JobPipelineBoardViewModel::openJobFolder(qint64 jobApplicationId) const
 {
     const QString jobFolderPath = activeJobs.jobFolderPathForCard(jobApplicationId);
-    if (!jobFolderPath.isEmpty()) {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(jobFolderPath));
+    if (jobFolderPath.isEmpty()) {
+        return; // this card has no job folder yet, so there is nothing to open
+    }
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(jobFolderPath))) {
+        qWarning().noquote() << QStringLiteral(
+            "JobPipelineBoardViewModel::openJobFolder: could not open \"%1\" for job "
+            "application %2 — the system file manager refused it")
+                .arg(jobFolderPath).arg(jobApplicationId);
     }
 }
 
@@ -233,9 +258,10 @@ QString JobPipelineBoardViewModel::hoverLineForStage(const QString &stageName) c
     return hoverLineFor(pipelineStageFromStorageText(stageName));
 }
 
-// A route's board is either a job SITE Job Crush sweeps or an employer BOARD
-// it reads. Two rosters, and asking only one is how a lowercase storage name
-// reaches the screen.
+// The name to show for the board a route is on. A board is either a job SITE
+// Job Crush sweeps or an employer BOARD it reads. They are listed in two
+// different places, so both are asked. Asking only one would put a lowercase
+// storage name such as "ashby" on screen.
 static QString sourceDisplayNameFor(const QString &sourceStorageName)
 {
     bool descriptorFound = false;
@@ -287,9 +313,6 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
                     TypedDateReader::editableDateTextFor(
                         targetedJob.campaign.appliedTimestamp.date()));
 
-        // The date can be set on any card that has left Crushed, and on any
-        // card that already has a date. A card still in Crushed with no date
-        // has not been sent, and a date box there would invite a mistake.
         // A posting that has gone from the employer's board. The card says
         // so in plain words and offers a search. It is not removed: the job
         // may be listed somewhere else, and that is the user's call.
@@ -297,11 +320,25 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
         card.insert(QStringLiteral("postingSeemsGone"), goneSince.isValid());
         card.insert(QStringLiteral("postingGoneText"),
                     goneSince.isValid()
-                        ? QStringLiteral("This posting seems to be gone since %1. Check "
-                                         "whether it's still listed somewhere else.")
+                        ? QStringLiteral("The company's own board stopped listing this job "
+                                         "on %1. Check whether it's still listed somewhere "
+                                         "else.")
                               .arg(shortDateTextFor(goneSince))
                         : QString());
 
+        // The user checked the job themselves and said it is still open.
+        const QDateTime userSaysOpenSince = targetedJob.posting.userSaysStillOpenTimestamp;
+        card.insert(QStringLiteral("userSaysStillOpen"), userSaysOpenSince.isValid());
+        card.insert(QStringLiteral("userSaysStillOpenText"),
+                    userSaysOpenSince.isValid()
+                        ? QStringLiteral("You checked this job on %1: still open. Job Crush "
+                                         "won't mark it gone.")
+                              .arg(shortDateTextFor(userSaysOpenSince))
+                        : QString());
+
+        // The date can be set on any card that has left Crushed, and on any
+        // card that already has a date. A card still in Crushed with no date
+        // has not been sent, and a date box there would invite a mistake.
         card.insert(QStringLiteral("appliedDateIsEditable"),
                     wantedStage != PipelineStage::Saved
                         || targetedJob.campaign.appliedTimestamp.isValid());
@@ -449,23 +486,51 @@ void JobPipelineBoardViewModel::openPostingInBrowser(qint64 jobApplicationId) co
         if (targetedJob.campaign.jobApplicationId != jobApplicationId) {
             continue;
         }
-        if (!targetedJob.posting.sourceUrl.isEmpty()) {
-            QDesktopServices::openUrl(QUrl(targetedJob.posting.sourceUrl));
+        if (targetedJob.posting.sourceUrl.isEmpty()) {
+            return; // a hand-added job with no link has nothing to open
+        }
+        // Only http and https, for the same reason as in
+        // openPostingRouteInBrowser below.
+        const QUrl postingUrl(targetedJob.posting.sourceUrl);
+        if (!postingUrl.isValid()
+                || (postingUrl.scheme() != QStringLiteral("http")
+                    && postingUrl.scheme() != QStringLiteral("https"))) {
+            qWarning().noquote() << QStringLiteral(
+                "JobPipelineBoardViewModel::openPostingInBrowser: refused to open \"%1\" "
+                "for job application %2, because it is not a web link")
+                    .arg(targetedJob.posting.sourceUrl).arg(jobApplicationId);
+            return;
+        }
+        if (!QDesktopServices::openUrl(postingUrl)) {
+            qWarning().noquote() << QStringLiteral(
+                "JobPipelineBoardViewModel::openPostingInBrowser: could not open \"%1\" "
+                "for job application %2 — the system browser refused it")
+                    .arg(targetedJob.posting.sourceUrl).arg(jobApplicationId);
         }
         return;
     }
+    qWarning().noquote() << QStringLiteral(
+        "JobPipelineBoardViewModel::openPostingInBrowser: job application %1 is not on "
+        "the board").arg(jobApplicationId);
 }
 
 void JobPipelineBoardViewModel::openPostingRouteInBrowser(const QString &postingUrl) const
 {
     const QUrl routeUrl(postingUrl);
-    // Only http and https. A stored string reaches this from the database and
-    // handing anything else to the desktop is handing it whatever scheme the
-    // string happens to carry.
+    // Only http and https. The link comes from the database, not from the
+    // user. A link like file:// or a program's own scheme could make the
+    // computer do something other than show a web page.
     if (!routeUrl.isValid()
             || (routeUrl.scheme() != QStringLiteral("http")
                 && routeUrl.scheme() != QStringLiteral("https"))) {
+        qWarning().noquote() << QStringLiteral(
+            "JobPipelineBoardViewModel::openPostingRouteInBrowser: refused to open "
+            "\"%1\", because it is not a web link").arg(postingUrl);
         return;
     }
-    QDesktopServices::openUrl(routeUrl);
+    if (!QDesktopServices::openUrl(routeUrl)) {
+        qWarning().noquote() << QStringLiteral(
+            "JobPipelineBoardViewModel::openPostingRouteInBrowser: could not open \"%1\" "
+            "— the system browser refused it").arg(postingUrl);
+    }
 }

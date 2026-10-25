@@ -7,10 +7,13 @@ import JobCrush
 // what it understood from it. Two tabs: the documents themselves, and the
 // experience and education pulled out of them.
 //
-// This page is also a drop target by nature, but the basket that catches
-// files lives on the window (see Main.qml) so a drop works from any screen.
-// Building it here would mean the one time someone drops a resume on Brain
-// Chat, nothing happens and they conclude the feature is broken.
+// Files are dropped in to be read here, but the drop area is not on this
+// page. It is on the window (see Main.qml), so a drop works from any screen.
+// If it were here, a resume dropped on the chat page would do nothing, and
+// the user would think the feature was broken.
+//
+// This is the view layer. It binds to three viewmodels and holds no
+// business logic.
 Rectangle {
     id: proDocsPage
 
@@ -26,10 +29,10 @@ Rectangle {
 
     // Sent to every experience and schooling card at once.
     //
-    // A broadcast rather than a binding on purpose: a card that opens or
-    // closes because the user clicked it has to STAY that way, and a bound
-    // property would snap it back on the next repaint. Each card listens,
-    // obeys, and then goes back to minding its own state.
+    // A signal, not a binding, on purpose. A card the user opens or shuts by
+    // clicking must STAY that way. A binding would put it back the next time
+    // the bound value changed. With a signal, each card sets itself once
+    // when the signal comes, and after that only the user's clicks change it.
     signal setEveryCareerCardExpanded(bool shouldExpand)
 
     Item {
@@ -135,7 +138,15 @@ Rectangle {
 
         model: proDocsPage.professionalDocumentListViewModel
 
+        // One notch of the mouse wheel scrolls twice as far as Qt's default.
+        //
+        // The steps: turn the wheel's raw count into notches, turn notches
+        // into pixels, move the list by that much, and keep the result
+        // between the top and the bottom of the list. A list that fits does
+        // not scroll.
         WheelHandler {
+            // Qt reports one wheel notch as 120 units of angleDelta.
+            readonly property real angleDeltaPerNotch: 120
             readonly property real pixelsPerNotch: 120
             readonly property real speedMultiplier: 2.0
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
@@ -149,7 +160,8 @@ Rectangle {
                     documentListView.originY,
                     Math.min(documentListView.originY + scrollableDistance,
                              documentListView.contentY
-                             - (wheelEvent.angleDelta.y / 120) * pixelsPerNotch * speedMultiplier))
+                             - (wheelEvent.angleDelta.y / angleDeltaPerNotch)
+                               * pixelsPerNotch * speedMultiplier))
             }
         }
 
@@ -174,8 +186,9 @@ Rectangle {
             border.color: JobCrushTheme.hairlineBorderColor
             border.width: 1
 
-            // What kind Job Crush thinks it is — and a click cycles it, because
-            // the guess is a heuristic and correcting it must be trivial.
+            // What kind of document Job Crush thinks this is. The guess is
+            // sometimes wrong, so one click moves it to the next kind. The
+            // user clicks until it is right.
             Rectangle {
                 id: documentKindChip
                 anchors.right: removeDocumentLabel.left
@@ -202,13 +215,18 @@ Rectangle {
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
+                    // The steps: get the list of kinds, find this document's
+                    // kind in it, and take the one after it. After the last
+                    // kind comes the first. A kind that is not in the list
+                    // gives -1, so the click picks the first kind.
                     onClicked: {
-                        const kinds = proDocsPage.professionalDocumentListViewModel
+                        const selectableKinds = proDocsPage.professionalDocumentListViewModel
                             .selectableDocumentKinds()
                         const nextIndex =
-                            (kinds.indexOf(documentRow.documentKind) + 1) % kinds.length
+                            (selectableKinds.indexOf(documentRow.documentKind) + 1)
+                            % selectableKinds.length
                         proDocsPage.professionalDocumentListViewModel
-                            .setDocumentKindAt(documentRow.index, kinds[nextIndex])
+                            .setDocumentKindAt(documentRow.index, selectableKinds[nextIndex])
                     }
                 }
             }
@@ -260,7 +278,8 @@ Rectangle {
                           + (documentRow.fileSizeText.length > 0
                                  ? "   ·   " + documentRow.fileSizeText : "")
                           + "   ·   " + documentRow.wordCountText
-                    // Word count is the honest measure of whether it loaded.
+                    // The word count shows whether the text was read. The
+                    // line turns amber when no readable text came out.
                     color: documentRow.hasReadableText
                         ? JobCrushTheme.secondaryTextColor : JobCrushTheme.noticeTextColor
                     font.pixelSize: JobCrushTheme.smallFontSize
@@ -334,14 +353,14 @@ Rectangle {
                     }
                 }
 
-                // Somebody asked for a Word copy and all they have is a PDF.
-                // Job Crush already read this document and already writes
-                // those formats, so it converts it here rather than sending
-                // the user off to whichever web converter paid for the top
-                // search result.
+                // An employer may ask for a Word file when the user only has
+                // a PDF. Job Crush has already read this document and can
+                // write those formats, so it converts it here. The user does
+                // not have to find a converter on the web.
                 //
                 // Only offered when there are words to convert. A scan has
-                // none, and a button that cannot work is worse than no button.
+                // none, and a button that cannot work would only confuse the
+                // user.
                 Item {
                     width: parent.width
                     height: documentRow.hasReadableText ? saveCopyColumn.implicitHeight + 8 : 0
@@ -544,11 +563,10 @@ Rectangle {
     // ------------------------------------------------------------------
     // Experience & Education
     //
-    // Everything here started life as Job Crush's READING of a document, not
-    // as a fact. Every field is editable and every entry asks to be confirmed,
-    // because parsing a resume is a heuristic that will sometimes be wrong —
-    // and an app that is wrong and cannot be corrected is worse than one that
-    // never guessed at all.
+    // Everything here is Job Crush's READING of a document, not a fact.
+    // Reading a resume is a best guess, and it will sometimes be wrong. So
+    // every field can be edited, and every entry asks the user to tick it
+    // once it is right.
     // ------------------------------------------------------------------
     Flickable {
         id: careerHistoryFlickable
@@ -566,7 +584,10 @@ Rectangle {
         contentHeight: careerHistoryColumn.implicitHeight + 40
         clip: true
 
+        // The same faster wheel as the Documents tab. See the steps there.
         WheelHandler {
+            // Qt reports one wheel notch as 120 units of angleDelta.
+            readonly property real angleDeltaPerNotch: 120
             readonly property real pixelsPerNotch: 120
             readonly property real speedMultiplier: 2.0
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
@@ -580,7 +601,8 @@ Rectangle {
                     careerHistoryFlickable.originY,
                     Math.min(careerHistoryFlickable.originY + scrollableDistance,
                              careerHistoryFlickable.contentY
-                             - (wheelEvent.angleDelta.y / 120) * pixelsPerNotch * speedMultiplier))
+                             - (wheelEvent.angleDelta.y / angleDeltaPerNotch)
+                               * pixelsPerNotch * speedMultiplier))
             }
         }
 
@@ -699,10 +721,10 @@ Rectangle {
                     font.pixelSize: JobCrushTheme.smallFontSize
                 }
 
-                // Shuts every card on the page down to its one-line summary,
-                // which is how you check that nothing is MISSING — a different
-                // question from whether any one entry is right, and one you
-                // cannot answer while scrolling past full-height cards.
+                // Shuts every card on the page down to its one-line summary.
+                // With every card shut, the user can see the whole list at once
+                // and check that nothing is MISSING. That is hard to do while
+                // scrolling past full-height cards.
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "shut them all"
@@ -755,24 +777,27 @@ Rectangle {
                     required property string sourceLineText
                     required property bool isConfirmedByUser
 
-                    // Collapsed is the resting state for anything the user has
-                    // already checked off. What is still waiting on them stays
-                    // open, so the work left to do is the work you can see.
+                    // A card the user has ticked starts shut. A card still
+                    // waiting on the user starts open, so what is left to
+                    // check is in plain sight.
                     property bool isExpanded: !isConfirmedByUser
 
-                    // One line that says whether this entry is right, without
-                    // opening it. That is the whole job of a collapsed card.
+                    // The one line a shut card shows: title, employer and
+                    // dates. Enough to tell if the entry is right without
+                    // opening it. Each part is left out when it is empty.
                     readonly property string glanceLine: {
                         const title = roleTitle.length > 0 ? roleTitle : "Untitled job"
                         const employer = employerName.length > 0
                             ? "  ·  " + employerName : ""
-                        const years = (startDateText.length > 0 || endDateText.length > 0)
+                        const dateRange = (startDateText.length > 0 || endDateText.length > 0)
                             ? "  ·  " + startDateText
                               + (endDateText.length > 0 ? " – " + endDateText : "")
                             : ""
-                        return title + employer + years
+                        return title + employer + dateRange
                     }
 
+                    // Opens or shuts this card when "open them all" or
+                    // "shut them all" is pressed.
                     Connections {
                         target: proDocsPage
                         function onSetEveryCareerCardExpanded(shouldExpand) {
@@ -850,6 +875,8 @@ Rectangle {
                                     }
                                 }
 
+                                // 60 pixels are left for the arrow, the tick
+                                // box and the gaps between them.
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: parent.width - 60
@@ -902,6 +929,9 @@ Rectangle {
                             visible: workExperienceCard.isExpanded
                             spacing: 8
 
+                            // Four boxes on one line. The 36 pixels are the
+                            // three 12-pixel gaps between them. What is left
+                            // is split 42, 42, 8 and 8 percent.
                             Row {
                                 width: parent.width
                                 spacing: 12
@@ -951,9 +981,8 @@ Rectangle {
                                 }
                             }
 
-                            // Grows to hold whatever is in it. A resume
-                            // paragraph pasted in here is a paragraph you can
-                            // read, not four words and a scrollbar.
+                            // Grows to hold whatever is in it, so a whole
+                            // paragraph from a resume can be read at once.
                             InlineEditField {
                                 width: parent.width
                                 labelText: "What you did there"
@@ -966,8 +995,9 @@ Rectangle {
                                 }
                             }
 
-                            // Where this came from. A wrong guess should always
-                            // be traceable rather than merely doubted.
+                            // The line in the document this entry was read
+                            // from. When a guess is wrong, the user can see
+                            // what Job Crush was reading.
                             Text {
                                 width: parent.width
                                 visible: workExperienceCard.sourceLineText.length > 0
@@ -1056,8 +1086,13 @@ Rectangle {
                     required property string sourceLineText
                     required property bool isConfirmedByUser
 
+                    // Starts shut once ticked, open while it still needs a
+                    // look. The same rule as the job cards above.
                     property bool isExpanded: !isConfirmedByUser
 
+                    // The one line a shut card shows: school, degree,
+                    // subject and the year it was finished. Each part is
+                    // left out when it is empty.
                     readonly property string glanceLine: {
                         const school = schoolName.length > 0 ? schoolName : "Unnamed school"
                         const credential = credentialText.length > 0
@@ -1188,6 +1223,9 @@ Rectangle {
                             visible: educationCard.isExpanded
                             spacing: 8
 
+                            // Four boxes on one line, as on the job cards.
+                            // What is left after the gaps is split 38, 24, 24
+                            // and 14 percent.
                             Row {
                                 width: parent.width
                                 spacing: 12

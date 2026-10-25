@@ -17,6 +17,7 @@ enum class StagedDocumentKind {
     Other
 };
 
+// Converts a StagedDocumentKind to the exact text stored in the database.
 inline QString stagedDocumentKindToStorageText(StagedDocumentKind documentKind)
 {
     switch (documentKind) {
@@ -31,6 +32,8 @@ inline QString stagedDocumentKindToStorageText(StagedDocumentKind documentKind)
     return QStringLiteral("other");
 }
 
+// Converts stored text back to a StagedDocumentKind. Unknown text becomes
+// Other, so a damaged row still loads.
 inline StagedDocumentKind stagedDocumentKindFromStorageText(const QString &storageText)
 {
     if (storageText == QStringLiteral("coverLetter"))    return StagedDocumentKind::CoverLetter;

@@ -7,15 +7,15 @@ import QtQuick
 // color, so themes are swappable.
 //
 // Each theme is its own file: ThemeClassic.qml, ThemeGrayscale.qml,
-// ThemeFruitLoops.qml, ThemeAmish.qml, ThemeTraceOn.qml, ThemeTraceOnTwo.qml.
-// They all start from ThemePalette.qml, which lists every token a theme has to
+// ThemeFruitLoops.qml, ThemeAmish.qml, ThemeTraceOn.qml, ThemeTraceOnTwo.qml,
+// ThemeWraithWranglers.qml. They all start from ThemePalette.qml, which lists every token a theme has to
 // provide.
 //
 // This file does two things: it picks which theme is active, and it re-exposes
 // that theme's tokens so the rest of the app has one name to read.
 //
-// To add a theme: write the file, add it to the palettes list below, and add it
-// to QML_FILES in CMakeLists.txt. Nothing else in the app changes. Settings
+// To add a theme: write the file, add a property for it below, add it to the
+// everyTheme list, and add it to QML_FILES in CMakeLists.txt. Nothing else in the app changes. Settings
 // builds its chips from availableThemes, so the new theme shows up on its own.
 //
 // Main.qml binds activeThemeName to the preferences viewmodel. Everything else
@@ -27,7 +27,7 @@ QtObject {
 
     // --- The themes -------------------------------------------------------
     //
-    // All six exist at once. They are property bags, so this costs nothing,
+    // All seven exist at once. They are property bags, so this costs nothing,
     // and it means switching themes is a pointer change rather than rebuilding
     // anything.
     readonly property ThemeClassic classicTheme: ThemeClassic {}
@@ -43,8 +43,10 @@ QtObject {
         amishTheme, traceOnTheme, traceOnTwoTheme, wraithWranglersTheme
     ]
 
-    // The theme that is on right now. An unknown name falls back to Classic,
-    // so a settings file from an older build cannot leave the app unpainted.
+    // The theme that is on right now. It walks the list and returns the theme
+    // whose themeName matches the saved name. An unknown name falls back to
+    // Classic, so a settings file from an older build cannot leave the app
+    // unpainted.
     readonly property ThemePalette activeTheme: {
         for (let i = 0; i < everyTheme.length; ++i) {
             if (everyTheme[i].themeName === activeThemeName) {
@@ -55,16 +57,17 @@ QtObject {
     }
 
     // The chips in Settings are built from this, so adding a theme does not
-    // mean editing SettingsPage.
+    // mean editing SettingsPage. Each entry holds only the two names a chip
+    // needs: the saved name and the label the user reads.
     readonly property var availableThemes: {
-        let list = []
+        let themeChoices = []
         for (let i = 0; i < everyTheme.length; ++i) {
-            list.push({
+            themeChoices.push({
                 themeName: everyTheme[i].themeName,
                 displayLabel: everyTheme[i].displayLabel
             })
         }
-        return list
+        return themeChoices
     }
 
     // --- The tokens -------------------------------------------------------

@@ -95,6 +95,9 @@ QVariantList JobSearchStatsViewModel::daysOfEffort() const
     return days;
 }
 
+// The tallest bar in the weekly chart. Each week draws a crushed bar and an
+// applied bar, so the larger of the two counts. The view scales every bar
+// against this number.
 int JobSearchStatsViewModel::busiestWeekCount() const
 {
     int busiest = 0;
@@ -104,6 +107,7 @@ int JobSearchStatsViewModel::busiestWeekCount() const
     return busiest;
 }
 
+// The busiest day in the heatmap. The view shades every day against it.
 int JobSearchStatsViewModel::busiestDayCount() const
 {
     int busiest = 0;
@@ -125,58 +129,63 @@ QString JobSearchStatsViewModel::appliedText() const
 
 QString JobSearchStatsViewModel::replyRateText() const
 {
-    const int rate = jobSearchStatistics.replyRatePercent();
-    if (rate >= 0) {
-        return QStringLiteral("%1%").arg(rate);
-    }
-    // Too few applications for a percent. Show the count instead. With four
+    // replyRatePercent is -1 when there are too few applications for a
+    // percent to mean anything. Then the count is shown instead. With four
     // applications, one more reply moves the percent 25 points.
+    const int replyRatePercent = jobSearchStatistics.replyRatePercent();
+    if (replyRatePercent >= 0) {
+        return QStringLiteral("%1%").arg(replyRatePercent);
+    }
     return QString::number(jobSearchStatistics.totalReachedInterview());
 }
 
 QString JobSearchStatsViewModel::replyRateExplanationText() const
 {
-    const int applied = jobSearchStatistics.totalApplied();
-    const int interviews = jobSearchStatistics.totalReachedInterview();
+    const int appliedCount = jobSearchStatistics.totalApplied();
+    const int interviewCount = jobSearchStatistics.totalReachedInterview();
 
-    if (applied == 0) {
+    if (appliedCount == 0) {
         return QStringLiteral("nothing sent yet");
     }
     if (jobSearchStatistics.replyRatePercent() < 0) {
-        return interviews == 1
+        return interviewCount == 1
             ? QStringLiteral("1 of %1 went somewhere — too few to call it a rate")
-                  .arg(applied)
+                  .arg(appliedCount)
             : QStringLiteral("%1 of %2 went somewhere — too few to call it a rate")
-                  .arg(interviews).arg(applied);
+                  .arg(interviewCount).arg(appliedCount);
     }
-    return QStringLiteral("%1 of %2 reached an interview").arg(interviews).arg(applied);
+    return QStringLiteral("%1 of %2 reached an interview")
+        .arg(interviewCount).arg(appliedCount);
 }
 
 QString JobSearchStatsViewModel::timeToApplyText() const
 {
-    const int days = jobSearchStatistics.averageDaysToApply();
-    if (days < 0) {
+    // averageDaysToApply is -1 when nothing has been sent yet.
+    const int averageDays = jobSearchStatistics.averageDaysToApply();
+    if (averageDays < 0) {
         return QStringLiteral("—");
     }
-    if (days == 0) {
+    if (averageDays == 0) {
         return QStringLiteral("same day");
     }
-    return days == 1 ? QStringLiteral("1 day") : QStringLiteral("%1 days").arg(days);
+    return averageDays == 1 ? QStringLiteral("1 day")
+                            : QStringLiteral("%1 days").arg(averageDays);
 }
 
 QString JobSearchStatsViewModel::streakText() const
 {
-    const int days = jobSearchStatistics.currentActivityStreakDays();
-    if (days == 0) {
+    const int streakDays = jobSearchStatistics.currentActivityStreakDays();
+    if (streakDays == 0) {
         return QStringLiteral("—");
     }
-    return days == 1 ? QStringLiteral("1 day") : QStringLiteral("%1 days").arg(days);
+    return streakDays == 1 ? QStringLiteral("1 day")
+                           : QStringLiteral("%1 days").arg(streakDays);
 }
 
 QString JobSearchStatsViewModel::streakExplanationText() const
 {
-    const int days = jobSearchStatistics.currentActivityStreakDays();
-    if (days == 0) {
+    const int streakDays = jobSearchStatistics.currentActivityStreakDays();
+    if (streakDays == 0) {
         // Not a scolding. A day off during a job search is fine.
         return QStringLiteral("nothing yet today — that's allowed");
     }

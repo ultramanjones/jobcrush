@@ -12,7 +12,8 @@
 // The companies the user is watching, and where they keep their job boards.
 //
 // A Logic layer class owning its own persistence, the same shape as
-// JobSourceRoster and AiCredentialRoster. Three rosters, one pattern.
+// JobSourceRoster and AiCredentialRoster. The list is kept in QSettings as
+// one string per company.
 //
 // The user never types a board name or an account slug. They paste a link to
 // any job at the company and this works the rest out — which is the only way

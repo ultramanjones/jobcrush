@@ -11,8 +11,8 @@
 // on every run, and nothing downstream can rely on it.
 //
 // Every task writes a draft into staging. No task sends anything. No task
-// changes the board. The same rule is in the prime directives, so it is
-// stated in both places.
+// changes the board. The same rule is in the prime directives (the hard rules
+// in AiBrainSoul.cpp sent with every request), so it is stated in both places.
 enum class AiBrainTaskKind {
     ParsePosting,       // the posting, read back in plain words
     ScoreFit,           // how well this person matches, and honestly why not
@@ -21,6 +21,7 @@ enum class AiBrainTaskKind {
     SuggestFollowUp     // what to say after sending, and when
 };
 
+// The line the Staging page shows while a task runs.
 inline QString aiBrainTaskDisplayName(AiBrainTaskKind taskKind)
 {
     switch (taskKind) {

@@ -7,19 +7,16 @@
 
 // OpenRouterApiProvider
 //
-// The OpenRouter implementation of AiBrainProvider: one key, many models —
-// OpenRouter fronts Anthropic, OpenAI, Google, Meta and friends behind a
-// single OpenAI-compatible chat-completions API. Streaming arrives as
-// OpenAI-style server-sent events.
-//
-// This client is deliberately the dress rehearsal for the OpenAI provider:
-// the wire format is the same, so when OpenAiApiProvider lands it will be
-// this file with a different endpoint and default model.
+// The OpenRouter implementation of AiBrainProvider: one key, many models.
+// OpenRouter sells models from Anthropic, OpenAI, Google, Meta and others
+// through one chat API in OpenAI's shape. The streamed answer is read by
+// OpenAiStyleStream, the same reader OpenAiApiProvider and OllamaProvider use.
 class OpenRouterApiProvider : public AiBrainProvider {
 public:
     OpenRouterApiProvider();
 
     QString providerDisplayName() const override;
+    QString modelNameFor(AiBrainLevel brainLevel) const override;
 
     AiBrainReply *streamConversation(const QString &soulText,
                                      const QList<AiBrainConversationMessage> &conversation,

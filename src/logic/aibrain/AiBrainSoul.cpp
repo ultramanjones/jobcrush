@@ -1,5 +1,6 @@
 #include "AiBrainSoul.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QStringList>
@@ -29,7 +30,9 @@ const char *capabilitiesText =
     "  columns. An open card holds notes, the applied date (typed in any common\n"
     "  way, like 10/8 or yesterday), links to the posting, and a link to the\n"
     "  job's folder. \"Are these still open?\" asks each employer's board whether\n"
-    "  the jobs are still listed.\n"
+    "  the jobs are still listed. A job is marked gone only when the job's own\n"
+    "  page and the company's list of jobs both say it is not there. On a card\n"
+    "  marked gone, \"It's still open, I checked\" takes the mark off for good.\n"
     "- Discoveries: jobs Job Crush found. \"Scout now\" searches the job sites\n"
     "  ticked in Settings and the companies the user follows. Each site has a\n"
     "  tab. Top Prospects ranks everything against the user's search profile.\n"
@@ -39,7 +42,8 @@ const char *capabilitiesText =
     "- ProDocs: the user's resume, transcripts and other documents, dropped in.\n"
     "  Job Crush reads work history and schooling out of them. Any document can\n"
     "  be saved as a Word, PDF or plain text copy.\n"
-    "- Staging: an application packet for each job on the board. A checklist,\n"
+    "- Staging: an application packet for each open job on the board (not\n"
+    "  the ones in Closed). A checklist,\n"
     "  and with a brain connected, a cover letter and a tailored resume the\n"
     "  user reviews and edits. It downloads as Word or PDF, into the job's own\n"
     "  folder. Apply buttons open each place the job can be applied to.\n"
@@ -47,10 +51,13 @@ const char *capabilitiesText =
     "- Stats: how the search is going, in numbers.\n"
     "- Brain Chat: this conversation.\n"
     "- Settings: which AI brain answers (Anthropic, OpenRouter, OpenAI, Gemini\n"
-    "  with a key; Ollama on the user's own computer with no key), the job\n"
+    "  with a key; Ollama on the user's own computer with no key), and how\n"
+    "  much brain each one uses: Quick (fastest, cheapest), Balanced (the usual\n"
+    "  choice) or Best (strongest, costs the most). Also the job\n"
     "  sites, the companies followed, the search profile, and the look.\n"
     "  A company is followed by pasting a link to any of its jobs; Job Crush\n"
-    "  reads Greenhouse, Lever, Ashby, SmartRecruiters and Workday. \"Add the\n"
+    "  reads Greenhouse, Lever, Ashby, SmartRecruiters, Workday and Taleo.\n"
+    "  \"Add the\n"
     "  C++ and Qt starter list\" follows 23 companies at once, and \"Fill in\n"
     "  the C++ and Qt preset\" fills in the search profile.\n"
     "- Discoveries rows say when a job is gone from the company's own board,\n"
@@ -120,11 +127,15 @@ const char *defaultSoulText =
     "- Short sentences over long ones.\n"
     "- Never gushing; competence speaks for itself.\n";
 
-// Reads a whole text file; returns an empty string if it cannot be read.
+// Reads a whole text file. Returns an empty string, and logs why, if it
+// cannot be read.
 QString readEntireTextFile(const QString &filePath)
 {
     QFile textFile(filePath);
     if (!textFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning().noquote() << QStringLiteral(
+            "AiBrainSoul::readEntireTextFile: could not open \"%1\" — %2")
+            .arg(filePath, textFile.errorString());
         return QString();
     }
     QTextStream textStream(&textFile);
@@ -138,10 +149,14 @@ void writeDefaultFileIfMissing(const QString &filePath, const char *defaultConte
         return;
     }
     QFile textFile(filePath);
-    if (textFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream textStream(&textFile);
-        textStream << defaultContent;
+    if (!textFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        qWarning().noquote() << QStringLiteral(
+            "AiBrainSoul::writeDefaultFileIfMissing: could not create \"%1\" — %2")
+            .arg(filePath, textFile.errorString());
+        return;
     }
+    QTextStream textStream(&textFile);
+    textStream << defaultContent;
 }
 
 } // namespace
@@ -154,8 +169,10 @@ AiBrainSoul::AiBrainSoul(const QString &folderPath)
 void AiBrainSoul::loadCreatingDefaultsIfMissing()
 {
     QDir soulFolder(folderPathForSoulFiles);
-    if (!soulFolder.exists()) {
-        soulFolder.mkpath(QStringLiteral("."));
+    if (!soulFolder.exists() && !soulFolder.mkpath(QStringLiteral("."))) {
+        qWarning().noquote() << QStringLiteral(
+            "AiBrainSoul::loadCreatingDefaultsIfMissing: could not make the soul "
+            "folder \"%1\"").arg(folderPathForSoulFiles);
     }
 
     const QString primeDirectivesFilePath = soulFolder.filePath(primeDirectivesFileName);
@@ -169,10 +186,16 @@ void AiBrainSoul::loadCreatingDefaultsIfMissing()
 
     // Always written, never read back: the app's own list wins, so a user who
     // opens the soul folder sees exactly what the brain is told.
+    // The brain still gets the list either way, because assembledSoulText
+    // reads it from memory, not from the file.
     QFile capabilitiesFile(soulFolder.filePath(capabilitiesFileName));
     if (capabilitiesFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
         QTextStream textStream(&capabilitiesFile);
         textStream << capabilitiesText;
+    } else {
+        qWarning().noquote() << QStringLiteral(
+            "AiBrainSoul::loadCreatingDefaultsIfMissing: could not write \"%1\" — %2")
+            .arg(capabilitiesFile.fileName(), capabilitiesFile.errorString());
     }
 }
 
@@ -181,14 +204,15 @@ QString AiBrainSoul::assembledSoulText() const
     // Directives first: law before personality. The app's list of what it
     // can do comes last, so it has the final word over an older soul.txt that
     // still describes features that changed.
-    QStringList parts;
-    for (const QString &part : { primeDirectivesText, soulPersonalityText,
-                                 QString::fromUtf8(capabilitiesText) }) {
-        if (!part.trimmed().isEmpty()) {
-            parts.append(part.trimmed());
+    // An empty file adds nothing, so it is skipped.
+    QStringList soulSections;
+    for (const QString &soulSection : { primeDirectivesText, soulPersonalityText,
+                                        QString::fromUtf8(capabilitiesText) }) {
+        if (!soulSection.trimmed().isEmpty()) {
+            soulSections.append(soulSection.trimmed());
         }
     }
-    return parts.join(QStringLiteral("\n\n"));
+    return soulSections.join(QStringLiteral("\n\n"));
 }
 
 QString AiBrainSoul::soulFolderPath() const

@@ -1,5 +1,6 @@
 #include "FollowedEmployerRoster.h"
 
+#include <QDebug>
 #include <QSettings>
 #include <QStringList>
 
@@ -21,10 +22,13 @@ QString packOne(const FollowedEmployer &employer)
         .arg(employer.boardName, employer.tenant, employer.displayName);
 }
 
+// The reverse of packOne. A missing display name is worked out from the
+// tenant.
 FollowedEmployer unpackOne(const QString &packedText)
 {
-    // Split into three at most, so a display name that happens to contain a
-    // pipe survives the round trip instead of being cut short.
+    // Split on every pipe, then join every part after the second back
+    // together. A display name that happens to contain a pipe survives the
+    // round trip instead of being cut short.
     const QStringList parts = packedText.split(QLatin1Char('|'));
     FollowedEmployer employer;
     if (parts.count() >= 2) {
@@ -61,6 +65,11 @@ void FollowedEmployerRoster::loadFromSettings()
         if (employer.isUsable()
                 && !AtsBoardName::displayNameFor(employer.boardName).isEmpty()) {
             watchedEmployers.append(employer);
+        } else {
+            qWarning().noquote() << QStringLiteral(
+                "FollowedEmployerRoster::loadFromSettings: dropped saved entry \"%1\" — "
+                "no tenant, or a board Job Crush does not know")
+                    .arg(packedText);
         }
     }
     emit followedEmployersChanged();
@@ -75,6 +84,14 @@ void FollowedEmployerRoster::persistToSettings() const
     QSettings settings;
     settings.setValue(followedEmployersKey, packedList);
     settings.sync();
+    if (settings.status() != QSettings::NoError) {
+        qWarning().noquote() << QStringLiteral(
+            "FollowedEmployerRoster::persistToSettings: could not save %1 followed "
+            "companies to \"%2\" — QSettings status %3")
+                .arg(packedList.count())
+                .arg(settings.fileName())
+                .arg(static_cast<int>(settings.status()));
+    }
 }
 
 QList<FollowedEmployer> FollowedEmployerRoster::allFollowedEmployers() const
@@ -89,12 +106,17 @@ int FollowedEmployerRoster::followedEmployerCount() const
 
 namespace {
 
-// A Workday tenant is "ngc.wd1/Northrop_Grumman_External_Site". The site part
-// names the company, padded with words like "External Site". Those are taken
-// off: "Northrop Grumman".
+// A Workday tenant is "ngc.wd1/Northrop_Grumman_External_Site", or on the
+// other Workday host "wd5.myworkdaysite/uw/UWHires". The last part is the
+// site, and it names the company, padded with words like "External Site".
+// Those are taken off: "Northrop Grumman".
+//
+// Steps: take the part after the last slash, turn it into capitalized words
+// with companyNameFromTenant, and drop the padding words. If every word was
+// padding, the capitalized site name is used as it is.
 QString companyNameFromWorkdaySite(const QString &workdayTenant)
 {
-    const QString siteName = workdayTenant.section(QLatin1Char('/'), 1);
+    const QString siteName = workdayTenant.section(QLatin1Char('/'), -1);
     static const QStringList paddingWords = {
         QStringLiteral("external"), QStringLiteral("site"), QStringLiteral("careers"),
         QStringLiteral("career"), QStringLiteral("jobs"), QStringLiteral("job"),
@@ -112,6 +134,11 @@ QString companyNameFromWorkdaySite(const QString &workdayTenant)
 
 } // namespace
 
+// Steps: empty link, a walled-garden link, a link to no known board, and a
+// board Job Crush cannot read yet each get their own sentence and stop. A
+// readable board becomes a FollowedEmployer. If the same board and tenant are
+// already watched (case ignored), nothing is added. Otherwise it is added,
+// saved, and announced.
 QString FollowedEmployerRoster::followEmployerFromLink(const QString &pastedLink,
                                                       const QString &displayName)
 {
@@ -132,10 +159,11 @@ QString FollowedEmployerRoster::followEmployerFromLink(const QString &pastedLink
                 "link from there.");
         }
         return QStringLiteral(
-            "Job Crush can watch companies on Greenhouse, Lever, Ashby, SmartRecruiters "
-            "and Workday. That link isn't one of them. Open a job on the company's "
+            "Job Crush can watch companies on Greenhouse, Lever, Ashby, SmartRecruiters, "
+            "Workday and Taleo. That link isn't one of them. Open a job on the company's "
             "careers page. If the address says greenhouse, lever, ashby, "
-            "smartrecruiters or myworkdayjobs anywhere in it, that link works.");
+            "smartrecruiters, myworkdayjobs, myworkdaysite or taleo anywhere in it, that "
+            "link works.");
     }
 
     const QString boardDisplayName = AtsBoardName::displayNameFor(boardIdentity.boardName);
@@ -143,13 +171,17 @@ QString FollowedEmployerRoster::followEmployerFromLink(const QString &pastedLink
             && boardDisplayName != QStringLiteral("Lever")
             && boardDisplayName != QStringLiteral("Ashby")
             && boardDisplayName != QStringLiteral("SmartRecruiters")
-            && boardDisplayName != QStringLiteral("Workday")) {
+            && boardDisplayName != QStringLiteral("Workday")
+            && boardDisplayName != QStringLiteral("Taleo")) {
         return QStringLiteral(
             "That company is on %1, and Job Crush can't read %1 yet. It reads "
-            "Greenhouse, Lever, Ashby, SmartRecruiters and Workday. It's on the list.")
+            "Greenhouse, Lever, Ashby, SmartRecruiters, Workday and Taleo. It's on the "
+            "list.")
             .arg(boardDisplayName);
     }
 
+    // The name the caller gave wins. Without one, a Workday site name is
+    // cleaned of its padding words, and any other tenant is capitalized.
     FollowedEmployer employer;
     employer.boardName = boardIdentity.boardName;
     employer.tenant = boardIdentity.tenant;
@@ -174,6 +206,8 @@ QString FollowedEmployerRoster::followEmployerFromLink(const QString &pastedLink
                           "you scout.").arg(employer.displayName, boardDisplayName);
 }
 
+// Each company with a follow link goes through followEmployerFromLink. The
+// roster's size before and after tells whether it was added.
 QString FollowedEmployerRoster::followEveryReadableCompanyOn(const CompanyList &companyList)
 {
     int companiesAdded = 0;
@@ -226,6 +260,10 @@ void FollowedEmployerRoster::stopFollowing(const QString &employerKey)
         }
     }
     if (watchedEmployers.count() == countBefore) {
+        qWarning().noquote() << QStringLiteral(
+            "FollowedEmployerRoster::stopFollowing: nothing removed for \"%1\" — "
+            "no watched company has that key")
+                .arg(employerKey);
         return;
     }
     persistToSettings();

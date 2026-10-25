@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <QDebug>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
@@ -18,11 +19,13 @@ QString textOrEmpty(const QString &possiblyNullText)
     return possiblyNullText.isNull() ? QString::fromLatin1("") : possiblyNullText;
 }
 
+// A time as stored text, or an empty string for "no time".
 QString timestampOrEmpty(const QDateTime &timestamp)
 {
     return timestamp.isValid() ? timestamp.toString(Qt::ISODate) : QString::fromLatin1("");
 }
 
+// The one place that turns a query row into a StagedDocument.
 StagedDocument stagedDocumentFromQueryRow(const QSqlQuery &row)
 {
     StagedDocument stagedDocument;
@@ -172,8 +175,12 @@ QList<StagedDocument> StagedDocumentRepository::loadEveryStagedDocument()
 {
     QList<StagedDocument> everyDocument;
     QSqlQuery selectQuery(jobCrushDatabase.connection());
-    selectQuery.exec(QStringLiteral(
-        "SELECT * FROM stagedDocument ORDER BY jobApplicationId ASC, stagedDocumentId ASC"));
+    if (!selectQuery.exec(QStringLiteral(
+            "SELECT * FROM stagedDocument ORDER BY jobApplicationId ASC, stagedDocumentId ASC"))) {
+        qWarning().noquote() << QStringLiteral(
+            "StagedDocumentRepository::loadEveryStagedDocument: query failed for every "
+            "staged document — %1").arg(selectQuery.lastError().text());
+    }
     while (selectQuery.next()) {
         everyDocument.append(stagedDocumentFromQueryRow(selectQuery));
     }
@@ -212,6 +219,9 @@ bool StagedDocumentRepository::replaceGeneratedDocument(StagedDocument &stagedDo
 {
     wasRefusedBecauseUserEdited = false;
 
+    // Look for the oldest piece of the same kind in the same packet. None
+    // means insert. One the user edited means leave it alone. Otherwise
+    // overwrite it, keeping its id and its created time.
     QSqlQuery existingQuery(jobCrushDatabase.connection());
     existingQuery.prepare(QStringLiteral(
         "SELECT * FROM stagedDocument "

@@ -52,6 +52,19 @@ inline void decodeOneLayerOfCharacterEntities(QString &workingText)
     }
 
     // The numeric forms: &#8212; and &#x2014;
+    //
+    // The pattern is "&#", then an optional "x" (captured as group 1), then
+    // one to six hex digits (group 2), then ";". With no "x" the digits are
+    // read as decimal, and with an "x" they are read as hex.
+    //
+    // The text is rebuilt from left to right:
+    //  1. For each match, read the digits as a number.
+    //  2. If they do not parse, or the number is 0, or it is past the last
+    //     Unicode character (0x10FFFF), skip this match. The entity is left
+    //     in the text as it was, because the next copy picks it up.
+    //  3. Otherwise copy the plain text between the last match and this
+    //     one, then add the one character the number names.
+    //  4. After the last match, copy whatever text is left.
     static const QRegularExpression numericEntityPattern(
         QStringLiteral("&#(x?)([0-9a-fA-F]{1,6});"));
     QString decodedText;
@@ -74,6 +87,11 @@ inline void decodeOneLayerOfCharacterEntities(QString &workingText)
     workingText = decodedText;
 }
 
+// The most strip-and-decode passes plainTextFromHtmlFragment makes. Real
+// postings are escaped at most twice. The limit stops a page built to be
+// escaped over and over from keeping the loop going forever.
+constexpr int mostHtmlCleanupPasses = 3;
+
 // Turns an HTML description fragment into plain readable text.
 inline QString plainTextFromHtmlFragment(const QString &htmlFragment)
 {
@@ -81,6 +99,11 @@ inline QString plainTextFromHtmlFragment(const QString &htmlFragment)
 
     // Block-level tags become line breaks BEFORE tags are stripped, so
     // paragraphs and list items don't run together into one wall of words.
+    //
+    // The pattern is "<", optional spaces, an optional "/", optional spaces,
+    // then one of p, br, div, li, tr or h1 to h6 as a whole word, then
+    // anything up to the closing ">". So "<p>", "</li>", "<br/>" and
+    // "<div class=x>" all match.
     static const QRegularExpression blockBreakTagPattern(
         QStringLiteral("<\\s*/?\\s*(p|br|div|li|tr|h[1-6])\\b[^>]*>"),
         QRegularExpression::CaseInsensitiveOption);
@@ -88,24 +111,31 @@ inline QString plainTextFromHtmlFragment(const QString &htmlFragment)
     // Tag-SHAPED, not merely bracketed. A blanket "<...>" sweep is tempting
     // and wrong: it eats "we get 5 > 3 candidates <shrug>" down to nothing,
     // and a job description is allowed to contain a less-than sign.
+    //
+    // The pattern is "<", optional spaces, an optional "/", optional spaces,
+    // then a tag name (a letter, then letters, digits, ":" or "-"), then
+    // optionally a space followed by attributes with no "<" or ">" in them,
+    // then an optional "/", optional spaces, and ">". "5 > 3" has no tag
+    // name after a "<", so it is left alone.
     static const QRegularExpression htmlTagPattern(
         QStringLiteral("<\\s*/?\\s*[a-zA-Z][a-zA-Z0-9:-]*(?:\\s[^<>]*)?/?\\s*>"));
+    // An HTML comment: "<!--", then the fewest characters possible, across
+    // line breaks, then "-->".
     static const QRegularExpression htmlCommentPattern(
         QStringLiteral("<!--.*?-->"), QRegularExpression::DotMatchesEverythingOption);
 
-    // Strip, decode, strip again — and mean it.
+    // Strip, decode, and strip again.
     //
     // Some boards escape their HTML once and some escape it twice. Decoding
     // "&lt;img src=…&gt;" AFTER stripping tags puts a live <img> back into
-    // text we had just finished cleaning, and a Text element in Qt's default
+    // text we had finished cleaning, and a Text element in Qt's default
     // AutoText mode will happily go and fetch it. That is exactly how a
     // recruiter's banner ended up rendered full-size inside a Discoveries row.
     //
     // So each pass strips what it can see, then decodes one layer of escaping,
-    // and the loop goes round again until a pass changes nothing. Three passes
-    // is far more than real postings need, and the ceiling stops a
-    // hand-crafted payload from spinning here forever.
-    for (int cleanupPass = 0; cleanupPass < 3; ++cleanupPass) {
+    // and the loop goes round again until a pass changes nothing, or until
+    // mostHtmlCleanupPasses passes have run.
+    for (int cleanupPass = 0; cleanupPass < mostHtmlCleanupPasses; ++cleanupPass) {
         const QString textBeforeThisPass = workingText;
 
         workingText.remove(htmlCommentPattern);
@@ -123,6 +153,8 @@ inline QString plainTextFromHtmlFragment(const QString &htmlFragment)
     workingText.remove(htmlTagPattern);
 
     // Collapse the runs of blank space that stripping always leaves behind.
+    // Runs of spaces and tabs become one space. Any run of white space that
+    // holds two or more line breaks becomes exactly one blank line.
     static const QRegularExpression runOfSpacesPattern(QStringLiteral("[ \\t]+"));
     workingText.replace(runOfSpacesPattern, QStringLiteral(" "));
     static const QRegularExpression runOfBlankLinesPattern(QStringLiteral("\\s*\\n\\s*\\n\\s*"));
@@ -131,7 +163,14 @@ inline QString plainTextFromHtmlFragment(const QString &htmlFragment)
     return workingText.trimmed();
 }
 
-// The one line a Discoveries row shows before the user opens anything.
+// When oneLineSummaryFrom cuts a summary at a space, the space must be past
+// this many characters. If the only space is earlier, the cut would throw
+// away most of the line, so the text is cut mid-word at the limit instead.
+constexpr int shortestSummaryCutAtASpace = 40;
+
+// The one line a Discoveries row shows before the user opens anything. All
+// white space becomes single spaces, and text longer than maximumCharacters
+// is cut and ends with "…".
 inline QString oneLineSummaryFrom(const QString &plainDescriptionText,
                                   int maximumCharacters = 160)
 {
@@ -148,7 +187,8 @@ inline QString oneLineSummaryFrom(const QString &plainDescriptionText,
     // "engine" when the word was "engineering" reads like a bug.
     const int lastSpaceBeforeLimit =
         singleLineText.left(maximumCharacters).lastIndexOf(QLatin1Char(' '));
-    const int cutPosition = lastSpaceBeforeLimit > 40 ? lastSpaceBeforeLimit
+    const int cutPosition = lastSpaceBeforeLimit > shortestSummaryCutAtASpace
+                                ? lastSpaceBeforeLimit
                                                       : maximumCharacters;
     return singleLineText.left(cutPosition).trimmed() + QStringLiteral("…");
 }

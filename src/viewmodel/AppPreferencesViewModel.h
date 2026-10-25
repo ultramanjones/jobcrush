@@ -10,8 +10,8 @@ class AppPreferences;
 // AppPreferencesViewModel
 //
 // Serves app-wide preference values to the view and forwards changes down.
-// Also hands the Settings page the soul folder location (with an action to
-// open it), since "soul-file access" is a Settings surface per the plan.
+// Also gives the Settings page the soul folder location and a way to open it,
+// because Settings is where the user reaches the soul files.
 class AppPreferencesViewModel : public QObject {
     Q_OBJECT
 
@@ -47,9 +47,9 @@ public:
     bool moonlightTipsAreTurnedOn() const;
     void setMoonlightTipsAreTurnedOn(bool turnedOn);
 
-    // Opens the soul folder in the system file manager, and reloads the soul
-    // files on the way (cheap, and it means edits are picked up by the very
-    // next AIBrain request without restarting).
+    // Opens the soul folder in the system file manager. It reloads the soul
+    // files first. That costs little, and the next AI request then uses any
+    // edits without a restart.
     Q_INVOKABLE void openSoulFolder();
 
 signals:

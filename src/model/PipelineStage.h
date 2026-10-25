@@ -25,7 +25,7 @@ inline QString pipelineStageToStorageText(PipelineStage stage)
     case PipelineStage::Offer:     return QStringLiteral("offer");
     case PipelineStage::Closed:    return QStringLiteral("closed");
     }
-    return QStringLiteral("saved"); // unreachable, but the compiler deserves certainty
+    return QStringLiteral("saved"); // never reached; stops a "no return value" warning
 }
 
 // Converts stored text back to a PipelineStage.

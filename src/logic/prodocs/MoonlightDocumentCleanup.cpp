@@ -11,6 +11,7 @@
 #include "ProDocsIntake.h"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -20,6 +21,15 @@ namespace {
 // The most text sent. A resume is a page or two; anything longer is mostly
 // not jobs and schooling, and every extra page costs the user money.
 constexpr int mostCharactersSent = 30000;
+
+// The longest answer, in tokens, a layout request may get back. The whole
+// document comes back, so it needs far more room than a chat reply. Some
+// brains (Gemini) also spend part of it thinking first.
+constexpr int longestLayoutAnswerTokens = 12000;
+
+// A layout answer with fewer words than this share of the words sent was
+// cut off. 8 out of 10, so 80 percent.
+constexpr int shareOfWordsThatMustComeBackTenths = 8;
 
 // Words, counted the plain way: runs of letters or digits. Markdown marks
 // like # and - are not words, so they do not count.
@@ -35,6 +45,8 @@ int wordCountOf(const QString &text)
     return wordCount;
 }
 
+// The question sent to the brain for "clean this up". It asks for a fixed
+// JSON shape that readAnswer can read, and forbids guessing.
 QString instructionsFor(const QString &documentText)
 {
     return QStringLiteral(
@@ -58,6 +70,8 @@ QString instructionsFor(const QString &documentText)
         .arg(documentText.left(mostCharactersSent));
 }
 
+// One text field of a JSON object, with runs of whitespace made single.
+// An absent field or one that is not text gives an empty string.
 QString textOf(const QJsonObject &object, const char *name)
 {
     return object.value(QLatin1String(name)).toString().simplified();
@@ -91,6 +105,9 @@ bool MoonlightDocumentCleanup::readAnswer(const QString &replyText,
     workExperiences.clear();
     educationRecords.clear();
 
+    // The brain may put words or a code fence around the JSON, even when
+    // told not to. So take the text from the first "{" to the last "}" and
+    // read only that.
     const int firstBrace = replyText.indexOf(QLatin1Char('{'));
     const int lastBrace = replyText.lastIndexOf(QLatin1Char('}'));
     if (firstBrace < 0 || lastBrace <= firstBrace) {
@@ -142,7 +159,12 @@ void MoonlightDocumentCleanup::cleanUpDocument(qint64 professionalDocumentId,
                                                const QString &documentName,
                                                const QString &documentText)
 {
+    // One request at a time. A second press while the first is running is
+    // ignored.
     if (isRunning) {
+        qWarning().noquote() << QStringLiteral(
+            "MoonlightDocumentCleanup::cleanUpDocument: ignored a request for \"%1\""
+            " — Moonlight is already reading a document").arg(documentName);
         return;
     }
     if (!aBrainIsAvailable()) {
@@ -212,6 +234,9 @@ void MoonlightDocumentCleanup::layOutDocument(const QString &documentName,
                                               const QString &destinationFolderPath)
 {
     if (isRunning) {
+        qWarning().noquote() << QStringLiteral(
+            "MoonlightDocumentCleanup::layOutDocument: ignored a request for \"%1\""
+            " — Moonlight is already working on a document").arg(documentName);
         return;
     }
     if (!aBrainIsAvailable()) {
@@ -240,10 +265,8 @@ void MoonlightDocumentCleanup::layOutDocument(const QString &documentName,
         "anything. Answer with ONLY the Markdown, no words before or after it.\n\n"
         "THE TEXT:\n%1").arg(documentText.left(mostCharactersSent));
 
-    // The whole document comes back, so the answer needs far more room than a
-    // chat reply. Some brains (Gemini) also spend part of it thinking first.
     AiBrainRequestOptions layoutOptions;
-    layoutOptions.longestAnswerTokens = 12000;
+    layoutOptions.longestAnswerTokens = longestLayoutAnswerTokens;
     AiBrainReply *brainReply =
         connectedBrain.streamConversation({ question }, this, layoutOptions);
     if (brainReply == nullptr) {
@@ -262,7 +285,10 @@ void MoonlightDocumentCleanup::layOutDocument(const QString &documentName,
         brainReply->deleteLater();
         isRunning = false;
 
-        // Models wrap the answer in a code fence whatever they are told.
+        // Models wrap the answer in a code fence whatever they are told. The
+        // first pattern removes an opening fence at the start: three
+        // backticks, an optional language name such as "markdown", and the
+        // space after. The second removes a closing fence at the end.
         QString markdownText = completeReplyText.trimmed();
         markdownText.remove(QRegularExpression(QStringLiteral("^```[a-zA-Z]*\\s*")));
         markdownText.remove(QRegularExpression(QStringLiteral("\\s*```$")));
@@ -278,7 +304,7 @@ void MoonlightDocumentCleanup::layOutDocument(const QString &documentName,
         // like "Experience" can be added, and a few stray words can drop, so
         // only a big gap counts.
         const int wordsBack = wordCountOf(markdownText);
-        if (wordsBack < wordsSent * 8 / 10) {
+        if (wordsBack < wordsSent * shareOfWordsThatMustComeBackTenths / 10) {
             emit cleanupStatusChanged(QStringLiteral(
                 "Moonlight's answer was cut off: %1 words came back out of %2. No file was "
                 "made. Press the button to try again, or use the plain Word copy.")
@@ -286,6 +312,9 @@ void MoonlightDocumentCleanup::layOutDocument(const QString &documentName,
             return;
         }
 
+        // The new file's name: the document's name without its extension,
+        // with the characters Windows does not allow in a file name removed:
+        // \ / : * ? " < > |
         QString baseName = QFileInfo(documentName).completeBaseName();
         baseName.remove(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")));
         baseName = baseName.trimmed().isEmpty() ? QStringLiteral("Document")
@@ -298,6 +327,9 @@ void MoonlightDocumentCleanup::layOutDocument(const QString &documentName,
                 + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMddHHmm")),
             QStringLiteral("docx"), destinationFolderPath, true);
         if (!outcome.succeeded) {
+            qWarning().noquote() << QStringLiteral(
+                "MoonlightDocumentCleanup::layOutDocument: could not save the layout of"
+                " \"%1\" — %2").arg(documentName, outcome.reasonText);
             emit cleanupStatusChanged(outcome.reasonText + QLatin1Char(' ')
                                       + outcome.whatToDoNextText);
             return;

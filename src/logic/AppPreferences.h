@@ -5,13 +5,13 @@
 
 // AppPreferences
 //
-// The user's app-wide preferences, persisted via QSettings — a Logic layer
-// class wrapping the storage so nothing above it knows where preferences
-// live. Settings are instant-apply by law: every setter persists immediately
-// and signals, no Apply/OK ceremony anywhere.
+// The user's app-wide preferences, saved with QSettings. A Logic layer class
+// that wraps the storage, so nothing above it knows where preferences live.
+// Settings apply at once: every setter saves right away and sends its
+// changed signal. There is no Apply or OK button anywhere.
 //
-// Phase 3 holds the board color theme; the juice dial (Off/Subtle/Full
-// Arcade) joins in Phase 7.
+// It holds the board color theme, the packet export format and folder, and
+// the Moonlight tips settings.
 class AppPreferences : public QObject {
     Q_OBJECT
 public:
@@ -20,8 +20,9 @@ public:
     // Loads persisted values. Called once from the composition root.
     void loadFromSettings();
 
-    // Board color theme: "classic" (retro-80s neons, default) or
-    // "grayscale" (same dark base, shade-distinguished — for sensitive eyes).
+    // Board color theme: "classic" (bright 1980s neon colors, the default) or
+    // "grayscale" (the same dark base, told apart by shade, for eyes that
+    // find bright color hard).
     QString boardThemeName() const;
     void setBoardThemeName(const QString &themeName);
 
@@ -54,6 +55,7 @@ signals:
     void exportFolderPathChanged();
 
 private:
+    // Defaults until loadFromSettings runs. They match the defaults in the .cpp.
     QString selectedBoardThemeName = QStringLiteral("classic");
     QString selectedDownloadFormat = QStringLiteral("docx");
     QString selectedExportFolderPath;

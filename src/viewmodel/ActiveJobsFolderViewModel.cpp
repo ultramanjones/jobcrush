@@ -1,6 +1,7 @@
 #include "ActiveJobsFolderViewModel.h"
 
 #include <QClipboard>
+#include <QDebug>
 #include <QDir>
 #include <QDesktopServices>
 #include <QGuiApplication>
@@ -63,7 +64,12 @@ QString ActiveJobsFolderViewModel::aiBuddyInstructions() const
 
 void ActiveJobsFolderViewModel::openFolder() const
 {
-    QDesktopServices::openUrl(QUrl::fromLocalFile(activeJobs.folderPath()));
+    const QString folderPathToOpen = activeJobs.folderPath();
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(folderPathToOpen))) {
+        qWarning().noquote() << QStringLiteral(
+            "ActiveJobsFolderViewModel::openFolder: could not open \"%1\" — the system "
+            "file manager refused it").arg(folderPathToOpen);
+    }
 }
 
 void ActiveJobsFolderViewModel::useFolder(const QString &chosenFolderUrl)

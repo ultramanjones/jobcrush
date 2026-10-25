@@ -14,6 +14,8 @@ class TestWorkdayBoardSource : public QObject {
     Q_OBJECT
 
 private:
+    // One real job link, with and without the language part ("en-US"), and
+    // the tenant and job path it should be read into.
     const QString jobLinkWithLanguage = QStringLiteral(
         "https://ngc.wd1.myworkdayjobs.com/en-US/Northrop_Grumman_External_Site/job/"
         "United-States-Georgia-Warner-Robins/Embedded---Principal-Software-Engineer_R10252946");
@@ -51,15 +53,33 @@ private slots:
 
     void theTenantSplitsBackApart()
     {
-        QString hostPrefix;
-        QString cxsTenant;
-        QString siteName;
-        QVERIFY(WorkdayBoardSource::splitTenant(expectedTenant, hostPrefix, cxsTenant, siteName));
-        QCOMPARE(hostPrefix, QStringLiteral("ngc.wd1"));
-        QCOMPARE(cxsTenant, QStringLiteral("ngc"));
-        QCOMPARE(siteName, QStringLiteral("Northrop_Grumman_External_Site"));
-        QVERIFY(!WorkdayBoardSource::splitTenant(QStringLiteral("acme"),
-                                                 hostPrefix, cxsTenant, siteName));
+        WorkdayBoardSource::WorkdaySite workdaySite;
+        QVERIFY(WorkdayBoardSource::readTenant(expectedTenant, workdaySite));
+        QCOMPARE(workdaySite.siteHost, QStringLiteral("ngc.wd1.myworkdayjobs.com"));
+        QCOMPARE(workdaySite.cxsTenant, QStringLiteral("ngc"));
+        QCOMPARE(workdaySite.siteName, QStringLiteral("Northrop_Grumman_External_Site"));
+        QCOMPARE(workdaySite.publicSitePath, QStringLiteral("Northrop_Grumman_External_Site"));
+        QVERIFY(!WorkdayBoardSource::readTenant(QStringLiteral("acme"), workdaySite));
+    }
+
+    // The other Workday host keeps the account and the site in the path.
+    // Link shape checked live on 2026-10-23.
+    void aMyWorkdaySiteLinkIsReadToo()
+    {
+        const AtsBoardIdentity identity = AtsBoardDetector().identify(QStringLiteral(
+            "https://wd5.myworkdaysite.com/en-US/recruiting/uw/UWHires/job/Seattle-WA/"
+            "Research-Specimen-Processing-Technician_REQ-0000136398"));
+        QCOMPARE(identity.boardName, AtsBoardName::Workday);
+        QCOMPARE(identity.tenant, QStringLiteral("wd5.myworkdaysite/uw/UWHires"));
+        QCOMPARE(identity.jobId, QStringLiteral(
+            "job/Seattle-WA/Research-Specimen-Processing-Technician_REQ-0000136398"));
+
+        WorkdayBoardSource::WorkdaySite workdaySite;
+        QVERIFY(WorkdayBoardSource::readTenant(identity.tenant, workdaySite));
+        QCOMPARE(workdaySite.siteHost, QStringLiteral("wd5.myworkdaysite.com"));
+        QCOMPARE(workdaySite.cxsTenant, QStringLiteral("uw"));
+        QCOMPARE(workdaySite.siteName, QStringLiteral("UWHires"));
+        QCOMPARE(workdaySite.publicSitePath, QStringLiteral("recruiting/uw/UWHires"));
     }
 
     void theCompanyNameComesFromTheSiteName()
@@ -138,7 +158,8 @@ private slots:
         const JobPosting posting = WorkdayBoardSource::postingFromJobDetail(
             jobDetail, expectedTenant, QLatin1Char('/') + expectedJobPath);
 
-        // Trap 2: the office name must never become the company name.
+        // The hiring office name ("0090 CORP-Corporate Office") must never
+        // become the company name.
         QCOMPARE(posting.companyName, QStringLiteral("Northrop Grumman"));
         QCOMPARE(posting.externalSourceId, expectedJobPath);
         QCOMPARE(posting.locationText,

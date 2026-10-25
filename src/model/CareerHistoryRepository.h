@@ -10,12 +10,12 @@ class JobCrushDatabase;
 
 // CareerHistoryRepository
 //
-// The model-layer gateway for the two things a resume is really made of: the
-// jobs someone has held and the schooling they have done.
+// Reads and writes the two things a resume is made of: the jobs someone has
+// held and the schooling they have done. Only this class writes SQL for them.
 //
-// One repository rather than two, because they are never wanted apart — every
-// screen and every calculation that needs one needs the other, and splitting
-// them would be separation of concerns turning into confetti.
+// One repository rather than two, because they are never wanted apart. Every
+// screen and every calculation that needs one needs the other, so splitting
+// them would only add a class.
 class CareerHistoryRepository {
 public:
     explicit CareerHistoryRepository(JobCrushDatabase &database);
@@ -51,8 +51,8 @@ public:
     // Hand-typed entries carry no source line, so they are never matched here
     // and never suppressed.
     //
-    // The entry's OWN identity is part of the match, not just the line it came
-    // from: one line of a resume can legitimately name two schools ("Tulsa
+    // The entry's OWN identity is part of the match, not only the line it
+    // came from: one line of a resume can legitimately name two schools ("Tulsa
     // Community College · 2000 – 2001    Auburn University · 1993 – 1994"),
     // and keying on the line alone would let the first one through and
     // silently swallow the second.
@@ -70,12 +70,14 @@ public:
     bool removeUntouchedEntriesFromDocument(qint64 professionalDocumentId);
 
     // Collapses duplicates already sitting in the database, keeping the one
-    // the user confirmed where there is one, and the oldest otherwise. Runs at
-    // startup so a database that got into this state before the fix heals
-    // itself rather than needing the user to tidy up after us.
+    // the user confirmed where there is one. Otherwise it keeps the first one
+    // loaded, which is the newest (see the .cpp). Runs at
+    // startup, so a database that got duplicates before the fix is cleaned up
+    // without the user deleting rows by hand.
     // Returns how many rows it removed, or -1 on failure.
     int removeDuplicateEntries();
 
+    // Why the last write or query failed.
     QString lastErrorText() const;
 
 private:

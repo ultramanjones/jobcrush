@@ -3,34 +3,34 @@ import JobCrush
 
 // BrainChatPage
 //
-// The chat window with AIBrain. Streamed responses appear word by word as
-// they are written — which is the progress indicator (no-spinner law: the
-// only waiting state is the moment before the first fragment, covered by an
-// honest, pulsing status line).
+// The chat window with Moonlight, the app's AI brain. Answers show up word
+// by word as they are written. The growing text is the progress display, so
+// the page needs no spinner. The only wait with no words yet is before the
+// first word arrives. A pulsing line covers that wait.
 //
-// Pure view: binds to BrainChatConversationViewModel, emits navigation
-// wishes upward, contains zero business logic.
+// This is the view layer. It binds to BrainChatConversationViewModel, asks
+// Main to change pages, and holds no business logic.
 Rectangle {
     id: brainChatPage
 
     // Injected from Main: the BrainChatConversationViewModel.
     property var conversationViewModel
 
-    // Injected from Main: the same connection truth Settings shows, so the
-    // two screens can never disagree about which brain is live.
+    // Injected from Main: the same connection viewmodel Settings uses, so
+    // the two screens always agree about which brain is connected.
     property var brainConnectionViewModel
 
     // Injected from Main: the hints, and whether the strip was closed.
     property var preferencesViewModel
 
-    // Asks Main to navigate (degraded mode points the user at Settings).
+    // Asks Main to show Settings. Used when no brain is set up yet.
     signal settingsRequested
 
     color: JobCrushTheme.appBackgroundColor
 
-    // Opening the chat is one of the KEY MOMENTS a connection check exists
-    // for — you should never discover a dead brain by typing a paragraph at
-    // it first. A cached result answers instantly.
+    // Check the connection each time the chat opens. The user should not
+    // type a long message and only then find out the brain is not working.
+    // A recent result is reused, so this answers at once.
     onVisibleChanged: {
         if (visible) {
             brainConnectionViewModel.checkConnectionNow()
@@ -58,7 +58,7 @@ Rectangle {
             font.weight: Font.DemiBold
         }
 
-        // The connection truth, echoed from Settings word for word.
+        // The connection status, in the same words Settings shows.
         Text {
             id: chatConnectionStatusLabel
             anchors.verticalCenter: parent.verticalCenter
@@ -72,8 +72,9 @@ Rectangle {
             font.weight: Font.DemiBold
             font.letterSpacing: 0.8
 
-            // Breathing text while a check is in flight — the honest wait
-            // state, and never a spinner.
+            // The text fades in and out while a check is running. This is
+            // the waiting state instead of a spinner. When the check ends,
+            // the text goes back to full strength.
             SequentialAnimation on opacity {
                 running: brainChatPage.brainConnectionViewModel.connectionIsBeingChecked
                 loops: Animation.Infinite
@@ -164,8 +165,19 @@ Rectangle {
             width: ListView.view.width - ListView.view.leftMargin - ListView.view.rightMargin
             height: messageBubble.height
 
+            // The viewmodel names who wrote each message: "human" for the
+            // user, "notice" for a note from the app, and anything else is
+            // Moonlight.
             readonly property bool isHumanMessage: authorName === "human"
             readonly property bool isNoticeMessage: authorName === "notice"
+
+            // A bubble never takes more than this share of the row, so the
+            // left or right side still shows who is talking.
+            readonly property real widestBubbleShare: 0.82
+
+            // The space inside a bubble that is not text: the side margins
+            // and a little more.
+            readonly property int bubblePaddingWidth: 32
 
             Rectangle {
                 id: messageBubble
@@ -174,8 +186,8 @@ Rectangle {
                 anchors.right: messageRow.isHumanMessage ? parent.right : undefined
                 anchors.left: messageRow.isHumanMessage ? undefined : parent.left
 
-                width: Math.min(messageContentColumn.implicitWidth + 32,
-                                messageRow.width * 0.82)
+                width: Math.min(messageContentColumn.implicitWidth + messageRow.bubblePaddingWidth,
+                                messageRow.width * messageRow.widestBubbleShare)
                 height: messageContentColumn.implicitHeight + 24
                 radius: 10
                 color: messageRow.isNoticeMessage
@@ -193,14 +205,16 @@ Rectangle {
                     anchors.top: parent.top
                     anchors.margins: 12
                     width: Math.min(messageTextLabel.implicitWidth,
-                                    messageRow.width * 0.82 - 32)
+                                    messageRow.width * messageRow.widestBubbleShare
+                                        - messageRow.bubblePaddingWidth)
                     spacing: 6
 
                     Text {
                         id: messageTextLabel
                         width: parent.width
-                        // The streaming caret rides at the end of the growing
-                        // text — words appearing IS the progress display.
+                        // While the answer is still coming, a bar sits at the
+                        // end of the text. The words showing up are the
+                        // progress display.
                         text: messageRow.messageText
                               + (messageRow.isStillStreaming && messageRow.messageText.length > 0
                                      ? " ▍" : "")
@@ -212,8 +226,8 @@ Rectangle {
                         visible: messageRow.messageText.length > 0
                     }
 
-                    // The honest waiting line: only alive between "request
-                    // sent" and "first word arrived", then gone forever.
+                    // The waiting line. Shown only after the message is sent
+                    // and before the first word of the answer arrives.
                     Text {
                         id: awaitingFirstWordLabel
                         visible: messageRow.isStillStreaming && messageRow.messageText.length === 0
@@ -245,7 +259,7 @@ Rectangle {
     }
 
     // ------------------------------------------------------------------
-    // Degraded mode: no brain configured — say so, point at Settings.
+    // No brain set up yet. Say so, and offer a button to Settings.
     // ------------------------------------------------------------------
     Rectangle {
         anchors.centerIn: transcriptListView
@@ -314,11 +328,8 @@ Rectangle {
     }
 
     // ------------------------------------------------------------------
-    // Composer
-    // ------------------------------------------------------------------
-    // ------------------------------------------------------------------
     // Hints: one thing Job Crush can do that the user may not have found.
-    // A new one every 20 seconds. The x closes the strip for good.
+    // A new one every 20 seconds. "hide tips" closes the strip for good.
     // ------------------------------------------------------------------
     Item {
         id: hintsStrip
@@ -334,10 +345,16 @@ Rectangle {
                  && brainChatPage.preferencesViewModel.moonlightTipsAreTurnedOn
                  && brainChatPage.preferencesViewModel.moonlightHints.length > 0
 
+        // Which hint is showing. It steps through the list and goes back to
+        // the first one after the last.
         property int hintIndex: 0
 
+        readonly property int millisecondsBetweenHints: 20000
+
+        // Runs only while the strip and the page are both showing, so the
+        // hints do not move on while nobody can see them.
         Timer {
-            interval: 20000
+            interval: hintsStrip.millisecondsBetweenHints
             repeat: true
             running: hintsStrip.visible && brainChatPage.visible
             onTriggered: hintsStrip.hintIndex = (hintsStrip.hintIndex + 1)
@@ -378,13 +395,23 @@ Rectangle {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Composer: the box the user types in, and the Send button
+    // ------------------------------------------------------------------
     Rectangle {
         id: composerArea
+
+        // The box grows with the text, from one line up to a few lines.
+        // Past that, the text scrolls inside the box.
+        readonly property int shortestComposerHeight: 52
+        readonly property int tallestComposerHeight: 160
+
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 20
-        height: Math.min(Math.max(composerTextEdit.implicitHeight + 24, 52), 160)
+        height: Math.min(Math.max(composerTextEdit.implicitHeight + 24, shortestComposerHeight),
+                         tallestComposerHeight)
         radius: 10
         color: JobCrushTheme.panelBackgroundColor
         border.color: composerTextEdit.activeFocus
@@ -419,7 +446,8 @@ Rectangle {
                 }
             }
 
-            // Placeholder, hand-rolled (no Controls import needed).
+            // Hint text for the empty box. Drawn here by hand, so the page
+            // does not need the Qt Quick Controls module.
             Text {
                 visible: composerTextEdit.text.length === 0 && !composerTextEdit.activeFocus
                 text: "Message Moonlight…  (Enter sends, Shift+Enter for a new line)"
@@ -468,7 +496,9 @@ Rectangle {
         }
     }
 
-    // Hands the composer text to the viewmodel and clears the box.
+    // Hands the composer text to the viewmodel and clears the box. Does
+    // nothing when the box is empty or Moonlight is still answering. Both
+    // Enter and the Send button come through here.
     function sendComposerText() {
         const messageText = composerTextEdit.text.trim()
         if (messageText.length === 0

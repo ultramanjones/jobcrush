@@ -114,15 +114,25 @@ signals:
     void taskRefusedBecauseUserEdited(qint64 jobApplicationId, const QString &pieceName);
 
 private:
+    // One task waiting its turn, or the one running now.
     struct QueuedTask {
         qint64 jobApplicationId = 0;
         AiBrainTaskKind taskKind = AiBrainTaskKind::ParsePosting;
         QString extraInstructionText;
     };
 
+    // Adds a task to the end of the queue, unless the same task for the same
+    // job is already waiting or running.
     void enqueueTask(const QueuedTask &task);
+
+    // Starts the first waiting task when nothing is running.
     void startNextTaskIfIdle();
+
+    // The running task's reply came back whole. Reads it, files the draft,
+    // and starts the next task.
     void finishActiveTask(const QString &completeReplyText);
+
+    // The running task's reply failed. Tells the user and empties the queue.
     void abandonActiveTask(const QString &plainReason, const QString &whatToDoNextText);
 
     // Gathers everything the AI gets told about one job.
@@ -140,6 +150,7 @@ private:
                       AiBrainTaskKind taskKind,
                       const TaskOutcome &outcome);
 
+    // The kind of packet piece each task writes, and the title it gets.
     static StagedDocumentKind stagedKindFor(AiBrainTaskKind taskKind);
     static QString titleFor(AiBrainTaskKind taskKind);
 
@@ -155,8 +166,12 @@ private:
     PostingRequirementReader requirementReader;
 
     QList<QueuedTask> waitingTasks;
+
+    // The running task. Only meaningful while aTaskIsActive is true.
     QueuedTask activeTask;
     bool aTaskIsActive = false;
+
+    // The running task's reply so far, as it streams in.
     QString accumulatedStreamingText;
     AiBrainReply *activeReply = nullptr; // owned via Qt parentage to this
 };

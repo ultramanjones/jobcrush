@@ -47,6 +47,10 @@
 //   5. During Workday's maintenance the site redirects to a page on
 //      community.workday.com. That is trouble to report, not "no jobs".
 //
+// Some employers use the other Workday host, wd5.myworkdaysite.com, where
+// the account and site are in the path: /recruiting/{tenant}/{site}/job/...
+// The JSON service is the same there. See readTenant.
+//
 // The tenant string Job Crush keeps for a Workday employer is
 // "{tenant}.{shard}/{site}", for example "ngc.wd1/Northrop_Grumman_External_Site".
 // Workday needs all three parts to find a job, so they travel together.
@@ -75,10 +79,19 @@ public:
 
     // --- The reading, kept apart from the network so it can be tested ----
 
-    // The three parts of a Workday tenant string. Returns false when the
-    // string is not in "{tenant}.{shard}/{site}" form.
-    static bool splitTenant(const QString &workdayTenant,
-                            QString &hostPrefix, QString &cxsTenant, QString &siteName);
+    // Where one Workday careers site lives, read from the tenant string.
+    struct WorkdaySite {
+        QString siteHost;        // "ngc.wd1.myworkdayjobs.com" or "wd5.myworkdaysite.com"
+        QString cxsTenant;       // the account name: "ngc", "uw"
+        QString siteName;        // "Northrop_Grumman_External_Site", "UWHires"
+        QString publicSitePath;  // the path a person opens, before the job's own path
+    };
+
+    // Reads a Workday tenant string. Two forms:
+    //   "ngc.wd1/Northrop_Grumman_External_Site"  for ngc.wd1.myworkdayjobs.com
+    //   "wd5.myworkdaysite/uw/UWHires"            for wd5.myworkdaysite.com/recruiting/uw/UWHires
+    // Returns false when the string is neither.
+    static bool readTenant(const QString &workdayTenant, WorkdaySite &workdaySite);
 
     // "Northrop_Grumman_External_Site" -> "Northrop Grumman".
     // "L3HarrisCareers" -> "L3Harris". A stand-in for when nobody told Job

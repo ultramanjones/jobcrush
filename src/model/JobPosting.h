@@ -65,6 +65,11 @@ struct JobPosting {
     // missing: the user is told, and decides what to do.
     QDateTime postingGoneSinceTimestamp;
 
+    // When the user said this job is still open, after checking it
+    // themselves. While this is set, Job Crush never marks the job as gone.
+    // The user's word wins over any check Job Crush can make.
+    QDateTime userSaysStillOpenTimestamp;
+
     // True when the user brought this job in by hand. The Manual Add tab shows
     // exactly these.
     bool wasAddedByHand() const;

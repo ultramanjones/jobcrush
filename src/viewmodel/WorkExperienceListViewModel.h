@@ -14,16 +14,15 @@ class ProDocsIntake;
 // Serves the jobs Job Crush read out of the user's documents, and takes their
 // corrections back down.
 //
-// Every row is editable on purpose. Parsing a resume is a heuristic and it
-// WILL be wrong sometimes; the difference between a useful app and an
-// infuriating one is whether being wrong costs the user one click or costs
-// them the feature.
+// Every row is editable on purpose. Reading a resume is a guess, and it WILL
+// be wrong sometimes. When it is, the user fixes the row with one click
+// instead of giving up on the feature.
 class WorkExperienceListViewModel : public QAbstractListModel {
     Q_OBJECT
 
     Q_PROPERTY(int workExperienceCount READ rowCountForProperty NOTIFY workExperiencesChanged)
 
-    // How many entries are still just Job Crush's reading. The page uses this
+    // How many entries are still only Job Crush's reading. The page uses this
     // to ask for a look rather than assuming the job is done.
     Q_PROPERTY(int unconfirmedCount READ unconfirmedCount NOTIFY workExperiencesChanged)
 

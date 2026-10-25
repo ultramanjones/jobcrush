@@ -20,6 +20,7 @@ public:
     GeminiApiProvider();
 
     QString providerDisplayName() const override;
+    QString modelNameFor(AiBrainLevel brainLevel) const override;
 
     AiBrainReply *streamConversation(const QString &soulText,
                                      const QList<AiBrainConversationMessage> &conversation,
@@ -32,6 +33,7 @@ public:
                                              QObject *replyParent) override;
 
 private:
+    // Builds the JSON request body in Google's "contents" and "parts" shape.
     QByteArray buildRequestBody(const QString &soulText,
                                 const QList<AiBrainConversationMessage> &conversation,
                                 const AiBrainRequestOptions &requestOptions) const;

@@ -22,16 +22,28 @@ namespace {
 const QString smartRecruitersApiBase =
     QStringLiteral("https://api.smartrecruiters.com/v1/companies/");
 const QString smartRecruitersDisplayName = QStringLiteral("SmartRecruiters");
+
+// The most SmartRecruiters sends in one page. A bigger limit is cut to this.
 constexpr int jobsPerPage = 100;
 
-QString encoded(const QString &text)
+// 404 (not found) and 410 (gone) on a one-job read both mean the job is no
+// longer there.
+constexpr int httpStatusNotFound = 404;
+constexpr int httpStatusGone = 410;
+
+// A tenant or job id made safe to put in a URL path. A space or a slash in
+// it cannot change which path is asked for.
+QString percentEncoded(const QString &text)
 {
     return QString::fromUtf8(QUrl::toPercentEncoding(text));
 }
 
+// One page of a board:
+// https://api.smartrecruiters.com/v1/companies/{tenant}/postings?limit=100&offset=N
+// with &q=words added for a search. offset counts jobs, not pages.
 QUrl pageUrl(const QString &tenant, const QString &searchWords, int offset)
 {
-    QUrl url(smartRecruitersApiBase + encoded(tenant) + QStringLiteral("/postings"));
+    QUrl url(smartRecruitersApiBase + percentEncoded(tenant) + QStringLiteral("/postings"));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("limit"), QString::number(jobsPerPage));
     query.addQueryItem(QStringLiteral("offset"), QString::number(offset));
@@ -42,10 +54,11 @@ QUrl pageUrl(const QString &tenant, const QString &searchWords, int offset)
     return url;
 }
 
+// One job: https://api.smartrecruiters.com/v1/companies/{tenant}/postings/{id}
 QUrl oneJobUrl(const QString &tenant, const QString &jobId)
 {
-    return QUrl(smartRecruitersApiBase + encoded(tenant) + QStringLiteral("/postings/")
-                + encoded(jobId));
+    return QUrl(smartRecruitersApiBase + percentEncoded(tenant) + QStringLiteral("/postings/")
+                + percentEncoded(jobId));
 }
 
 // "Miskolc, , Hungary" happens when a job has no region. The empty part is
@@ -62,7 +75,9 @@ QString cleanLocationText(const QString &fullLocation)
     return parts.join(QStringLiteral(", "));
 }
 
-// The fields both the list and the one-job answer share.
+// The fields both the list and the one-job answer share. The title is in
+// "name". The company's real name is in company.name, and the board account
+// stands in when that is empty.
 JobPosting postingFromSmartRecruitersJob(const QJsonObject &jobObject, const QString &tenant)
 {
     JobPosting posting;
@@ -80,6 +95,9 @@ JobPosting postingFromSmartRecruitersJob(const QJsonObject &jobObject, const QSt
     const QJsonObject locationObject = jobObject.value(QStringLiteral("location")).toObject();
     posting.locationText =
         cleanLocationText(locationObject.value(QStringLiteral("fullLocation")).toString());
+    // A remote job says so in the location line too, so the user sees it on
+    // the card. "Remote" alone when there is no place; "(remote)" added after
+    // the place when there is one and it does not already say remote.
     posting.isRemoteRole = locationObject.value(QStringLiteral("remote")).toBool();
     if (posting.isRemoteRole && !posting.locationText.contains(QStringLiteral("remote"),
                                                                Qt::CaseInsensitive)) {
@@ -101,7 +119,10 @@ JobPosting postingFromSmartRecruitersJob(const QJsonObject &jobObject, const QSt
                                      posting.externalSourceId);
     }
 
-    // The description, in the one-job answer only.
+    // The description, in the one-job answer only. It is split into sections
+    // under jobAd.sections, each with a "title" and HTML "text". They are read
+    // in this order, each as its title and then its text, split by a blank
+    // line. A section with no text is left out, title and all.
     const QJsonObject sections = jobObject.value(QStringLiteral("jobAd")).toObject()
         .value(QStringLiteral("sections")).toObject();
     QStringList descriptionParts;
@@ -128,14 +149,15 @@ JobPosting postingFromSmartRecruitersJob(const QJsonObject &jobObject, const QSt
     return posting;
 }
 
-// One read of a board, page after page.
+// One read of a board, page after page. Shared by every page's handler, so
+// it lives as long as the last page still in flight.
 struct PagedRead {
     JobScoutReply *scoutReply = nullptr;
     QString tenant;
     QString searchWords;
     int pagesAllowed = 1;
     int pagesRead = 0;
-    QList<JobPosting> found;
+    QList<JobPosting> foundPostings;
 };
 
 } // namespace
@@ -164,7 +186,8 @@ JobScoutReply *SmartRecruitersBoardSource::fetchJobsLikeTitle(const QString &ten
                                                               QObject *replyParent)
 {
     // Its own search, one page. The resolver picks the right title from it.
-    return fetchPages(tenant, positionTitle, 1, replyParent);
+    constexpr int pagesForATitleSearch = 1;
+    return fetchPages(tenant, positionTitle, pagesForATitleSearch, replyParent);
 }
 
 JobScoutReply *SmartRecruitersBoardSource::fetchPages(const QString &tenant,
@@ -190,6 +213,16 @@ JobScoutReply *SmartRecruitersBoardSource::fetchPages(const QString &tenant,
 
     // Reads one page, then asks for the next until the board runs out or the
     // page limit is reached.
+    //
+    // How the loop works: readNextPage is a function held by shared_ptr, and
+    // the function captures its own shared_ptr so a page's handler can call
+    // it again. That makes a loop of ownership, so the function would never
+    // be freed. Every way out of the loop (a failure, or the last page) sets
+    // *readNextPage to nullptr, which drops the function and its captures
+    // and breaks the loop.
+    //
+    // Each page asks for offset pagesRead * jobsPerPage, so page 1 starts at
+    // 0, page 2 at 100, and so on.
     auto readNextPage = std::make_shared<std::function<void()>>();
     *readNextPage = [this, pagedRead, readNextPage]() {
         QNetworkReply *networkReply = networkAccessManager.get(employerBoardRequest(
@@ -221,6 +254,8 @@ JobScoutReply *SmartRecruitersBoardSource::fetchPages(const QString &tenant,
                 return;
             }
 
+            // The page is {"offset","limit","totalFound","content":[...]}.
+            // A job with no title or no id is skipped.
             const QJsonObject pageObject = responseDocument.object();
             const QJsonArray jobs = pageObject.value(QStringLiteral("content")).toArray();
             for (const QJsonValue &jobValue : jobs) {
@@ -229,10 +264,12 @@ JobScoutReply *SmartRecruitersBoardSource::fetchPages(const QString &tenant,
                 if (posting.positionTitle.isEmpty() || posting.externalSourceId.isEmpty()) {
                     continue;
                 }
-                pagedRead->found.append(posting);
+                pagedRead->foundPostings.append(posting);
             }
             ++pagedRead->pagesRead;
 
+            // More to read when this page had jobs and the pages read so far
+            // do not yet cover totalFound. Read on only while under the limit.
             const int totalFound = pageObject.value(QStringLiteral("totalFound")).toInt();
             const int readSoFar = pagedRead->pagesRead * jobsPerPage;
             const bool moreToRead = !jobs.isEmpty() && readSoFar < totalFound;
@@ -241,11 +278,12 @@ JobScoutReply *SmartRecruitersBoardSource::fetchPages(const QString &tenant,
                 return;
             }
 
-            // Stopped before the end: say so, so no job past the stop is
-            // ever taken for gone.
+            // Stopped before the end, or only searched: say so, so no job past
+            // the stop, or outside the search, is ever taken for gone.
             pagedRead->scoutReply->setReadOnlyPartOfTheBoard(moreToRead
                                                              || !pagedRead->searchWords.isEmpty());
-            pagedRead->scoutReply->markFinished(pagedRead->found);
+            pagedRead->scoutReply->setStoppedAtThePageLimit(moreToRead);
+            pagedRead->scoutReply->markFinished(pagedRead->foundPostings);
             *readNextPage = nullptr;
         });
     };
@@ -268,7 +306,7 @@ JobScoutReply *SmartRecruitersBoardSource::fetchOneJob(const AtsBoardIdentity &b
 
     QNetworkReply *networkReply = networkAccessManager.get(employerBoardRequest(
         oneJobUrl(boardIdentity.tenant, boardIdentity.jobId)));
-    networkReply->setParent(scoutReply);
+    networkReply->setParent(scoutReply); // dies with the scout reply
 
     const QString tenant = boardIdentity.tenant;
     QObject::connect(networkReply, &QNetworkReply::finished, scoutReply,
@@ -278,7 +316,7 @@ JobScoutReply *SmartRecruitersBoardSource::fetchOneJob(const AtsBoardIdentity &b
         const QByteArray responseBody = networkReply->readAll();
 
         // A job that is gone is an answer, not an error.
-        if (httpStatusCode == 404 || httpStatusCode == 410) {
+        if (httpStatusCode == httpStatusNotFound || httpStatusCode == httpStatusGone) {
             scoutReply->markFinished({});
             return;
         }

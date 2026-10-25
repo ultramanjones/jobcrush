@@ -2,15 +2,16 @@
 
 #include <QDateTime>
 #include <QDebug>
+#include <QSet>
 #include <QStringList>
 
 #include "../../model/JobPostingRepository.h"
 #include "../jobscout/AtsBoardDetector.h"
-#include "../jobscout/JobScoutReply.h"
 #include "JobPipelines.h"
 
 namespace {
 
+// "1 job" or "3 jobs".
 QString jobCountText(int jobCount)
 {
     return jobCount == 1 ? QStringLiteral("1 job") : QStringLiteral("%1 jobs").arg(jobCount);
@@ -37,40 +38,35 @@ QString PostingStillListedChecker::checkStatusText() const
     return statusSentence;
 }
 
-EmployerBoardProvider *PostingStillListedChecker::boardReaderFor(const QString &boardName)
-{
-    if (boardName == AtsBoardName::Greenhouse) return &greenhouseBoard;
-    if (boardName == AtsBoardName::Lever)      return &leverBoard;
-    if (boardName == AtsBoardName::Ashby)      return &ashbyBoard;
-    if (boardName == AtsBoardName::Workday)    return &workdayBoard;
-    if (boardName == AtsBoardName::SmartRecruiters) return &smartRecruitersBoard;
-    return nullptr;
-}
-
-AtsBoardIdentity PostingStillListedChecker::readableIdentityFor(
+QList<AtsBoardIdentity> PostingStillListedChecker::checkableLinksFor(
     const TargetedJob &targetedJob) const
 {
-    // Every route the job is known by, then the posting's own link. The first
-    // one that names a single job on a board Job Crush can read wins.
+    // The job's own link first. Other places Job Crush found the job come
+    // after it. Those were found by matching the company and the title, so
+    // they are weaker evidence about this exact job.
     QStringList candidateLinks;
+    candidateLinks.append(targetedJob.posting.sourceUrl);
     for (const PostingSource &route :
              board.routesToJobPosting(targetedJob.posting.jobPostingId)) {
         candidateLinks.append(route.postingUrl);
     }
-    candidateLinks.append(targetedJob.posting.sourceUrl);
 
     const AtsBoardDetector boardDetector;
+    QList<AtsBoardIdentity> checkableLinks;
+    QSet<QString> linksAlreadyListed;
     for (const QString &candidateLink : candidateLinks) {
         const AtsBoardIdentity identity = boardDetector.identify(candidateLink);
-        const bool boardIsReadable = identity.boardName == AtsBoardName::Greenhouse
-                                  || identity.boardName == AtsBoardName::Lever
-                                  || identity.boardName == AtsBoardName::Ashby
-                                  || identity.boardName == AtsBoardName::Workday;
-        if (identity.namesOneJob() && boardIsReadable) {
-            return identity;
+        if (!identity.namesOneJob() || !goneConfirmer.canCheckBoard(identity.boardName)) {
+            continue;
         }
+        const QString linkKey = identity.asKey().toLower();
+        if (linksAlreadyListed.contains(linkKey)) {
+            continue;
+        }
+        linksAlreadyListed.insert(linkKey);
+        checkableLinks.append(identity);
     }
-    return AtsBoardIdentity();
+    return checkableLinks;
 }
 
 void PostingStillListedChecker::checkEveryOpenCard()
@@ -80,6 +76,7 @@ void PostingStillListedChecker::checkEveryOpenCard()
     }
 
     checkRunning = true;
+    jobsBeingChecked.clear();
     checksStarted = 0;
     checksFinished = 0;
     jobsStillListed = 0;
@@ -87,48 +84,50 @@ void PostingStillListedChecker::checkEveryOpenCard()
     jobsStillGone = 0;
     jobsThatCouldNotBeChecked = 0;
     jobsWithNoReadableLink = 0;
+    jobsTheUserSaidAreOpen = 0;
 
-    for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
-        if (targetedJob.campaign.pipelineStage == PipelineStage::Closed) {
+    for (const TargetedJob &targetedJob : board.everyOpenTargetedJob()) {
+        // The user checked this one and said it is still open. Their word
+        // wins, so Job Crush does not check it.
+        if (targetedJob.posting.userSaysStillOpenTimestamp.isValid()) {
+            ++jobsTheUserSaidAreOpen;
             continue;
         }
 
-        const AtsBoardIdentity identity = readableIdentityFor(targetedJob);
-        EmployerBoardProvider *boardReader =
-            identity.isKnown() ? boardReaderFor(identity.boardName) : nullptr;
-        if (!boardReader) {
+        const QList<AtsBoardIdentity> checkableLinks = checkableLinksFor(targetedJob);
+        if (checkableLinks.isEmpty()) {
             ++jobsWithNoReadableLink;
             continue;
         }
 
-        ++checksStarted;
         const qint64 jobPostingId = targetedJob.posting.jobPostingId;
-        const bool wasAlreadyGone = targetedJob.posting.postingGoneSinceTimestamp.isValid();
-        const QString positionTitle = targetedJob.posting.positionTitle;
+        JobBeingChecked &jobBeingChecked = jobsBeingChecked[jobPostingId];
+        jobBeingChecked.positionTitle = targetedJob.posting.positionTitle;
+        jobBeingChecked.wasAlreadyGone = targetedJob.posting.postingGoneSinceTimestamp.isValid();
+        jobBeingChecked.linksStillToAnswer = checkableLinks.count();
+        ++checksStarted;
 
-        JobScoutReply *boardReply = boardReader->fetchOneJob(identity, this);
-        connect(boardReply, &JobScoutReply::finished, this,
-                [this, boardReply, jobPostingId, wasAlreadyGone](
-                    const QList<JobPosting> &foundPostings) {
-            boardReply->deleteLater();
-            recordAnswer(jobPostingId, !foundPostings.isEmpty(), wasAlreadyGone);
-            finishOneCheck();
-        });
-        connect(boardReply, &JobScoutReply::failed, this,
-                [this, boardReply, positionTitle](const QString &whyItFailed) {
-            boardReply->deleteLater();
-            recordTrouble(positionTitle, whyItFailed);
-            finishOneCheck();
-        });
+        for (const AtsBoardIdentity &identity : checkableLinks) {
+            ListingCheckReply *checkReply = goneConfirmer.checkOneJob(
+                identity, targetedJob.posting.positionTitle, this);
+            connect(checkReply, &ListingCheckReply::answered, this,
+                    [this, jobPostingId, identity](ListingAnswer listingAnswer,
+                                                   const QString &whatHappened) {
+                // Only the answers that are not "still listed" are logged.
+                // Those are the ones a person may need to look into.
+                if (listingAnswer != ListingAnswer::StillListed) {
+                    qInfo().noquote() << QStringLiteral(
+                        "PostingStillListedChecker::checkEveryOpenCard: job posting %1 on "
+                        "%2 — %3")
+                            .arg(jobPostingId).arg(identity.asKey(), whatHappened);
+                }
+                recordLinkAnswer(jobPostingId, listingAnswer);
+            });
+        }
     }
 
     if (checksStarted == 0) {
-        checkRunning = false;
-        statusSentence = jobsWithNoReadableLink == 0
-            ? QStringLiteral("There are no open jobs on the board to check.")
-            : QStringLiteral("None of these jobs has a link Job Crush can check. It can "
-                             "check jobs on Greenhouse, Lever, Ashby, SmartRecruiters and Workday.");
-        emit checkStatusChanged();
+        finishTheCheck();
         return;
     }
 
@@ -137,40 +136,53 @@ void PostingStillListedChecker::checkEveryOpenCard()
     emit checkStatusChanged();
 }
 
-void PostingStillListedChecker::recordAnswer(qint64 jobPostingId, bool postingIsListed,
-                                             bool wasAlreadyGone)
+void PostingStillListedChecker::recordLinkAnswer(qint64 jobPostingId,
+                                                 ListingAnswer listingAnswer)
 {
-    if (postingIsListed) {
+    // Counts the answer. When it is the last link this job was waiting on,
+    // the job is done.
+    JobBeingChecked &jobBeingChecked = jobsBeingChecked[jobPostingId];
+    switch (listingAnswer) {
+    case ListingAnswer::StillListed:   ++jobBeingChecked.linksStillListed;   break;
+    case ListingAnswer::Gone:          ++jobBeingChecked.linksGone;          break;
+    case ListingAnswer::CouldNotCheck: ++jobBeingChecked.linksCouldNotCheck; break;
+    }
+    if (--jobBeingChecked.linksStillToAnswer == 0) {
+        finishOneJob(jobPostingId);
+    }
+}
+
+void PostingStillListedChecker::finishOneJob(qint64 jobPostingId)
+{
+    const JobBeingChecked jobBeingChecked = jobsBeingChecked.value(jobPostingId);
+
+    if (jobBeingChecked.linksStillListed > 0) {
+        // Any one link that still lists the job is enough.
         ++jobsStillListed;
-        if (wasAlreadyGone) {
-            // It came back. Employers do repost, and the flag must not
-            // outlive the fact it was about.
+        if (jobBeingChecked.wasAlreadyGone) {
+            // It is listed again. Employers do repost jobs. An empty time
+            // takes the "gone" mark off. A failed save is logged by the
+            // repository.
             jobPostingRepository.updatePostingGoneSince(jobPostingId, QDateTime());
         }
-        return;
-    }
-
-    // Keep the first date it went missing. A later check that finds it still
-    // gone does not make it newly gone.
-    if (wasAlreadyGone) {
+    } else if (jobBeingChecked.linksCouldNotCheck > 0) {
+        // Some link could not be checked, so Job Crush does not know. The
+        // card keeps whatever it said before.
+        ++jobsThatCouldNotBeChecked;
+        qWarning().noquote() << QStringLiteral(
+            "PostingStillListedChecker::finishOneJob: could not check job posting %1 "
+            "(\"%2\") — no link gave a sure answer")
+                .arg(jobPostingId).arg(jobBeingChecked.positionTitle);
+    } else if (jobBeingChecked.wasAlreadyGone) {
+        // Keep the first date it went missing.
         ++jobsStillGone;
-        return;
+    } else {
+        // Every link said gone, each with two answers that agree.
+        ++jobsNewlyGone;
+        jobPostingRepository.updatePostingGoneSince(jobPostingId,
+                                                    QDateTime::currentDateTime());
     }
-    ++jobsNewlyGone;
-    jobPostingRepository.updatePostingGoneSince(jobPostingId, QDateTime::currentDateTime());
-}
 
-void PostingStillListedChecker::recordTrouble(const QString &positionTitle,
-                                              const QString &whyItFailed)
-{
-    ++jobsThatCouldNotBeChecked;
-    qWarning().noquote() << QStringLiteral(
-        "PostingStillListedChecker::recordTrouble: could not check \"%1\" — %2")
-        .arg(positionTitle, whyItFailed);
-}
-
-void PostingStillListedChecker::finishOneCheck()
-{
     ++checksFinished;
     if (checksFinished < checksStarted) {
         statusSentence = QStringLiteral("Checked %1 of %2…")
@@ -178,29 +190,48 @@ void PostingStillListedChecker::finishOneCheck()
         emit checkStatusChanged();
         return;
     }
+    finishTheCheck();
+}
 
+void PostingStillListedChecker::finishTheCheck()
+{
     checkRunning = false;
 
     QStringList sentences;
-    if (jobsStillListed > 0) {
-        sentences.append(QStringLiteral("%1 still listed.").arg(jobCountText(jobsStillListed)));
-    }
-    const int jobsGone = jobsNewlyGone + jobsStillGone;
-    if (jobsGone > 0) {
-        sentences.append(QStringLiteral("%1 seem%2 to be gone. Look for the amber note on "
-                                        "the card.")
-                             .arg(jobCountText(jobsGone),
-                                  jobsGone == 1 ? QStringLiteral("s") : QString()));
-    }
-    if (jobsThatCouldNotBeChecked > 0) {
-        sentences.append(QStringLiteral("%1 couldn't be checked. Try again later.")
-                             .arg(jobCountText(jobsThatCouldNotBeChecked)));
-    }
-    if (jobsWithNoReadableLink > 0) {
-        sentences.append(QStringLiteral("%1 %2 no link Job Crush can check.")
-                             .arg(jobCountText(jobsWithNoReadableLink),
-                                  jobsWithNoReadableLink == 1 ? QStringLiteral("has")
-                                                              : QStringLiteral("have")));
+    if (checksStarted == 0 && jobsTheUserSaidAreOpen == 0) {
+        sentences.append(jobsWithNoReadableLink == 0
+            ? QStringLiteral("There are no open jobs on the board to check.")
+            : QStringLiteral("None of these jobs has a link Job Crush can check. It can "
+                             "check jobs on Greenhouse, Lever, Ashby, SmartRecruiters, "
+                             "Workday and Taleo."));
+    } else {
+        if (jobsStillListed > 0) {
+            sentences.append(QStringLiteral("%1 still listed.")
+                                 .arg(jobCountText(jobsStillListed)));
+        }
+        const int jobsGone = jobsNewlyGone + jobsStillGone;
+        if (jobsGone > 0) {
+            sentences.append(QStringLiteral("%1 gone from the company's own board. Look "
+                                            "for the amber note on the card.")
+                                 .arg(jobCountText(jobsGone)));
+        }
+        if (jobsThatCouldNotBeChecked > 0) {
+            sentences.append(QStringLiteral("%1 couldn't be checked for sure. Try again "
+                                            "later.")
+                                 .arg(jobCountText(jobsThatCouldNotBeChecked)));
+        }
+        if (jobsTheUserSaidAreOpen > 0) {
+            sentences.append(QStringLiteral("%1 you marked as still open %2 not checked.")
+                                 .arg(jobCountText(jobsTheUserSaidAreOpen),
+                                      jobsTheUserSaidAreOpen == 1 ? QStringLiteral("was")
+                                                                  : QStringLiteral("were")));
+        }
+        if (jobsWithNoReadableLink > 0) {
+            sentences.append(QStringLiteral("%1 %2 no link Job Crush can check.")
+                                 .arg(jobCountText(jobsWithNoReadableLink),
+                                      jobsWithNoReadableLink == 1 ? QStringLiteral("has")
+                                                                  : QStringLiteral("have")));
+        }
     }
     statusSentence = sentences.join(QLatin1Char(' '));
 

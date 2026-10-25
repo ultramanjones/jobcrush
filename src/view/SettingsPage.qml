@@ -4,9 +4,21 @@ import JobCrush
 
 // SettingsPage
 //
-// AIBrain credential roster, soul-file access, and appearance. Everything
-// is instant-apply by law — no Apply/OK ceremony anywhere on this page.
-// Pure view: binds to AiCredentialRosterViewModel and AppPreferencesViewModel.
+// The Settings page. From top to bottom it holds:
+//   - the banner that says which AI brain is live right now
+//   - the AIBrain keys: one key slot per provider, and the box that picks
+//     which provider answers
+//   - the soul folder, where the agent's text files live
+//   - the Active Jobs folder, AI Buddy Mode, and the switch that lets AI
+//     apps on this computer work the board
+//   - JobScout: which job sites are watched, the companies being watched,
+//     and what the user is looking for
+//   - the theme chips and the tips switch
+//
+// Every setting applies the moment it changes. There is no Apply or OK
+// button anywhere on this page.
+//
+// Pure view. Each section binds to its own viewmodel, passed in from Main.
 Rectangle {
     id: settingsPage
 
@@ -23,7 +35,7 @@ Rectangle {
     color: JobCrushTheme.appBackgroundColor
 
     // Opening Settings is one of the KEY MOMENTS a connection check exists
-    // for. A cached result answers instantly; only a genuine change (new key,
+    // for. A cached result answers instantly; only a real change (new key,
     // different brain) costs a request. Job Crush never polls a vendor.
     onVisibleChanged: {
         if (visible) {
@@ -46,8 +58,20 @@ Rectangle {
             readonly property real pixelsPerNotch: 120
             readonly property real speedMultiplier: 2.0
 
+            // Qt reports one click of a mouse wheel as an angleDelta of 120.
+            // That is Qt's unit (eighths of a degree), not pixels.
+            readonly property real angleDeltaPerNotch: 120
+
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
 
+            // The steps:
+            //  1. Work out how far the page can scroll. If it all fits,
+            //     do nothing.
+            //  2. Turn the wheel's angleDelta into notches, then into
+            //     pixels, then double it. Wheel up is a positive delta, and
+            //     it moves the page up, so the result is subtracted.
+            //  3. Clamp the new contentY between the top and the bottom of
+            //     the page, so the wheel cannot scroll past either end.
             onWheel: function(wheelEvent) {
                 const scrollableDistance = Math.max(
                     0, settingsFlickable.contentHeight - settingsFlickable.height)
@@ -55,7 +79,8 @@ Rectangle {
                     return
                 }
                 const requestedContentY = settingsFlickable.contentY
-                    - (wheelEvent.angleDelta.y / 120) * pixelsPerNotch * speedMultiplier
+                    - (wheelEvent.angleDelta.y / angleDeltaPerNotch)
+                      * pixelsPerNotch * speedMultiplier
                 settingsFlickable.contentY = Math.max(
                     settingsFlickable.originY,
                     Math.min(settingsFlickable.originY + scrollableDistance,
@@ -72,9 +97,10 @@ Rectangle {
             spacing: 32
 
             // ==========================================================
-            // The loudest thing on the page: which brain is actually live.
-            // Green means a real request just came back from the vendor —
-            // never a guess, never a leftover from the last launch.
+            // The loudest thing on the page: which brain is live.
+            // The positive color (green in most themes) means a real request
+            // just came back from the vendor. It is never a guess, and never
+            // a leftover from the last launch.
             // ==========================================================
             Rectangle {
                 width: parent.width
@@ -173,9 +199,9 @@ Rectangle {
                 Text {
                     width: parent.width
                     // The color word comes from the theme, not from this
-                    // sentence. Hardcoded, "green" was a lie in four palettes
-                    // out of six — and a UI that describes itself wrongly is
-                    // worse than one that says nothing.
+                    // sentence. Hardcoded, "green" was wrong in four themes
+                    // out of seven — and a UI that describes itself wrongly
+                    // is worse than one that says nothing.
                     text: "Two separate things live here. The TABS pick whose key "
                           + "you're editing — a " + JobCrushTheme.positiveColorName
                           + " ● means that slot already holds "
@@ -411,6 +437,91 @@ Rectangle {
                             wrapMode: Text.Wrap
                         }
 
+                        // How much brain: Quick, Balanced or Best, for the
+                        // provider whose tab is open. Each provider keeps its
+                        // own choice. The vendor's real model name is shown
+                        // small under it.
+                        Column {
+                            id: brainLevelPicker
+                            width: parent.width
+                            spacing: 6
+
+                            readonly property string chosenLevelName: {
+                                settingsPage.brainConnectionViewModel.brainLevelRevision
+                                return settingsPage.brainConnectionViewModel
+                                    .brainLevelFor(settingsPage.newKeyProviderKindName)
+                            }
+
+                            Row {
+                                spacing: 8
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "How much brain:"
+                                    color: JobCrushTheme.secondaryTextColor
+                                    font.pixelSize: JobCrushTheme.smallFontSize
+                                }
+
+                                Repeater {
+                                    model: settingsPage.brainConnectionViewModel.brainLevelNames
+
+                                    delegate: Rectangle {
+                                        id: brainLevelChoice
+
+                                        required property string modelData
+                                        readonly property bool isChosen:
+                                            brainLevelPicker.chosenLevelName === modelData
+
+                                        width: brainLevelChoiceLabel.implicitWidth + 24
+                                        height: 28
+                                        radius: 14
+                                        color: isChosen
+                                            ? JobCrushTheme.cardBackgroundColor : "transparent"
+                                        border.color: isChosen
+                                            ? JobCrushTheme.accentColor
+                                            : JobCrushTheme.hairlineBorderColor
+                                        // A thicker border on the chosen level, so it
+                                        // stands out without relying on color.
+                                        border.width: isChosen ? 2 : 1
+
+                                        Text {
+                                            id: brainLevelChoiceLabel
+                                            anchors.centerIn: parent
+                                            text: brainLevelChoice.modelData
+                                            color: brainLevelChoice.isChosen
+                                                ? JobCrushTheme.primaryTextColor
+                                                : JobCrushTheme.secondaryTextColor
+                                            font.pixelSize: JobCrushTheme.smallFontSize
+                                            font.weight: brainLevelChoice.isChosen
+                                                ? Font.DemiBold : Font.Normal
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: settingsPage.brainConnectionViewModel
+                                                .setBrainLevelFor(settingsPage.newKeyProviderKindName,
+                                                                  brainLevelChoice.modelData)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: settingsPage.brainConnectionViewModel
+                                          .brainLevelExplanation(brainLevelPicker.chosenLevelName)
+                                      + "  Model: "
+                                      + settingsPage.brainConnectionViewModel
+                                          .modelNameFor(settingsPage.newKeyProviderKindName,
+                                                        brainLevelPicker.chosenLevelName)
+                                textFormat: Text.PlainText
+                                color: JobCrushTheme.mutedTextColor
+                                font.pixelSize: JobCrushTheme.smallFontSize
+                                wrapMode: Text.Wrap
+                            }
+                        }
+
                         // Ollama has no key: it runs on the user's own
                         // computer. Instead of key boxes, say what to do.
                         Text {
@@ -441,8 +552,8 @@ Rectangle {
 
                         // API key field. Two states:
                         //  - empty slot: a real input, type the key in
-                        //  - filled slot: asterisks in a green frame — the key
-                        //    is registered, on display but never revealed
+                        //  - filled slot: a row of dots in a positive-color
+                        //    frame. The key is saved, but it is never shown.
                         Rectangle {
                             visible: settingsPage.credentialRosterViewModel
                                          .providerNeedsKey(settingsPage.newKeyProviderKindName)
@@ -530,13 +641,16 @@ Rectangle {
                                             .providerNeedsKey(settingsPage.newKeyProviderKindName)
                             // "an anthropic key" but "a gemini key" — the
                             // article follows the provider name's first letter.
+                            // The pattern /^[aeiou]/ is true when the name
+                            // starts with a lowercase vowel. Provider names
+                            // are always lowercase here.
                             text: "Where do I get "
                                   + (/^[aeiou]/.test(settingsPage.newKeyProviderKindName) ? "an " : "a ")
                                   + settingsPage.newKeyProviderKindName
                                   + " key?  <a href=\"open\">Open the official page</a>"
                             // StyledText, not RichText. Text.linkColor is
                             // ignored under RichText — Qt draws the link in
-                            // its own hard blue instead, which is a colour
+                            // its own hard blue instead, which is a color
                             // from outside the theme showing up on screen.
                             textFormat: Text.StyledText
                             linkColor: JobCrushTheme.accentColor
@@ -564,7 +678,7 @@ Rectangle {
                                   + settingsPage.newKeyProviderKindName + "'s dashboard</a>"
                             // StyledText, not RichText. Text.linkColor is
                             // ignored under RichText — Qt draws the link in
-                            // its own hard blue instead, which is a colour
+                            // its own hard blue instead, which is a color
                             // from outside the theme showing up on screen.
                             textFormat: Text.StyledText
                             linkColor: JobCrushTheme.accentColor
@@ -1385,7 +1499,11 @@ Rectangle {
                                     // What is standing in the way, when
                                     // something is. Its own line, so it never
                                     // costs the user the description of the
-                                    // site itself.
+                                    // site itself. The "accessKeyRevision >= 0"
+                                    // test is always true. It is there so QML
+                                    // re-reads the reason each time a key is
+                                    // saved. The same trick is used on the
+                                    // key boxes below.
                                     Text {
                                         width: parent.width
                                         visible: text.length > 0
@@ -2186,7 +2304,7 @@ Rectangle {
                     font.letterSpacing: 1
                 }
 
-                // The whole line is the click target, not just the little box.
+                // The whole line is the click target, not only the little box.
                 Item {
                     width: showTipsRow.width
                     height: showTipsRow.height
@@ -2266,8 +2384,9 @@ Rectangle {
         color: Qt.rgba(0, 0, 0, 0.55)
         z: 100
 
-        // Swallows every click behind it, so nothing can be ticked while an
-        // unread explanation is on screen.
+        // Catches every click on the dark area. A click there closes the
+        // explanation and does not reach the page behind it, so nothing can
+        // be ticked by accident while the explanation is on screen.
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true

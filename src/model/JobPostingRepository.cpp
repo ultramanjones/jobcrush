@@ -30,6 +30,8 @@ JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
     jobPosting.isRemoteRole        = row.value(QStringLiteral("isRemoteRole")).toInt() != 0;
     jobPosting.postingGoneSinceTimestamp = QDateTime::fromString(
         row.value(QStringLiteral("postingGoneSinceTimestamp")).toString(), Qt::ISODate);
+    jobPosting.userSaysStillOpenTimestamp = QDateTime::fromString(
+        row.value(QStringLiteral("userSaysStillOpenTimestamp")).toString(), Qt::ISODate);
     return jobPosting;
 }
 
@@ -152,18 +154,29 @@ bool JobPostingRepository::insertDiscoveryIfNew(JobPosting &jobPosting, bool &wa
 {
     wasAlreadyKnown = false;
 
+    // With no id from the source, there is no way to tell this job from
+    // another one, and the unique index does not cover it. It is saved.
+    if (textOrEmpty(jobPosting.externalSourceId).isEmpty()) {
+        return insertJobPosting(jobPosting);
+    }
+
     // Look first, instead of letting the unique index refuse the insert. A
     // job seen before is a normal answer, and should not show up as an error.
+    //
+    // The "externalSourceId <> ''" line looks like it does nothing, but it is
+    // what lets SQLite use the uniquePostingPerBoard index, which only covers
+    // rows with an id. Without it, SQLite reads the whole table for every job
+    // saved. With thousands of jobs, that made a sweep crawl.
     QSqlQuery existingDiscoveryQuery(jobCrushDatabase.connection());
     existingDiscoveryQuery.prepare(QStringLiteral(
         "SELECT jobPostingId FROM jobPosting "
         "WHERE postingSource = :postingSource "
-        "  AND externalSourceId = :externalSourceId"));
-    // textOrEmpty on both, the same as the insert does.
-    //
-    // A NULL never equals anything in SQLite, not even another NULL. Without
-    // textOrEmpty here, this lookup would never find the row the insert
-    // stored with "", and the same job would be stored again on every sweep.
+        "  AND externalSourceId = :externalSourceId "
+        "  AND externalSourceId <> ''"));
+    // textOrEmpty on the source name, the same as the insert does. A NULL
+    // never equals anything in SQLite, not even another NULL. Without it, this
+    // lookup would never find a row the insert stored with "", and the same
+    // job would be stored again on every sweep.
     existingDiscoveryQuery.bindValue(QStringLiteral(":postingSource"),
                                      textOrEmpty(jobPosting.postingSource));
     existingDiscoveryQuery.bindValue(QStringLiteral(":externalSourceId"),
@@ -264,12 +277,33 @@ bool JobPostingRepository::updatePostingGoneSince(qint64 jobPostingId,
     QSqlQuery updateQuery(jobCrushDatabase.connection());
     updateQuery.prepare(QStringLiteral(
         "UPDATE jobPosting SET postingGoneSinceTimestamp = :postingGoneSinceTimestamp "
-        "WHERE jobPostingId = :jobPostingId"));
+        "WHERE jobPostingId = :jobPostingId "
+        // A job the user said is still open is never marked gone. Checked
+        // here as well as before the check starts, because the user can
+        // press "still open" while the check is waiting on the network.
+        "  AND (:isClearingTheMark = 1 OR userSaysStillOpenTimestamp = '')"));
     updateQuery.bindValue(QStringLiteral(":postingGoneSinceTimestamp"),
                           timestampTextOrEmpty(goneSinceTimestamp));
+    updateQuery.bindValue(QStringLiteral(":isClearingTheMark"),
+                          goneSinceTimestamp.isValid() ? 0 : 1);
     updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
 
     return runQuery(updateQuery, "updatePostingGoneSince",
+                    QStringLiteral("job posting %1").arg(jobPostingId));
+}
+
+bool JobPostingRepository::markStillOpenByUser(qint64 jobPostingId)
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE jobPosting SET userSaysStillOpenTimestamp = :userSaysStillOpenTimestamp, "
+        "  postingGoneSinceTimestamp = '' "
+        "WHERE jobPostingId = :jobPostingId"));
+    updateQuery.bindValue(QStringLiteral(":userSaysStillOpenTimestamp"),
+                          timestampTextOrEmpty(QDateTime::currentDateTime()));
+    updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
+
+    return runQuery(updateQuery, "markStillOpenByUser",
                     QStringLiteral("job posting %1").arg(jobPostingId));
 }
 
@@ -343,20 +377,20 @@ QString JobPostingRepository::lastErrorText() const
 
 bool JobPostingRepository::beginManyChanges()
 {
-    if (!jobCrushDatabase.connection().transaction()) {
-        recordFailure("beginManyChanges", QStringLiteral("starting a batch of changes"),
-                      jobCrushDatabase.connection().lastError().text());
-        return false;
-    }
-    return true;
+    // BEGIN IMMEDIATE takes the right to write at the start, waiting if the
+    // other thread is writing. A plain BEGIN waits for nothing: if the other
+    // thread writes after this batch's first read, SQLite refuses every
+    // insert in the batch as "database is locked".
+    QSqlQuery beginQuery(jobCrushDatabase.connection());
+    beginQuery.prepare(QStringLiteral("BEGIN IMMEDIATE"));
+    return runQuery(beginQuery, "beginManyChanges",
+                    QStringLiteral("starting a batch of changes"));
 }
 
 bool JobPostingRepository::finishManyChanges()
 {
-    if (!jobCrushDatabase.connection().commit()) {
-        recordFailure("finishManyChanges", QStringLiteral("saving a batch of changes"),
-                      jobCrushDatabase.connection().lastError().text());
-        return false;
-    }
-    return true;
+    QSqlQuery commitQuery(jobCrushDatabase.connection());
+    commitQuery.prepare(QStringLiteral("COMMIT"));
+    return runQuery(commitQuery, "finishManyChanges",
+                    QStringLiteral("saving a batch of changes"));
 }

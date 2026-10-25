@@ -19,11 +19,10 @@ class JobSourceRoster;
 //
 // It needs a free key, which arrives by email from developer.usajobs.gov.
 //
-// THE THING EVERYONE GETS WRONG: the User-Agent header must be the EMAIL
-// ADDRESS the key was registered under. Not a browser string, not the app's
-// name. USAJOBS says so plainly in its own documentation, and sending
-// anything else is the single most common reason a first request comes back
-// refused. That is why Settings asks for the email as well as the key.
+// The User-Agent header must be the EMAIL ADDRESS the key was registered
+// under. Not a browser string, not the app's name. USAJOBS says so in its own
+// documentation, and sending anything else gets a first request refused.
+// That is why Settings asks for the email as well as the key.
 class UsaJobsJobSource : public JobSourceProvider {
 public:
     // Takes the roster because that is where the key and the email live.

@@ -16,12 +16,45 @@ namespace {
 const QString geminiApiBaseUrl =
     QStringLiteral("https://generativelanguage.googleapis.com/v1beta");
 
-// The model Brain Chat speaks to. One named place to change it — and the
-// per-provider model picker replaces this constant, exactly as it will
-// replace the Anthropic and OpenRouter ones.
-const QString geminiDefaultModelName = QStringLiteral("gemini-2.5-flash");
+// The model for each brain level. Checked 2026-10-23: the old default,
+// gemini-2.5-flash, is only open to projects that used it before, and is
+// being shut down. These three are listed as stable, with no shutdown before
+// mid-2027 for the first two. gemini-3.8-flash is newer and cheaper than
+// gemini-3.5-flash, but Google marks it "short-term", so Balanced uses the
+// one that will last.
+QString geminiModelNameFor(AiBrainLevel brainLevel)
+{
+    switch (brainLevel) {
+    case AiBrainLevel::Quick:    return QStringLiteral("gemini-3.5-flash-lite");
+    case AiBrainLevel::Balanced: return QStringLiteral("gemini-3.5-flash");
+    case AiBrainLevel::Best:     return QStringLiteral("gemini-4-argon");
+    }
+    return QStringLiteral("gemini-3.5-flash");
+}
 
+// Generous but bounded — chat answers and cover-letter drafts, not novels.
 constexpr int geminiMaxResponseTokens = 2048;
+
+// Each payload line in Google's stream starts with this.
+const QByteArray serverSentEventDataPrefix = QByteArrayLiteral("data:");
+
+// The HTTP answers Google gives for a key problem. Google sends 400 for a
+// bad key, where most vendors send 401. 403 means the key is real but not
+// allowed to use this API.
+constexpr int httpBadRequest = 400;
+constexpr int httpUnauthorized = 401;
+constexpr int httpForbidden = 403;
+
+// The HTTP answer for a model name Google does not have.
+constexpr int httpNotFound = 404;
+
+// True when Google's HTTP answer means the key was the problem.
+bool isKeyProblemStatus(int httpStatusCode)
+{
+    return httpStatusCode == httpBadRequest
+           || httpStatusCode == httpUnauthorized
+           || httpStatusCode == httpForbidden;
+}
 
 // Google reads the key from this header. Their own samples put it in the URL
 // instead, which is how API keys end up in server logs and screenshots.
@@ -30,6 +63,11 @@ const QByteArray geminiApiKeyHeaderName = QByteArrayLiteral("x-goog-api-key");
 } // namespace
 
 GeminiApiProvider::GeminiApiProvider() = default;
+
+QString GeminiApiProvider::modelNameFor(AiBrainLevel brainLevel) const
+{
+    return geminiModelNameFor(brainLevel);
+}
 
 QString GeminiApiProvider::providerDisplayName() const
 {
@@ -108,8 +146,9 @@ AiBrainReply *GeminiApiProvider::streamConversation(
     // enormous JSON array at the end, and the chat would sit silent until the
     // whole answer existed — which is the frozen-looking wait the no-spinner
     // law exists to prevent.
+    const QString modelName = geminiModelNameFor(requestOptions.brainLevel);
     const QUrl requestUrl(QStringLiteral("%1/models/%2:streamGenerateContent?alt=sse")
-                              .arg(geminiApiBaseUrl, geminiDefaultModelName));
+                              .arg(geminiApiBaseUrl, modelName));
 
     QNetworkRequest networkRequest(requestUrl);
     networkRequest.setHeader(QNetworkRequest::ContentTypeHeader,
@@ -124,8 +163,15 @@ AiBrainReply *GeminiApiProvider::streamConversation(
     //
     //     data: {"candidates":[{"content":{"parts":[{"text":"Hel"}]}}]}
     //
-    // Same rolling-buffer technique as the other two providers: cut complete
-    // lines, forward every text part, keep partial lines for later.
+    // A rolling buffer, the same as OpenAiStyleStream uses. The steps:
+    //  1. Add whatever bytes arrived to the end of the buffer.
+    //  2. While the buffer holds a line break, cut off one complete line.
+    //  3. Skip lines that do not start with "data:" (blank keep-alives).
+    //  4. Read the rest of the line as JSON. An "error" object fails the
+    //     reply. Otherwise every text part of the first candidate is passed
+    //     on to the chat.
+    //  5. Bytes after the last line break are half a line. They stay in the
+    //     buffer until the next readyRead brings the rest.
     auto streamParseBuffer = std::make_shared<QByteArray>();
 
     QObject::connect(networkReply, &QNetworkReply::readyRead, brainReply,
@@ -139,10 +185,11 @@ AiBrainReply *GeminiApiProvider::streamConversation(
             streamParseBuffer->remove(0, lineBreakIndex + 1);
             lineBreakIndex = streamParseBuffer->indexOf('\n');
 
-            if (!completeLine.startsWith("data:")) {
+            if (!completeLine.startsWith(serverSentEventDataPrefix)) {
                 continue; // blank keep-alive lines
             }
-            const QByteArray payloadJson = completeLine.mid(5).trimmed();
+            const QByteArray payloadJson =
+                completeLine.mid(serverSentEventDataPrefix.size()).trimmed();
             if (payloadJson.isEmpty()) {
                 continue;
             }
@@ -176,7 +223,7 @@ AiBrainReply *GeminiApiProvider::streamConversation(
     });
 
     QObject::connect(networkReply, &QNetworkReply::finished, brainReply,
-                     [networkReply, brainReply]() {
+                     [networkReply, brainReply, modelName]() {
         if (brainReply->isFinished()) {
             return; // already failed mid-stream
         }
@@ -188,7 +235,7 @@ AiBrainReply *GeminiApiProvider::streamConversation(
             // Google answers a bad key with 400, not 401, so Qt's
             // authentication error never fires and the generic branch would
             // show a network message for what is really a key problem.
-            if (httpStatusCode == 400 || httpStatusCode == 401 || httpStatusCode == 403) {
+            if (isKeyProblemStatus(httpStatusCode)) {
                 const QJsonObject errorBodyObject =
                     QJsonDocument::fromJson(networkReply->readAll()).object();
                 const QString apiErrorMessage = errorBodyObject
@@ -201,11 +248,12 @@ AiBrainReply *GeminiApiProvider::streamConversation(
                     : apiErrorMessage);
                 return;
             }
-            if (httpStatusCode == 404) {
+            if (httpStatusCode == httpNotFound) {
                 brainReply->markFailed(
                     QStringLiteral("Google doesn't have a model called %1 for this key. "
                                    "That usually means the model was renamed or isn't "
-                                   "available on your plan.").arg(geminiDefaultModelName));
+                                   "available on your plan. Try another brain level in "
+                                   "Settings.").arg(modelName));
                 return;
             }
             brainReply->markFailed(networkReply->errorString());
@@ -229,7 +277,7 @@ AiBrainReply *GeminiApiProvider::verifyCredentialConnection(
     networkRequest.setRawHeader(geminiApiKeyHeaderName, credential.secretKey.toUtf8());
 
     QNetworkReply *networkReply = networkAccessManager.get(networkRequest);
-    networkReply->setParent(brainReply);
+    networkReply->setParent(brainReply); // dies with the brain reply
 
     QObject::connect(networkReply, &QNetworkReply::finished, brainReply,
                      [networkReply, brainReply]() {
@@ -239,7 +287,7 @@ AiBrainReply *GeminiApiProvider::verifyCredentialConnection(
         }
         const int httpStatusCode = networkReply
             ->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (httpStatusCode == 400 || httpStatusCode == 401 || httpStatusCode == 403) {
+        if (isKeyProblemStatus(httpStatusCode)) {
             brainReply->markFailed(
                 QStringLiteral("Google would not accept that key."),
                 QStringLiteral(

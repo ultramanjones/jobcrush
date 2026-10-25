@@ -8,8 +8,11 @@
 //
 // Arbeitnow's open job-board API: no key, and its listings come straight out
 // of company hiring systems (Greenhouse, Lever, SmartRecruiters, Recruitee
-// and friends) rather than from a board that rewrote them. It also flags visa
-// sponsorship, which nothing else free does.
+// and others) rather than from a board that rewrote them.
+//
+//   GET https://www.arbeitnow.com/api/job-board-api
+//
+// It also flags visa sponsorship, which nothing else free does.
 //
 // It takes no search terms — it hands back its latest page. That is fine:
 // JobScout ranks everything locally anyway, so a site with no search box is

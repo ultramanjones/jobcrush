@@ -1,5 +1,6 @@
 #include "AppPreferencesViewModel.h"
 
+#include <QDebug>
 #include <QDesktopServices>
 #include <QUrl>
 
@@ -42,7 +43,12 @@ void AppPreferencesViewModel::openSoulFolder()
     // Reload first so any edits already made apply to the next request,
     // then hand the folder to the OS file manager.
     soul.loadCreatingDefaultsIfMissing();
-    QDesktopServices::openUrl(QUrl::fromLocalFile(soul.soulFolderPath()));
+    const QString soulFolderToOpen = soul.soulFolderPath();
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(soulFolderToOpen))) {
+        qWarning().noquote() << QStringLiteral(
+            "AppPreferencesViewModel::openSoulFolder: could not open \"%1\" — the system "
+            "file manager refused it").arg(soulFolderToOpen);
+    }
 }
 
 QStringList AppPreferencesViewModel::moonlightHints() const

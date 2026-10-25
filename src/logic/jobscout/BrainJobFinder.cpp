@@ -10,6 +10,14 @@
 #include "EmployerBoardHttp.h"
 #include "JobScoutReply.h"
 
+namespace {
+
+// The provider kind name AiBrain uses for Ollama. Ollama runs on the
+// user's own computer and cannot search the web.
+const QString ollamaProviderKindName = QStringLiteral("ollama");
+
+} // namespace
+
 BrainJobFinder::BrainJobFinder(AiBrain &aiBrain, QObject *parent)
     : QObject(parent)
     , connectedBrain(aiBrain)
@@ -24,7 +32,7 @@ bool BrainJobFinder::aBrainIsAvailable() const
 bool BrainJobFinder::aBrainCanSearchTheWeb() const
 {
     return connectedBrain.isConfigured()
-           && connectedBrain.selectedProviderKindName() != QStringLiteral("ollama");
+           && connectedBrain.selectedProviderKindName() != ollamaProviderKindName;
 }
 
 QString BrainJobFinder::brainDisplayName() const
@@ -32,6 +40,9 @@ QString BrainJobFinder::brainDisplayName() const
     return connectedBrain.selectedProviderDisplayName();
 }
 
+// The message sent to the brain: what the user gave, one line per fact,
+// then the instructions and the answer shape. A fact the lead does not have
+// is left out rather than sent empty.
 QString BrainJobFinder::instructionsFor(const JobLead &jobLead)
 {
     QString whatWeKnow;
@@ -88,6 +99,8 @@ bool BrainJobFinder::readAnswer(const QString &replyText, JobLead &foundLead, QS
         return false;
     }
 
+    // The brain has to say found AND give a web address. A "found" with no
+    // usable link is treated as not found, because there is nothing to read.
     const QString note = answer.value(QStringLiteral("note")).toString().simplified();
     const QString url = answer.value(QStringLiteral("url")).toString().trimmed();
     const bool found = answer.value(QStringLiteral("found")).toBool()
@@ -98,7 +111,8 @@ bool BrainJobFinder::readAnswer(const QString &replyText, JobLead &foundLead, QS
         return false;
     }
 
-    // A walled-garden link is not an answer, whatever the brain says.
+    // A walled-garden link (LinkedIn, Indeed and the like, which Job Crush
+    // is not allowed to read) is not an answer, whatever the brain says.
     AtsBoardDetector boardDetector;
     if (boardDetector.isWalledGarden(url)) {
         whyNot = QStringLiteral("the brain only found it on a site Job Crush can't read");
@@ -111,6 +125,8 @@ bool BrainJobFinder::readAnswer(const QString &replyText, JobLead &foundLead, QS
     foundLead.locationText = answer.value(QStringLiteral("location")).toString().simplified();
     foundLead.isRemoteRole = answer.value(QStringLiteral("remote")).toBool();
     foundLead.rawText = note;
+    // When the link is on a hiring system Job Crush can read, say so now, so
+    // the caller can fetch the job straight from that board.
     foundLead.boardIdentity = boardDetector.identify(url);
     if (foundLead.boardIdentity.isKnown()) {
         foundLead.postingSource = foundLead.boardIdentity.boardName;

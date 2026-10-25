@@ -57,10 +57,14 @@ public:
     // An invalid timestamp clears it, for a posting that is listed again.
     bool updatePostingGoneSince(qint64 jobPostingId, const QDateTime &goneSinceTimestamp);
 
+    // Records that the user checked this job and it is still open, and takes
+    // off any "gone" mark. Job Crush never marks it gone after this.
+    bool markStillOpenByUser(qint64 jobPostingId);
+
     // Every job the user added by hand, the one added most recently first.
     // This fills the Manual Add tab. It is ordered by when the user added the
-    // job, not when the employer posted it, so the job just added is always
-    // the first row.
+    // job, not when the employer posted it, so the newest job added is
+    // always the first row.
     QList<JobPosting> loadHandAddedJobPostings();
 
     // Everything JobScout has ever found, from every source, newest first.

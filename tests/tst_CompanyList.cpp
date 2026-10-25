@@ -10,6 +10,11 @@
 class CompanyListTest : public QObject {
     Q_OBJECT
 
+    // Floors, not exact counts, so adding companies never breaks the test.
+    // Falling below them means the file lost entries by mistake.
+    static constexpr int fewestCompaniesExpected = 50;
+    static constexpr int fewestFollowableCompaniesExpected = 20;
+
 private slots:
     void theShippedListReadsAndEveryLinkIsFollowable()
     {
@@ -19,8 +24,10 @@ private slots:
                      QStringLiteral(JOBCRUSH_SOURCE_DIR "/data/company-lists/cpp-qt-medtech-tech.json"),
                      companyList, problemText),
                  qPrintable(problemText));
-        QVERIFY(companyList.companies.count() >= 50);
+        QVERIFY(companyList.companies.count() >= fewestCompaniesExpected);
 
+        // Every company with a follow link must point at a hiring system Job
+        // Crush can read, and the file must name that same system.
         int followable = 0;
         for (const CompanyListEntry &entry : companyList.companies) {
             if (entry.followLink.isEmpty()) {
@@ -32,9 +39,11 @@ private slots:
             QVERIFY2(identity.boardName == entry.hiringSystem,
                      qPrintable(entry.companyName + " says " + entry.hiringSystem));
         }
-        QVERIFY(followable >= 20);
+        QVERIFY(followable >= fewestFollowableCompaniesExpected);
     }
 
+    // A company is found even when the name's case or wording differs a
+    // little from the list, and a company not on the list is not found.
     void companiesAreFoundLoosely()
     {
         CompanyList companyList;

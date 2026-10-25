@@ -13,6 +13,19 @@ namespace {
 // transfer credit line or a footer.
 constexpr int deepestLineThatCouldBeTheLetterhead = 18;
 
+// A school name read off the letterhead is at most this long. A longer
+// "name" means the line held more than the name.
+constexpr int longestSchoolName = 80;
+
+// A field of study is at most this long. Longer means the parse went wrong.
+constexpr int longestFieldOfStudy = 60;
+
+// A school name with no school word in it ("Le Cordon Bleu") is between
+// these lengths. Shorter is a fragment. Longer is a sentence.
+constexpr int shortestUnlabelledSchoolName = 6;
+constexpr int longestUnlabelledSchoolName = 60;
+
+// A year from 1900 to 2099: "19" or "20", then two digits.
 const QString yearPattern = QStringLiteral("(?:19|20)\\d{2}");
 
 // Is this line a course row? Getting this right is what keeps the output to
@@ -20,6 +33,9 @@ const QString yearPattern = QStringLiteral("(?:19|20)\\d{2}");
 bool looksLikeACourseRow(const QString &line)
 {
     // "CHEM 1113", "MATH-2413", "ENG101", "BIOL 2124L"
+    // At the start of the line: 2 to 4 capital letters, an optional space,
+    // an optional hyphen, an optional space, 3 or 4 digits, and an optional
+    // capital letter. Then a word boundary, so "ENG1013X2" does not match.
     static const QRegularExpression courseCodePattern(
         QStringLiteral("^[A-Z]{2,4}\\s?-?\\s?\\d{3,4}[A-Z]?\\b"));
     if (courseCodePattern.match(line).hasMatch()) {
@@ -27,13 +43,16 @@ bool looksLikeACourseRow(const QString &line)
     }
 
     // Credit hours then a letter grade: "3.00 A", "4.00 B+".
+    // A number like 3.00 (one digit, a point, two digits), then anything,
+    // then a single letter A to F with an optional + or -.
     static const QRegularExpression creditsThenGradePattern(
         QStringLiteral("\\b\\d\\.\\d{2}\\b.*\\b[A-F][+-]?\\b"));
     if (creditsThenGradePattern.match(line).hasMatch()) {
         return true;
     }
 
-    // The totals at the bottom of each term.
+    // The totals at the bottom of each term. A line that starts with one of
+    // these words, in any case.
     static const QRegularExpression tallyPattern(
         QStringLiteral("^\\s*(?:GPA|CUM|TERM|SEM|TOTALS?|EARNED|ATTEMPTED|QUALITY\\s+POINTS"
                        "|TRANSFER\\s+(?:CREDIT|TOTALS)|INSTITUTIONAL|CUMULATIVE)\\b"),
@@ -42,6 +61,16 @@ bool looksLikeACourseRow(const QString &line)
 }
 
 // "Degree Awarded: Bachelor of Science", "DEGREE CONFERRED 05/2013".
+//
+// Two steps:
+//   1. Is this an award line? It must hold "awarded", "conferred",
+//      "granted" or "earned" as a whole word. A "degree", "credential",
+//      "certificate" or "diploma" in front of it is allowed but not needed.
+//   2. If so, find the credential's name on the line. The pattern is the
+//      same list the resume parser uses (see credentialPhraseIn in
+//      ResumeInsightParser.cpp, which explains the order of the
+//      alternatives). This copy has no "ged".
+// Returns the credential as the line wrote it, or empty.
 QString credentialOnAwardLine(const QString &line)
 {
     static const QRegularExpression awardLinePattern(
@@ -71,6 +100,8 @@ QString credentialOnAwardLine(const QString &line)
         return QString();
     }
 
+    // A word boundary can't sit after a full stop, so "B.S." matches as
+    // "B.S". Take the full stop back.
     int matchEnd = credentialMatch.capturedEnd(0);
     if (matchEnd < line.length() && line.at(matchEnd) == QLatin1Char('.')) {
         ++matchEnd;
@@ -80,6 +111,15 @@ QString credentialOnAwardLine(const QString &line)
 }
 
 // "Major: Computer Science", "Program of Study - Nursing", "Plan: Accounting".
+//
+// Steps:
+//   1. Find a label word ("major", "program", "program of study", "plan",
+//      "field of study", "degree program", "curriculum", "concentration"),
+//      then ":" or a dash. Everything after that is the first guess.
+//   2. Cut at the next label on the same line, or at a gap of two or more
+//      spaces.
+//   3. Trim punctuation off both ends.
+//   4. Throw it away if it has no run of 3 letters, or is too long.
 QString subjectOnALabelledLine(const QString &line)
 {
     static const QRegularExpression subjectLinePattern(
@@ -109,7 +149,8 @@ QString subjectOnALabelledLine(const QString &line)
 
     // A major that is a number or a course code means the parse went wrong.
     static const QRegularExpression hasLettersPattern(QStringLiteral("[A-Za-z]{3,}"));
-    if (!hasLettersPattern.match(subject).hasMatch() || subject.length() > 60) {
+    if (!hasLettersPattern.match(subject).hasMatch()
+            || subject.length() > longestFieldOfStudy) {
         return QString();
     }
     return subject;
@@ -122,7 +163,9 @@ QString schoolNameOutOf(const QString &line)
     QString schoolName = line;
 
     // In "TULSA COMMUNITY COLLEGE  ·  OFFICIAL TRANSCRIPT", everything after
-    // the separator is the document title, not the school name.
+    // the separator is the document title, not the school name. A separator
+    // is "|", "·" or "•" with spaces around it, three or more spaces, or a
+    // tab. The cut is kept only if the first piece still names a school.
     static const QRegularExpression separatorPattern(
         QStringLiteral("\\s+[|·•]\\s+|\\s{3,}|\\t+"));
     const QRegularExpressionMatch separator = separatorPattern.match(schoolName);
@@ -133,7 +176,9 @@ QString schoolNameOutOf(const QString &line)
         }
     }
 
-    // A trailing address: ", Tulsa, OK 74135".
+    // A trailing address: ", Tulsa, OK 74135". A comma, a city made of
+    // letters, spaces and dots, a comma, a two-letter state, and a ZIP code
+    // of 5 digits with an optional "-1234", at the end of the line.
     static const QRegularExpression trailingAddressPattern(
         QStringLiteral(",\\s*[A-Za-z .]+,\\s*[A-Z]{2}\\s*\\d{5}(?:-\\d{4})?\\s*$"));
     schoolName.remove(trailingAddressPattern);
@@ -176,7 +221,8 @@ bool couldBeAnUnlabelledSchoolName(const QString &line)
     if (lineIsTheDocumentTalkingAboutItself(line)) {
         return false;
     }
-    if (line.length() < 6 || line.length() > 60) {
+    if (line.length() < shortestUnlabelledSchoolName
+            || line.length() > longestUnlabelledSchoolName) {
         return false;
     }
     if (line.contains(QRegularExpression(QStringLiteral("\\d")))) {
@@ -185,6 +231,8 @@ bool couldBeAnUnlabelledSchoolName(const QString &line)
     if (line.contains(QLatin1Char(':'))) {
         return false;   // "Name: Ultra Jones" is a field, not a letterhead
     }
+    // Two or more words. Each word starts with a letter and holds only
+    // letters, dots, apostrophes, "&" and hyphens.
     static const QRegularExpression atLeastTwoWordsPattern(
         QStringLiteral("^[A-Za-z][A-Za-z.'&-]*(?:\\s+[A-Za-z][A-Za-z.'&-]*)+$"));
     return atLeastTwoWordsPattern.match(line.trimmed()).hasMatch();
@@ -192,6 +240,25 @@ bool couldBeAnUnlabelledSchoolName(const QString &line)
 
 } // namespace
 
+// Reads the transcript one line at a time. Blank lines are skipped and not
+// counted. For each line:
+//   1. Note whether it is a course row. Course rows feed nothing below
+//      except the "is this a transcript" check.
+//   2. If the line is a course row or holds transcript words, the document
+//      behaves like a transcript.
+//   3. Near the top, remember the first line that could be a school name
+//      without a school word in it. It is used only as a last resort.
+//   4. Near the top, the first line with a school word is the school.
+//   5. The first award line gives the credential.
+//   6. The first labelled subject line gives the field of study.
+//   7. Collect term names ("Fall 2000") and bare years for the dates.
+//
+// After the loop:
+//   - No school word found, but the document behaves like a transcript?
+//     Use the name remembered in step 3.
+//   - Still no school? This is not a transcript. Return nothing.
+//   - Dates: the earliest and latest year, written as the document wrote
+//     the term when it can be.
 ParsedResumeInsights AcademicTranscriptReader::parseTranscriptText(
     const QString &transcriptText) const
 {
@@ -252,7 +319,7 @@ ParsedResumeInsights AcademicTranscriptReader::parseTranscriptText(
                 && lineNumber <= deepestLineThatCouldBeTheLetterhead
                 && InstitutionWords::namesASchool(line)) {
             const QString schoolName = schoolNameOutOf(line);
-            if (!schoolName.isEmpty() && schoolName.length() <= 80) {
+            if (!schoolName.isEmpty() && schoolName.length() <= longestSchoolName) {
                 schooling.schoolName = schoolName;
                 letterheadLine = line;
             }
@@ -282,6 +349,7 @@ ParsedResumeInsights AcademicTranscriptReader::parseTranscriptText(
         // the fallback. Course rows are skipped, since a year in a course
         // title is not a term.
         if (!lineIsACourseRow) {
+            // A season word, a space, a year. captured(2) is the year.
             static const QRegularExpression termPattern(
                 QStringLiteral("\\b(fall|spring|summer|winter|autumn)\\s+(") + yearPattern
                     + QStringLiteral(")\\b"),
@@ -293,6 +361,9 @@ ParsedResumeInsights AcademicTranscriptReader::parseTranscriptText(
                 yearsFound.append(term.captured(2));
             }
 
+            // Every year on the line, including the ones already read as part of
+            // a term. Those repeats do no harm: only the earliest and latest
+            // are kept.
             static const QRegularExpression loneYearPattern(yearPattern);
             QRegularExpressionMatchIterator years = loneYearPattern.globalMatch(line);
             while (years.hasNext()) {
@@ -329,6 +400,8 @@ ParsedResumeInsights AcademicTranscriptReader::parseTranscriptText(
     }
 
     if (!yearsFound.isEmpty()) {
+        // Years are four digits, so comparing them as text gives the same
+        // order as comparing them as numbers.
         QString earliestYear = yearsFound.first();
         QString latestYear = yearsFound.first();
         for (const QString &year : yearsFound) {
@@ -337,6 +410,10 @@ ParsedResumeInsights AcademicTranscriptReader::parseTranscriptText(
         }
 
         // Use the document's own wording: "Fall 2000", not "2000".
+        //
+        // Looks through the terms for ones that end in this year. With one,
+        // that term is used. With several, the earliest or latest season in
+        // seasonOrder wins. With none, the bare year is used.
         auto termWorded = [&termsFound](const QString &year, bool wantEarliest) -> QString {
             QString chosenTerm;
             for (const QString &term : termsFound) {

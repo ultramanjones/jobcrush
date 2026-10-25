@@ -1,5 +1,6 @@
 #include "FormattedDocumentWriter.h"
 
+#include <QDebug>
 #include <QFile>
 #include <QFileInfo>
 #include <QPageSize>
@@ -10,8 +11,20 @@
 
 namespace {
 
+// Two units appear in the Word XML below:
+//   half-points  font size. 22 half-points is 11pt.
+//   twips        lengths and spacing. A twip is 1/20 of a point, so 1440
+//                twips is one inch. Page size, margins, indents and the space
+//                around paragraphs are all in twips.
+
+// The font size of body text, bullets and checkboxes: 11pt.
+constexpr int bodyTextHalfPoints = 22;
+
 // XML rejects five characters. Without this, a cover letter containing "R&D"
 // produces a .docx that Word refuses to open.
+//
+// "&" is replaced first. Every other replacement adds a new "&", and those
+// must not be escaped a second time.
 QString escapedForXml(const QString &text)
 {
     QString escapedText = text;
@@ -30,10 +43,19 @@ int halfPointsForHeadingLevel(int headingLevel)
     case 1:  return 32; // 16pt
     case 2:  return 26; // 13pt
     case 3:  return 24; // 12pt
-    default: return 22; // 11pt
+    default: return bodyTextHalfPoints; // 11pt
     }
 }
 
+// Writes one Word "run" (<w:r>) for each piece of text. A run is a stretch
+// of text with one set of formatting. Inside each run:
+//   <w:rPr>   the run's formatting: <w:b/> bold, <w:i/> italic, and the size
+//             twice. <w:sz> sizes most text. <w:szCs> sizes scripts such as
+//             Arabic and Hebrew, which Word sizes separately.
+//   <w:t>     the text itself. xml:space="preserve" keeps leading and
+//             trailing spaces. Without it, Word drops them and words run
+//             together where two runs meet.
+// forceBold makes every run bold. Headings use it.
 QString wordRunsFor(const QList<MarkdownDocumentReader::TextRun> &runs,
                     bool forceBold,
                     int halfPointSize)
@@ -66,10 +88,15 @@ bool FormattedDocumentWriter::writeWordDocument(const QString &markdownText,
 {
     const QList<MarkdownDocumentReader::Block> blocks = markdownReader.blocksIn(markdownText);
 
+    // Each block becomes one Word paragraph (<w:p>). <w:pPr> holds the
+    // paragraph's layout: <w:spacing> the space before and after it, in
+    // twips, and <w:ind> its indent.
     QString bodyXml;
     for (const MarkdownDocumentReader::Block &block : blocks) {
         switch (block.blockKind) {
         case MarkdownDocumentReader::BlockKind::Heading:
+            // 12pt above, 6pt below. <w:keepNext/> keeps the heading on the
+            // same page as the paragraph after it.
             bodyXml += QStringLiteral(
                            "<w:p><w:pPr><w:spacing w:before=\"240\" w:after=\"120\"/>"
                            "<w:keepNext/></w:pPr>%1</w:p>")
@@ -80,17 +107,22 @@ bool FormattedDocumentWriter::writeWordDocument(const QString &markdownText,
         case MarkdownDocumentReader::BlockKind::Bullet:
             // A hanging indent and a bullet character instead of a Word
             // numbering definition. Word renders it the same, and the file
-            // stays simple enough to read with an unzipper.
+            // stays simple enough to read with an unzipper. The paragraph is
+            // indented a quarter inch (360 twips). The first line starts
+            // 180 twips further left, so the bullet hangs out in front of the
+            // text.
             bodyXml += QStringLiteral(
                            "<w:p><w:pPr><w:ind w:left=\"360\" w:hanging=\"180\"/>"
                            "<w:spacing w:after=\"60\"/></w:pPr>"
                            "<w:r><w:rPr><w:sz w:val=\"22\"/></w:rPr>"
                            "<w:t xml:space=\"preserve\">•  </w:t></w:r>%1</w:p>")
-                           .arg(wordRunsFor(block.runs, false, 22));
+                           .arg(wordRunsFor(block.runs, false, bodyTextHalfPoints));
             break;
 
         case MarkdownDocumentReader::BlockKind::CheckboxUnticked:
         case MarkdownDocumentReader::BlockKind::CheckboxTicked:
+            // Laid out like a bullet, with a ticked or empty box in place of
+            // the bullet character.
             bodyXml += QStringLiteral(
                            "<w:p><w:pPr><w:ind w:left=\"360\" w:hanging=\"180\"/>"
                            "<w:spacing w:after=\"60\"/></w:pPr>"
@@ -100,7 +132,7 @@ bool FormattedDocumentWriter::writeWordDocument(const QString &markdownText,
                                     == MarkdownDocumentReader::BlockKind::CheckboxTicked
                                 ? QStringLiteral("☑")
                                 : QStringLiteral("☐"),
-                                wordRunsFor(block.runs, false, 22));
+                                wordRunsFor(block.runs, false, bodyTextHalfPoints));
             break;
 
         case MarkdownDocumentReader::BlockKind::Rule:
@@ -111,14 +143,23 @@ bool FormattedDocumentWriter::writeWordDocument(const QString &markdownText,
             break;
 
         case MarkdownDocumentReader::BlockKind::Paragraph:
+            // 8pt after. w:line="276" with lineRule "auto" is in 240ths of a
+            // line, so 276 is 1.15 line spacing, Word's own default.
             bodyXml += QStringLiteral(
                            "<w:p><w:pPr><w:spacing w:after=\"160\" w:line=\"276\" "
                            "w:lineRule=\"auto\"/></w:pPr>%1</w:p>")
-                           .arg(wordRunsFor(block.runs, false, 22));
+                           .arg(wordRunsFor(block.runs, false, bodyTextHalfPoints));
             break;
         }
     }
 
+    // A .docx needs at least these three files in a ZIP:
+    //   word/document.xml    the text, built above
+    //   [Content_Types].xml  says what kind of data each file holds
+    //   _rels/.rels          says which file is the main document
+    //
+    // <w:sectPr> sets the page: US Letter (12240 x 15840 twips, 8.5 x 11
+    // inches) with one-inch margins (1440 twips) on every side.
     const QString documentXml = QStringLiteral(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
         "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
@@ -153,9 +194,17 @@ bool FormattedDocumentWriter::writeWordDocument(const QString &markdownText,
     if (!wordFile.open(QIODevice::WriteOnly)) {
         reasonText = QStringLiteral("Job Crush couldn't write %1 — %2")
                          .arg(QFileInfo(filePath).fileName(), wordFile.errorString());
+        qWarning().noquote() << QStringLiteral(
+            "FormattedDocumentWriter::writeWordDocument: could not open \"%1\" — %2")
+                .arg(filePath, wordFile.errorString());
         return false;
     }
-    wordFile.write(archiveWriter.archiveBytes());
+    const QByteArray archiveBytes = archiveWriter.archiveBytes();
+    if (wordFile.write(archiveBytes) != archiveBytes.size()) {
+        qWarning().noquote() << QStringLiteral(
+            "FormattedDocumentWriter::writeWordDocument: could not write all of \"%1\" — %2")
+                .arg(filePath, wordFile.errorString());
+    }
     wordFile.close();
     return true;
 }
@@ -165,7 +214,7 @@ bool FormattedDocumentWriter::writePortableDocument(const QString &markdownText,
                                             QString &reasonText) const
 {
     // Qt reads markdown and lays it out, including page breaks. No reason to
-    // draw the PDF by hand.
+    // draw the PDF by hand. The page is US Letter with 20 mm margins.
     QTextDocument renderedDocument;
     renderedDocument.setMarkdown(markdownText, QTextDocument::MarkdownDialectCommonMark);
 
@@ -178,9 +227,14 @@ bool FormattedDocumentWriter::writePortableDocument(const QString &markdownText,
     renderedDocument.setPageSize(QSizeF(pdfWriter.width(), pdfWriter.height()));
     renderedDocument.print(&pdfWriter);
 
+    // QTextDocument::print reports no errors. The only check is whether the
+    // file is there afterwards.
     if (!QFileInfo::exists(filePath)) {
         reasonText = QStringLiteral("Job Crush couldn't write %1.")
                          .arg(QFileInfo(filePath).fileName());
+        qWarning().noquote() << QStringLiteral(
+            "FormattedDocumentWriter::writePortableDocument: \"%1\" is not there after"
+            " printing — the PDF writer could not create it").arg(filePath);
         return false;
     }
     return true;

@@ -1,5 +1,6 @@
 #include "ProfessionalDocumentRepository.h"
 
+#include <QDebug>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
@@ -10,12 +11,13 @@ namespace {
 
 // An unassigned QString is null, not empty, and binding null to a NOT NULL
 // column makes SQLite refuse the whole row. Same guard the job repository
-// carries, and for the same hard-won reason.
+// carries, for the same reason: it once lost a whole board's jobs.
 QString textOrEmpty(const QString &possiblyNullText)
 {
     return possiblyNullText.isNull() ? QString::fromLatin1("") : possiblyNullText;
 }
 
+// The one place that turns a query row into a ProfessionalDocument.
 ProfessionalDocument professionalDocumentFromQueryRow(const QSqlQuery &row)
 {
     ProfessionalDocument professionalDocument;
@@ -88,8 +90,12 @@ QList<ProfessionalDocument> ProfessionalDocumentRepository::loadAllProfessionalD
     QList<ProfessionalDocument> allProfessionalDocuments;
 
     QSqlQuery selectQuery(jobCrushDatabase.connection());
-    selectQuery.exec(QStringLiteral(
-        "SELECT * FROM professionalDocument ORDER BY importedTimestamp DESC"));
+    if (!selectQuery.exec(QStringLiteral(
+            "SELECT * FROM professionalDocument ORDER BY importedTimestamp DESC"))) {
+        qWarning().noquote() << QStringLiteral(
+            "ProfessionalDocumentRepository::loadAllProfessionalDocuments: query "
+            "failed for every document — %1").arg(selectQuery.lastError().text());
+    }
 
     while (selectQuery.next()) {
         allProfessionalDocuments.append(professionalDocumentFromQueryRow(selectQuery));
@@ -107,7 +113,11 @@ QList<ProfessionalDocument> ProfessionalDocumentRepository::loadProfessionalDocu
         "SELECT * FROM professionalDocument WHERE documentKind = :documentKind "
         "ORDER BY importedTimestamp DESC"));
     selectQuery.bindValue(QStringLiteral(":documentKind"), documentKind);
-    selectQuery.exec();
+    if (!selectQuery.exec()) {
+        qWarning().noquote() << QStringLiteral(
+            "ProfessionalDocumentRepository::loadProfessionalDocumentsOfKind: query "
+            "failed for kind \"%1\" — %2").arg(documentKind, selectQuery.lastError().text());
+    }
 
     while (selectQuery.next()) {
         professionalDocumentsOfKind.append(professionalDocumentFromQueryRow(selectQuery));
@@ -151,8 +161,12 @@ QString ProfessionalDocumentRepository::allExtractedTextJoined()
     QString joinedText;
 
     QSqlQuery selectQuery(jobCrushDatabase.connection());
-    selectQuery.exec(QStringLiteral(
-        "SELECT extractedText FROM professionalDocument WHERE extractedText <> ''"));
+    if (!selectQuery.exec(QStringLiteral(
+            "SELECT extractedText FROM professionalDocument WHERE extractedText <> ''"))) {
+        qWarning().noquote() << QStringLiteral(
+            "ProfessionalDocumentRepository::allExtractedTextJoined: query failed for "
+            "every document's text — %1").arg(selectQuery.lastError().text());
+    }
 
     while (selectQuery.next()) {
         joinedText += selectQuery.value(0).toString();

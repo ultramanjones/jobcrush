@@ -5,14 +5,13 @@ import JobCrush
 //
 // The board. Five columns, and cards you drag between them.
 //
-// Plural on purpose, and the plural is the point: a job search is not one
-// funnel you feed and then sit beside. It is a dozen of them running at
-// different speeds, and the reason to look at this screen is to see that you
-// have feelers out in every direction rather than one hope you are guarding.
+// The name is plural on purpose. A job search is many leads at once, and
+// each one moves at its own speed. This screen shows the user how many
+// leads they have out.
 //
-// Pure view. It knows about columns, colors and dragging; it knows nothing
-// about what a stage means or what moving between them costs. That is
-// JobPipelines' business, one layer down.
+// This is the view layer. It knows columns, colors and dragging. It does
+// not know what a stage means or what a move between stages does. The
+// JobPipelines class in the logic layer decides that.
 Rectangle {
     id: jobPipelinesPage
 
@@ -28,6 +27,9 @@ Rectangle {
     readonly property var stageNames:
         jobPipelineBoardViewModel ? jobPipelineBoardViewModel.stageNamesInBoardOrder() : []
 
+    // Each stage has its own color in the theme. The names here are the
+    // storage names from the viewmodel, not the words shown on screen. An
+    // unknown name gets the plain border color.
     function stageColorFor(stageName) {
         switch (stageName) {
         case "saved":     return JobCrushTheme.stageSavedColor
@@ -205,21 +207,24 @@ Rectangle {
                         .cardsInStage(stageColumn.stageName)
                 }
 
-                width: (boardColumns.width - (jobPipelinesPage.stageNames.length - 1) * 12)
+                // The row's width, less the gaps between columns, split evenly.
+                width: (boardColumns.width
+                        - (jobPipelinesPage.stageNames.length - 1) * boardColumns.spacing)
                        / jobPipelinesPage.stageNames.length
                 height: boardColumns.height
                 radius: 10
                 color: JobCrushTheme.panelBackgroundColor
 
-                // The column lights up while a card is over it — the whole
-                // reason a drag feels safe is that the target says "yes, here"
-                // before you let go.
+                // The border lights up in the stage's color while a card is
+                // over the column. The user sees where the card will land
+                // before letting go.
                 border.width: columnDropArea.containsDrag ? 2 : 1
                 border.color: columnDropArea.containsDrag
                     ? jobPipelinesPage.stageColorFor(stageColumn.stageName)
                     : JobCrushTheme.hairlineBorderColor
 
-                // Trace On: the column lights up while a card is over it.
+                // A glow around the column while a card is over it. Only the
+                // Trace On themes draw it; the others set the glow to zero.
                 GlowHalo {
                     glowColor: jobPipelinesPage.stageColorFor(stageColumn.stageName)
                     cornerRadius: stageColumn.radius
@@ -311,8 +316,9 @@ Rectangle {
 
                 // ---- What this column is for ----
                 //
-                // Only while it is empty. A heading with nothing under it is a
-                // question; this answers it before anybody has to ask.
+                // Shown only while the column is empty, so a new user knows
+                // what belongs here. Hidden while the hover box is open,
+                // because the two would overlap.
                 Text {
                     anchors.top: columnHeading.bottom
                     anchors.topMargin: 10
@@ -344,7 +350,19 @@ Rectangle {
                     contentHeight: cardStack.implicitHeight
                     clip: true
 
+                    // One notch of the mouse wheel scrolls 240 pixels, which
+                    // is faster than Qt's default.
+                    //
+                    // The steps: turn the wheel's raw count into notches,
+                    // turn notches into pixels, move the view up or down by
+                    // that much, and keep the result between the top and
+                    // the bottom of the cards. A column whose cards all fit
+                    // does not scroll.
                     WheelHandler {
+                        // Qt reports one wheel notch as 120 units of angleDelta.
+                        readonly property real angleDeltaPerNotch: 120
+                        readonly property real pixelsPerNotch: 240
+
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         onWheel: function(wheelEvent) {
                             const scrollableDistance = Math.max(
@@ -354,7 +372,9 @@ Rectangle {
                             }
                             columnScroller.contentY = Math.max(0, Math.min(
                                 scrollableDistance,
-                                columnScroller.contentY - (wheelEvent.angleDelta.y / 120) * 240))
+                                columnScroller.contentY
+                                    - (wheelEvent.angleDelta.y / angleDeltaPerNotch)
+                                      * pixelsPerNotch))
                         }
                     }
 
@@ -392,18 +412,18 @@ Rectangle {
                                     readonly property Item boardPage: jobPipelinesPage
 
                                     // Width comes from the SLOT, not from the
-                                    // parent, because this card leaves its
-                                    // parent while it is being dragged (see
-                                    // the handler below) and a card that
-                                    // changes width the moment you pick it up
-                                    // feels broken in the hand.
+                                    // parent. The card leaves its parent
+                                    // while it is dragged (see the handler
+                                    // below). Tied to the parent, it would
+                                    // change width the moment it was picked
+                                    // up.
                                     width: cardSlot.width
                                     height: cardBody.implicitHeight + 22
                                     radius: 8
                                     color: JobCrushTheme.cardBackgroundColor
                                     // An amber edge marks a job whose
                                     // posting is gone from the employer's
-                                    // board, so it shows from across the room.
+                                    // board, so it stands out on the board.
                                     border.width: cardDragHandler.active
                                                   || cardSlot.card.postingSeemsGone ? 2 : 1
                                     border.color: cardDragHandler.active
@@ -427,6 +447,9 @@ Rectangle {
                                     // never reaches the column.
                                     Drag.keys: ["jobCrushBoardCard"]
 
+                                    // The point of the card that picks the
+                                    // column: its middle, near the top, where
+                                    // the title is.
                                     Drag.hotSpot.x: width / 2
                                     Drag.hotSpot.y: 24
 
@@ -440,22 +463,30 @@ Rectangle {
 
                                         onActiveChanged: {
                                             if (active) {
-                                                // Out of the column and onto
-                                                // the page for the duration of
-                                                // the drag.
+                                                // Picked up. Move the card out
+                                                // of its column and onto the
+                                                // page until it is let go.
                                                 //
-                                                // Its column CLIPS — it has to,
+                                                // The column CLIPS. It must,
                                                 // or a long list would spill
-                                                // over the one below it — and a
-                                                // card that vanishes the moment
-                                                // it crosses the column edge is
-                                                // a card nobody will ever
-                                                // succeed in dragging. So the
-                                                // card is handed to the page,
-                                                // where nothing clips it, and
-                                                // handed back on release. The
-                                                // empty slot stays behind and
-                                                // holds the space.
+                                                // past its bottom edge. But a
+                                                // clipped card disappears as
+                                                // soon as it crosses the
+                                                // column edge, so it could
+                                                // never reach another column.
+                                                // The page does not clip, so
+                                                // the card rides on the page
+                                                // and goes back on release.
+                                                // The empty slot stays behind
+                                                // and holds the space.
+                                                //
+                                                // The steps: find where the
+                                                // card sits in page terms,
+                                                // give it to the page, put it
+                                                // at that same spot so it
+                                                // does not jump, start the
+                                                // drag, and remember which job
+                                                // is in the air.
                                                 const placeOnThePage =
                                                     targetedJobCard.mapToItem(
                                                         jobPipelinesPage, 0, 0)
@@ -468,14 +499,19 @@ Rectangle {
                                                 return
                                             }
 
-                                            // Let go. drop() has to be called
-                                            // while Drag.active is still true —
-                                            // clearing it first ends the drag
-                                            // as a CANCEL, and the card silently
-                                            // springs back no matter how
-                                            // carefully it was aimed. That is
-                                            // the whole bug, and it looks
-                                            // exactly like a broken column.
+                                            // Let go. drop() must be called
+                                            // while Drag.active is still true.
+                                            // Clearing it first ends the drag
+                                            // as a CANCEL. Then the card goes
+                                            // back to where it started, no
+                                            // matter where it was dropped, and
+                                            // the column looks broken.
+                                            //
+                                            // After the drop, the card goes
+                                            // back into its slot at the top
+                                            // left. boardPage is used, not
+                                            // jobPipelinesPage, for the reason
+                                            // given at boardPage above.
                                             targetedJobCard.Drag.drop()
                                             targetedJobCard.Drag.active = false
 
@@ -486,13 +522,14 @@ Rectangle {
                                         }
                                     }
 
-                                    // Clicking opens the card. A column is a
-                                    // couple of hundred pixels wide, and a
-                                    // notes box on every card at that width
-                                    // turns five columns into wallpaper. Shut,
-                                    // a card answers "which job, where, how
-                                    // far along". Open, it answers everything
-                                    // else.
+                                    // Clicking opens the card, and clicking
+                                    // again shuts it. A column is a couple of
+                                    // hundred pixels wide. A notes box on
+                                    // every card at that width would fill the
+                                    // board with text. Shut, a card shows
+                                    // which job, where, and how far along.
+                                    // Open, it shows the notes, the dates and
+                                    // the links.
                                     TapHandler {
                                         onTapped: targetedJobCard.isOpen = !targetedJobCard.isOpen
                                     }
@@ -591,10 +628,50 @@ Rectangle {
                                             }
                                         }
 
-                                        // Shut, a note announces itself in one
-                                        // line rather than hiding completely —
-                                        // otherwise the thing you wrote down
-                                        // is the thing you forget you wrote.
+                                        // The user checked the job and it is
+                                        // still listed. Their word wins: the
+                                        // amber mark comes off and stays off.
+                                        Text {
+                                            width: parent.width
+                                            visible: cardSlot.card.postingSeemsGone
+                                                     && targetedJobCard.isOpen
+                                            text: "It's still open, I checked"
+                                            color: stillOpenMouseArea.containsMouse
+                                                ? JobCrushTheme.accentColor
+                                                : JobCrushTheme.noticeTextColor
+                                            font.pixelSize: JobCrushTheme.smallFontSize
+                                            font.underline: stillOpenMouseArea.containsMouse
+
+                                            MouseArea {
+                                                id: stillOpenMouseArea
+                                                anchors.fill: parent
+                                                anchors.margins: -3
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: jobPipelinesPage
+                                                    .jobPipelineBoardViewModel
+                                                    .userSaysJobIsStillOpen(
+                                                        cardSlot.card.jobApplicationId)
+                                            }
+                                        }
+
+                                        // Shown on an open card once the user
+                                        // has said the job is still open.
+                                        Text {
+                                            width: parent.width
+                                            visible: cardSlot.card.userSaysStillOpen
+                                                     && targetedJobCard.isOpen
+                                            text: cardSlot.card.userSaysStillOpenText
+                                            textFormat: Text.PlainText
+                                            color: JobCrushTheme.mutedTextColor
+                                            font.pixelSize: JobCrushTheme.smallFontSize
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        // On a shut card, the first line of the
+                                        // note still shows. If it were hidden,
+                                        // the user could forget the note was
+                                        // there.
                                         Text {
                                             width: parent.width
                                             visible: !targetedJobCard.isOpen
@@ -614,8 +691,8 @@ Rectangle {
 
                                             Item { width: 1; height: 2 }
 
-                                            // Grows to fit, so a long note is
-                                            // a note you can actually read.
+                                            // Grows to fit a long note, up to a
+                                            // set height. Past that it scrolls.
                                             InlineEditField {
                                                 width: parent.width
                                                 labelText: "Notes"
@@ -666,18 +743,16 @@ Rectangle {
                                             // Every way of reaching this job,
                                             // one link each.
                                             //
-                                            // The same opening often sits on
-                                            // the employer's own board AND on
-                                            // whatever carried it, and which
-                                            // one a person wants is not
-                                            // something this app can work out:
-                                            // one wants the employer's form,
-                                            // another already has an account
-                                            // somewhere, a third is checking
-                                            // whether the job is still open
-                                            // and needs a second opinion. So
-                                            // all of them are offered and the
-                                            // user picks.
+                                            // The same opening is often on the
+                                            // employer's own board AND on a job
+                                            // site. The app cannot know which
+                                            // one the user wants. One person
+                                            // wants the employer's form.
+                                            // Another already has an account
+                                            // on a site. A third wants to see
+                                            // if the job is still open. So all
+                                            // of them are shown and the user
+                                            // picks.
                                             //
                                             // Stacked rather than side by side.
                                             // A column is narrow, and two links
@@ -844,6 +919,9 @@ Rectangle {
                     keys: ["jobCrushBoardCard"]
 
                     onDropped: function(dropEvent) {
+                        // The keys above already keep out anything but a
+                        // card. This check is a second guard: with no job id
+                        // there is nothing to move, so the drop is left alone.
                         if (!dropEvent.source || dropEvent.source.jobApplicationId === undefined) {
                             return
                         }
@@ -859,8 +937,7 @@ Rectangle {
     // ------------------------------------------------------------------
     // Nothing on the board yet
     //
-    // Says what to do, not merely that there is nothing here. An empty state
-    // that only reports emptiness is a dead end with a nice font.
+    // Says what to do next, not only that the board is empty.
     // ------------------------------------------------------------------
     Rectangle {
         anchors.centerIn: parent

@@ -7,8 +7,8 @@ SelectedBrainConnectionViewModel::SelectedBrainConnectionViewModel(
     : QObject(parent)
     , brain(aiBrain)
 {
-    // Selection changes and connection results both land in the same place
-    // for the view: one signal, one truth.
+    // A new selection and a new connection result both change what the view
+    // shows, so both send the same signal.
     const auto announceChange = [this]() {
         ++connectionChangeCounter;
         emit connectionChanged();
@@ -16,9 +16,14 @@ SelectedBrainConnectionViewModel::SelectedBrainConnectionViewModel(
     connect(&brain, &AiBrain::selectedProviderChanged, this, announceChange);
     connect(&brain, &AiBrain::connectionStateChanged, this, announceChange);
 
-    // A refusal the user is owed an explanation for. Held here rather than
-    // shown from below: the Logic layer states the fact, the view decides how
-    // loudly to say it.
+    connect(&brain, &AiBrain::brainLevelsChanged, this, [this]() {
+        ++brainLevelChangeCounter;
+        emit brainLevelsChanged();
+    });
+
+    // A refusal the user must be told about. The Logic layer reports what
+    // happened. This class holds it until the user dismisses it, and the
+    // view decides how to show it.
     connect(&brain, &AiBrain::connectionAttemptRefused, this,
             [this](const QString &vendorName, const QString &plainReason,
                    const QString &whatToDoNext) {
@@ -64,9 +69,9 @@ void SelectedBrainConnectionViewModel::dismissConnectionRefusal()
 
 QString SelectedBrainConnectionViewModel::bannerText() const
 {
-    // The banner says one of exactly two things when it is settled: which
-    // brain is live, or that none is. Anything in between says so honestly
-    // rather than guessing on the user's behalf.
+    // Once the state is settled, the banner says one of two things: which
+    // brain is live, or that none is. While a check is running or has not
+    // run yet, it says that instead of guessing.
     const QString vendorName = brain.selectedProviderDisplayName().toUpper();
 
     switch (brain.connectionState()) {
@@ -165,4 +170,45 @@ void SelectedBrainConnectionViewModel::setProviderSelected(
 void SelectedBrainConnectionViewModel::checkConnectionNow()
 {
     brain.checkConnectionNow();
+}
+
+// --- How much brain ----------------------------------------------------------
+
+QStringList SelectedBrainConnectionViewModel::brainLevelNames() const
+{
+    QStringList levelNames;
+    for (const AiBrainLevel brainLevel : everyAiBrainLevel()) {
+        levelNames.append(aiBrainLevelName(brainLevel));
+    }
+    return levelNames;
+}
+
+int SelectedBrainConnectionViewModel::brainLevelRevision() const
+{
+    return brainLevelChangeCounter;
+}
+
+QString SelectedBrainConnectionViewModel::brainLevelFor(const QString &providerKindName) const
+{
+    return aiBrainLevelName(brain.brainLevelFor(aiProviderKindFromStorageText(providerKindName)));
+}
+
+void SelectedBrainConnectionViewModel::setBrainLevelFor(const QString &providerKindName,
+                                                        const QString &brainLevelName)
+{
+    brain.setBrainLevelFor(aiProviderKindFromStorageText(providerKindName),
+                           aiBrainLevelFromName(brainLevelName));
+}
+
+QString SelectedBrainConnectionViewModel::modelNameFor(const QString &providerKindName,
+                                                       const QString &brainLevelName) const
+{
+    return brain.modelNameFor(aiProviderKindFromStorageText(providerKindName),
+                              aiBrainLevelFromName(brainLevelName));
+}
+
+QString SelectedBrainConnectionViewModel::brainLevelExplanation(
+    const QString &brainLevelName) const
+{
+    return aiBrainLevelExplanation(aiBrainLevelFromName(brainLevelName));
 }

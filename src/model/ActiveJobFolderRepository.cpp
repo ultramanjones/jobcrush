@@ -15,12 +15,15 @@ QString textOrEmpty(const QString &possiblyNullText)
     return possiblyNullText.isNull() ? QString::fromLatin1("") : possiblyNullText;
 }
 
+// A time as stored text, with milliseconds, or an empty string for "no time".
+// Milliseconds matter here: a file's changed time is compared exactly.
 QString timestampTextFor(const QDateTime &timestamp)
 {
     return timestamp.isValid() ? timestamp.toString(Qt::ISODateWithMs)
                                : QString::fromLatin1("");
 }
 
+// The one place that turns a query row into an ActiveJobFolder.
 ActiveJobFolder activeJobFolderFromQueryRow(const QSqlQuery &row)
 {
     ActiveJobFolder activeJobFolder;
@@ -38,6 +41,8 @@ ActiveJobFolder activeJobFolderFromQueryRow(const QSqlQuery &row)
     return activeJobFolder;
 }
 
+// Binds every field except the id. Shared by insert and update, so the two
+// can never bind the fields differently.
 void bindEveryField(QSqlQuery &query, const ActiveJobFolder &activeJobFolder)
 {
     query.bindValue(QStringLiteral(":folderName"), textOrEmpty(activeJobFolder.folderName));

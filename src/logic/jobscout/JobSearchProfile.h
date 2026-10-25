@@ -4,6 +4,20 @@
 #include <QString>
 #include <QStringList>
 
+// ScoringProfile
+//
+// A copy of the parts of the search profile that scoring uses, as plain
+// values. JobSearchProfile is a QObject that lives on the screen's thread.
+// Scoring runs on a background thread, so it works from this copy instead
+// of reaching into the profile while the user may be editing it.
+struct ScoringProfile {
+    QStringList targetJobTitles;
+    QStringList skillKeywords;
+    QStringList preferredWorkLocations;
+    bool remoteRolesOnly = false;
+    int minimumAcceptableSalary = 0;
+};
+
 // JobSearchProfile
 //
 // What the user is actually looking for: the target titles, the skills they
@@ -14,10 +28,10 @@
 // This is the input to TWO things: what JobScout asks each site for, and what
 // ProspectScorer ranks the results against.
 //
-// FUTURE (ProDocs, Phase 5): the skill list is the seam. Once professional
-// documents are loaded, the words pulled out of a resume join this list
-// automatically, so the same algorithm gets a much richer picture without a
-// line of scoring code changing. Typing skills here stays supported — some
+// FUTURE (ProDocs, Phase 5): the skill list is where resumes will plug in.
+// Once professional documents are loaded, the words pulled out of a resume
+// join this list automatically, so the scorer gets more to match on without
+// a line of scoring code changing. Typing skills here stays supported — some
 // people know exactly what they want to be found for.
 class JobSearchProfile : public QObject {
     Q_OBJECT
@@ -47,7 +61,9 @@ public:
     void addPreferredWorkLocation(const QString &workLocation);
     void removePreferredWorkLocationAt(int locationIndex);
 
-    // When true, a job that is not remote scores no location points at all.
+    // When true, a job not listed as remote has its score cut down by
+    // ProspectScorer, so it drops far down the list. It is still shown,
+    // because boards often label remote jobs wrong.
     bool remoteRolesOnly() const;
     void setRemoteRolesOnly(bool remoteOnly);
 
@@ -59,6 +75,9 @@ public:
     // True once there is enough here to rank anything at all. The Top
     // Prospects tab says so plainly rather than showing a meaningless order.
     bool hasEnoughToRankBy() const;
+
+    // A copy of what scoring needs, safe to hand to another thread.
+    ScoringProfile scoringProfile() const;
 
     // Everything the profile knows about what the user brings, lowercased and
     // deduplicated — titles and skills together. One place builds this so the

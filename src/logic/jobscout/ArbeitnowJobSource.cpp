@@ -1,5 +1,6 @@
 #include "ArbeitnowJobSource.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,12 +19,16 @@ const QString arbeitnowStorageName = QStringLiteral("arbeitnow");
 const QString arbeitnowJobBoardEndpointUrl =
     QStringLiteral("https://www.arbeitnow.com/api/job-board-api");
 
+// How much of a bad response to quote back in a message.
+constexpr int arbeitnowDiagnosticOpeningByteCount = 180;
+
 // What a response actually was, when it turned out not to be job listings.
 // Enough to diagnose from — status, size, and the opening bytes — without
 // dumping a whole page into a message meant for a human to read.
 QString responseDiagnosticTail(int httpStatusCode, const QByteArray &responseBody)
 {
-    QString openingBytes = QString::fromUtf8(responseBody.left(180)).simplified();
+    QString openingBytes =
+        QString::fromUtf8(responseBody.left(arbeitnowDiagnosticOpeningByteCount)).simplified();
     if (openingBytes.isEmpty()) {
         openingBytes = QStringLiteral("(empty)");
     }
@@ -39,15 +44,26 @@ ArbeitnowJobSource::ArbeitnowJobSource() = default;
 
 JobSourceDescriptor ArbeitnowJobSource::descriptor() const
 {
-    bool found = false;
-    return jobSourceDescriptorFor(arbeitnowStorageName, found);
+    bool descriptorWasFound = false;
+    const JobSourceDescriptor descriptor =
+        jobSourceDescriptorFor(arbeitnowStorageName, descriptorWasFound);
+    if (!descriptorWasFound) {
+        qWarning().noquote() << QStringLiteral(
+            "ArbeitnowJobSource::descriptor: no catalog entry for \"%1\" — "
+            "the source catalog is missing it")
+                .arg(arbeitnowStorageName);
+    }
+    return descriptor;
 }
 
+// Steps: one GET, no query terms. The answer is {"data":[...]}, one object
+// per job. Each job is copied into a JobPosting. A job with no slug or no
+// link is skipped.
 JobScoutReply *ArbeitnowJobSource::searchForJobs(const JobSearchProfile &searchProfile,
                                                  QObject *replyParent)
 {
     // The profile shapes nothing here — Arbeitnow accepts no query terms.
-    // The scorer earns its keep on this one.
+    // The local scorer does all of the ranking for this source.
     Q_UNUSED(searchProfile);
 
     JobScoutReply *scoutReply = new JobScoutReply(replyParent);
@@ -76,6 +92,8 @@ JobScoutReply *ArbeitnowJobSource::searchForJobs(const JobSearchProfile &searchP
             ->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray responseBody = networkReply->readAll();
 
+        // A status code means the site answered and said no. No status code
+        // means the request never got an answer at all.
         if (networkReply->error() != QNetworkReply::NoError) {
             scoutReply->markFailed(
                 httpStatusCode > 0

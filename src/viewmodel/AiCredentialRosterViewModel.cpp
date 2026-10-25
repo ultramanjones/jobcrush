@@ -1,19 +1,31 @@
 #include "AiCredentialRosterViewModel.h"
 
+#include <QDebug>
 #include <QDesktopServices>
 #include <QUrl>
 
 #include "../logic/aibrain/AiCredentialRoster.h"
 
 namespace {
-// "sk-ant-api03-…k3F9" — enough to recognize, never enough to steal.
+
+// How much of a secret key the Settings page may show.
+const int shortestKeyLengthThatMayBeShown = 9;
+const int keyCharactersShownAtStart = 6;
+const int keyCharactersShownAtEnd = 4;
+
+// "sk-ant…k3F9": the first six characters and the last four. That is enough
+// for the user to tell their keys apart, and not enough to use one. A key of
+// eight characters or fewer is shown as "…" alone, because six plus four
+// would give away most or all of it.
 QString maskedFormOfSecretKey(const QString &secretKey)
 {
-    if (secretKey.length() <= 8) {
+    if (secretKey.length() < shortestKeyLengthThatMayBeShown) {
         return QStringLiteral("…");
     }
-    return secretKey.left(6) + QStringLiteral("…") + secretKey.right(4);
+    return secretKey.left(keyCharactersShownAtStart) + QStringLiteral("…")
+        + secretKey.right(keyCharactersShownAtEnd);
 }
+
 } // namespace
 
 AiCredentialRosterViewModel::AiCredentialRosterViewModel(
@@ -21,8 +33,8 @@ AiCredentialRosterViewModel::AiCredentialRosterViewModel(
     : QAbstractListModel(parent)
     , roster(credentialRoster)
 {
-    // The roster is small and edits are rare — a full reset per change keeps
-    // this translation layer honest and simple.
+    // The roster is small and edits are rare, so a full reset on every change
+    // is cheap. It is also simpler than tracking which row changed.
     connect(&roster, &AiCredentialRoster::rosterChanged, this, [this]() {
         beginResetModel();
         endResetModel();
@@ -125,20 +137,25 @@ void AiCredentialRosterViewModel::openProviderKeyInstructions(
         instructionsUrl = QStringLiteral("https://platform.openai.com/api-keys");
         break;
     case AiProviderKind::Gemini:
-        // Google AI Studio's key page — the one sane front door into
-        // Google's API landscape.
+        // Google AI Studio's key page. It is the simplest place to get a
+        // Gemini key.
         instructionsUrl = QStringLiteral("https://aistudio.google.com/app/apikey");
         break;
     case AiProviderKind::Ollama:
         instructionsUrl = QStringLiteral("https://ollama.com/download");
         break;
     }
-    QDesktopServices::openUrl(QUrl(instructionsUrl));
+    if (!QDesktopServices::openUrl(QUrl(instructionsUrl))) {
+        qWarning().noquote() << QStringLiteral(
+            "AiCredentialRosterViewModel::openProviderKeyInstructions: could not open "
+            "\"%1\" for provider \"%2\" — the system browser refused it")
+                .arg(instructionsUrl, providerKindName);
+    }
 }
 
 bool AiCredentialRosterViewModel::providerHasUsagePage(const QString &providerKindName) const
 {
-    // Ollama runs on the user's own machine — no meter to check.
+    // Ollama runs on the user's own machine, so there is no bill to check.
     return aiProviderKindFromStorageText(providerKindName) != AiProviderKind::Ollama;
 }
 
@@ -150,8 +167,9 @@ QString AiCredentialRosterViewModel::keyFormatWarning(
         return QString();
     }
 
-    // Sniff which provider this key LOOKS like it belongs to.
-    // Order matters: "sk-or-" and "sk-ant-" are more specific than "sk-".
+    // Work out which provider this key LOOKS like it belongs to, from how it
+    // starts. Order matters: "sk-ant-" and "sk-or-" also start with "sk-", so
+    // they are tested before the plain "sk-" that OpenAI uses.
     QString detectedKindName;
     if (trimmedCandidateKey.startsWith(QStringLiteral("sk-ant-"))) {
         detectedKindName = QStringLiteral("anthropic");
@@ -175,9 +193,10 @@ QString AiCredentialRosterViewModel::keyFormatWarning(
 
 void AiCredentialRosterViewModel::openProviderUsagePage(const QString &providerKindName) const
 {
-    // Usage accounting belongs to the provider's own ledger — any number we
-    // computed locally would drift (other apps share the same key, token
-    // math differs per vendor). So the app links to the ONE accurate source.
+    // Usage is counted by the provider. Any number Job Crush worked out
+    // itself would be wrong, because other apps can use the same key and
+    // each vendor counts tokens its own way. So the app links to the
+    // provider's own page.
     QString usagePageUrl;
     switch (aiProviderKindFromStorageText(providerKindName)) {
     case AiProviderKind::Anthropic:
@@ -194,9 +213,14 @@ void AiCredentialRosterViewModel::openProviderUsagePage(const QString &providerK
         usagePageUrl = QStringLiteral("https://aistudio.google.com/app/apikey");
         break;
     case AiProviderKind::Ollama:
-        return; // local models have no meter
+        return; // local models have no bill
     }
-    QDesktopServices::openUrl(QUrl(usagePageUrl));
+    if (!QDesktopServices::openUrl(QUrl(usagePageUrl))) {
+        qWarning().noquote() << QStringLiteral(
+            "AiCredentialRosterViewModel::openProviderUsagePage: could not open "
+            "\"%1\" for provider \"%2\" — the system browser refused it")
+                .arg(usagePageUrl, providerKindName);
+    }
 }
 
 void AiCredentialRosterViewModel::addCredential(const QString &providerKindName,

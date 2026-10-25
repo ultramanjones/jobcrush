@@ -15,9 +15,11 @@
 // closed. When the AI asks for an action and Job Crush is closed, the answer
 // says so in plain words, so the AI can tell the user to open it.
 //
-// It never touches the database or any file.
+// It never touches the database or any file. Its log lines go to standard
+// error, because standard output belongs to the AI app.
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -38,6 +40,13 @@
 
 namespace {
 
+// How long the bridge waits for Job Crush to accept a connection. Job Crush
+// is on the same computer, so two seconds is plenty when it is open.
+constexpr int jobCrushConnectWaitMilliseconds = 2000;
+
+// How long main waits for the input thread to stop after it is told to.
+constexpr int inputReaderStopWaitMilliseconds = 500;
+
 // Writes one message to the AI app, as one line.
 void sendToAiApp(const QJsonObject &message)
 {
@@ -46,6 +55,7 @@ void sendToAiApp(const QJsonObject &message)
     std::fflush(stdout);
 }
 
+// Writes a line Job Crush already wrote as JSON, unchanged, plus a line end.
 void sendRawLineToAiApp(const QByteArray &line)
 {
     std::fwrite(line.constData(), 1, static_cast<size_t>(line.size()), stdout);
@@ -76,6 +86,11 @@ protected:
     }
 };
 
+// Bridge
+//
+// Answers what it can by itself and passes each action on to Job Crush.
+// It keeps the id of every action still waiting, so that if Job Crush closes
+// part way, each one still gets an answer.
 class Bridge : public QObject {
     Q_OBJECT
 public:
@@ -85,6 +100,8 @@ public:
         connect(&jobCrush, &QLocalSocket::disconnected, this, &Bridge::jobCrushWentAway);
     }
 
+    // Handles one line from the AI app. initialize, ping and tools/list are
+    // answered here. tools/call goes to Job Crush. Anything else is an error.
     void handleLineFromAiApp(const QByteArray &rawLine)
     {
         const QByteArray line = rawLine.trimmed();
@@ -136,6 +153,8 @@ public:
                 requestId, AiAppTools::toolCallResult(jobCrushIsClosedText, true)));
             return;
         }
+        // The id is kept as the compact JSON text {"id":...}. A JSON-RPC id
+        // can be a number or a string, and as text both compare correctly.
         waitingForAnswers.insert(QJsonDocument(QJsonObject { { QStringLiteral("id"), requestId } })
                                      .toJson(QJsonDocument::Compact));
         jobCrush.write(line + '\n');
@@ -143,23 +162,33 @@ public:
     }
 
 private:
+    // Connects to Job Crush if not connected yet. Returns false when Job
+    // Crush is not open.
     bool reachJobCrush()
     {
         if (jobCrush.state() == QLocalSocket::ConnectedState) {
             return true;
         }
         jobCrush.connectToServer(AiAppTools::ConnectionName);
-        return jobCrush.waitForConnected(2000);
+        if (jobCrush.waitForConnected(jobCrushConnectWaitMilliseconds)) {
+            return true;
+        }
+        qWarning().noquote() << QStringLiteral(
+            "Bridge::reachJobCrush: could not connect to \"%1\" — %2")
+            .arg(AiAppTools::ConnectionName, jobCrush.errorString());
+        return false;
     }
 
+    // Passes each whole line Job Crush wrote on to the AI app, and crosses
+    // its id off the waiting list. Half a line waits for the next read.
     void passAnswersBack()
     {
         unfinishedLine += jobCrush.readAll();
-        int lineEnd = unfinishedLine.indexOf('\n');
-        while (lineEnd >= 0) {
-            const QByteArray line = unfinishedLine.left(lineEnd).trimmed();
-            unfinishedLine.remove(0, lineEnd + 1);
-            lineEnd = unfinishedLine.indexOf('\n');
+        int lineBreakIndex = unfinishedLine.indexOf('\n');
+        while (lineBreakIndex >= 0) {
+            const QByteArray line = unfinishedLine.left(lineBreakIndex).trimmed();
+            unfinishedLine.remove(0, lineBreakIndex + 1);
+            lineBreakIndex = unfinishedLine.indexOf('\n');
             if (line.isEmpty()) {
                 continue;
             }
@@ -187,7 +216,11 @@ private:
     }
 
     QLocalSocket jobCrush;
+
+    // Bytes from Job Crush that do not yet make a whole line.
     QByteArray unfinishedLine;
+
+    // The ids of actions sent to Job Crush and not answered yet.
     QSet<QByteArray> waitingForAnswers;
 };
 
@@ -213,10 +246,11 @@ int main(int argc, char *argv[])
     inputReader.start();
 
     const int exitCode = application.exec();
-    // The reader is stuck waiting on input that will never come once the AI
-    // app has gone. Nothing is left to do, so the program just ends.
+    // The reader may be stuck waiting on input that will never come once the
+    // AI app has gone. Nothing is left to do, so the thread is stopped and
+    // the program ends.
     inputReader.terminate();
-    inputReader.wait(500);
+    inputReader.wait(inputReaderStopWaitMilliseconds);
     return exitCode;
 }
 

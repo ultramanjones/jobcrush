@@ -5,6 +5,8 @@
 
 namespace {
 
+// The stage name shown on a row. The Saved stage reads "On the board" here.
+// The board page calls the same stage "Crushed".
 QString stageDisplayNameFor(PipelineStage pipelineStage)
 {
     switch (pipelineStage) {
@@ -36,7 +38,9 @@ void StagedJobListViewModel::reload()
 {
     beginResetModel();
     loadedRows.clear();
-    for (const TargetedJob &targetedJob : jobPipelines.everyTargetedJob()) {
+    // Closed jobs are left out. Their search is over, so there is nothing to
+    // stage for them.
+    for (const TargetedJob &targetedJob : jobPipelines.everyOpenTargetedJob()) {
         StagedJobRow row;
         row.targetedJob = targetedJob;
         row.pieceCount = stagedDocumentRepository.countForApplication(

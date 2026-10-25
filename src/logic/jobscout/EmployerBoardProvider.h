@@ -47,7 +47,8 @@ public:
     // Jobs at one employer that might be this title. Used when Job Crush
     // knows the employer and the title and is looking for the one posting.
     //
-    // Most boards send every job in one answer, so the default is simply that.
+    // Most boards send every job in one answer, so the default reads the
+    // whole board and leaves the title matching to the caller.
     // A board with thousands of jobs and its own search (Workday) overrides
     // this to ask its search instead of reading everything.
     virtual JobScoutReply *fetchJobsLikeTitle(const QString &tenant,

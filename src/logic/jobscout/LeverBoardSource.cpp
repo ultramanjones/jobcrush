@@ -18,12 +18,20 @@ namespace {
 const QString leverApiBase = QStringLiteral("https://api.lever.co/v0/postings/");
 const QString leverDisplayName = QStringLiteral("Lever");
 
+// Lever answers this for an account name it does not have, and for a job
+// that has been closed.
+constexpr int httpStatusNotFound = 404;
+
+// The whole board: https://api.lever.co/v0/postings/{tenant}?mode=json
+// mode=json asks for the JSON form of the answer. The tenant is
+// percent-encoded so a space or a slash in it cannot change the path.
 QUrl leverBoardUrl(const QString &tenant)
 {
     return QUrl(leverApiBase + QString::fromUtf8(QUrl::toPercentEncoding(tenant))
                 + QStringLiteral("?mode=json"));
 }
 
+// One job: https://api.lever.co/v0/postings/{tenant}/{jobId}?mode=json
 QUrl leverOneJobUrl(const QString &tenant, const QString &jobId)
 {
     return QUrl(leverApiBase + QString::fromUtf8(QUrl::toPercentEncoding(tenant))
@@ -36,6 +44,10 @@ QUrl leverOneJobUrl(const QString &tenant, const QString &jobId)
 // nice-to-haves live in "lists", which is where the words the scorer needs
 // actually are. Reading descriptionPlain alone would score every Lever job
 // against its own introduction.
+//
+// The order is: descriptionPlain, then each entry in "lists" (its heading in
+// "text", its body as HTML in "content"), then additionalPlain at the end.
+// Empty parts are left out. Parts are split by a blank line.
 QString wholeDescriptionFrom(const QJsonObject &postingObject)
 {
     QStringList descriptionParts;
@@ -91,6 +103,7 @@ QString locationTextFrom(const QJsonObject &categoriesObject)
     return categoriesObject.value(QStringLiteral("location")).toString().trimmed();
 }
 
+// One job out of Lever's JSON. The title is in "text", not "title".
 JobPosting postingFromLeverJob(const QJsonObject &postingObject, const QString &tenant)
 {
     JobPosting posting;
@@ -171,7 +184,8 @@ JobScoutReply *LeverBoardSource::fetchEveryJobForEmployer(const QString &tenant,
             networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray responseBody = networkReply->readAll();
 
-        if (httpStatusCode == 404) {
+        // On a whole-board read, 404 means the account name is wrong.
+        if (httpStatusCode == httpStatusNotFound) {
             scoutReply->markFailed(noSuchBoardMessage(leverDisplayName, trimmedTenant), false);
             return;
         }
@@ -227,7 +241,7 @@ JobScoutReply *LeverBoardSource::fetchOneJob(const AtsBoardIdentity &boardIdenti
 
     QNetworkReply *networkReply = networkAccessManager.get(employerBoardRequest(
         leverOneJobUrl(boardIdentity.tenant, boardIdentity.jobId)));
-    networkReply->setParent(scoutReply);
+    networkReply->setParent(scoutReply); // dies with the scout reply
 
     const QString tenant = boardIdentity.tenant;
     QObject::connect(networkReply, &QNetworkReply::finished, scoutReply,
@@ -238,7 +252,7 @@ JobScoutReply *LeverBoardSource::fetchOneJob(const AtsBoardIdentity &boardIdenti
 
         // A job that is gone is not an error. It is the answer, and it is one
         // the user needs: a closed job should stop looking open on the board.
-        if (httpStatusCode == 404) {
+        if (httpStatusCode == httpStatusNotFound) {
             scoutReply->markFinished({});
             return;
         }
@@ -251,6 +265,7 @@ JobScoutReply *LeverBoardSource::fetchOneJob(const AtsBoardIdentity &boardIdenti
         QJsonParseError parseError;
         const QJsonDocument responseDocument =
             QJsonDocument::fromJson(responseBody, &parseError);
+        // One job comes back as a single object, not an array.
         if (parseError.error != QJsonParseError::NoError || !responseDocument.isObject()) {
             scoutReply->markFailed(boardSentUnreadableMessage(
                 leverDisplayName, httpStatusCode, responseBody));

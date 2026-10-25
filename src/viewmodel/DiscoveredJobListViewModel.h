@@ -51,6 +51,11 @@ class DiscoveredJobListViewModel : public QAbstractListModel {
 
     Q_PROPERTY(int discoveredJobCount READ rowCountForProperty NOTIFY discoveredJobsChanged)
 
+    // True while the rows for the tab just chosen are being loaded and scored
+    // on the background thread. The page says so, instead of showing the
+    // "nothing found" card for a moment.
+    Q_PROPERTY(bool rowsAreLoading READ rowsAreLoading NOTIFY discoveredJobsChanged)
+
     // False until the user has told Job Crush what they are looking for. The
     // page says so on Top Prospects, instead of showing an order that means
     // nothing.
@@ -174,6 +179,7 @@ public:
     bool showingOutsideSearchArea() const;
 
     int rowCountForProperty() const;
+    bool rowsAreLoading() const;
     bool canRankProspects() const;
     int jobCountOutsideSearchArea() const;
     bool searchAreaIsNarrowed() const;
@@ -242,7 +248,13 @@ signals:
     void pastedTextFormChanged();
 
 private:
-    void rebuildRowsFromJobScout();
+    // Asks JobScout for the active tab's rows. They are loaded and scored on
+    // a background thread and arrive in whenRowsAreReady.
+    void requestRowsForTheActiveTab();
+
+    // Puts the rows in place, if they answer the newest request. An answer
+    // to an older request is dropped, because the user has moved on.
+    void whenRowsAreReady(int requestNumber, const DiscoveryRows &preparedRows);
 
     // The board changed, so "is it on the board" may have changed on any
     // row. Tells the page to read that role again for every row.
@@ -252,4 +264,7 @@ private:
     JobPipelines &jobPipelines;
     QString storedActiveTabSourceName;   // empty means Top Prospects
     QList<ScoredJobPosting> displayedJobPostings;
+    int newestRowRequestNumber = 0;
+    bool waitingForRows = true; // the first rows are asked for at startup
+    int storedJobCountOutsideSearchArea = 0;
 };

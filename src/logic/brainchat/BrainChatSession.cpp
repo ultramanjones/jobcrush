@@ -1,5 +1,7 @@
 #include "BrainChatSession.h"
 
+#include <QDebug>
+
 #include "../aibrain/AiBrain.h"
 #include "../aibrain/AiBrainProvider.h"
 #include "../aibrain/AiBrainReply.h"
@@ -120,6 +122,8 @@ void BrainChatSession::sendHumanMessage(const QString &messageText)
     }
     emit brainRespondingChanged();
 
+    // brainMessageIndex stays valid while the answer streams in, because
+    // sendHumanMessage adds nothing while a brain is responding.
     connect(activeBrainReply, &AiBrainReply::textFragmentReceived, this,
             [this, brainMessageIndex](const QString &textFragment) {
         transcriptMessages[brainMessageIndex].messageText += textFragment;
@@ -137,6 +141,10 @@ void BrainChatSession::sendHumanMessage(const QString &messageText)
 
     connect(activeBrainReply, &AiBrainReply::failed, this,
             [this, brainMessageIndex](const QString &humanReadableReason) {
+        qWarning().noquote() << QStringLiteral(
+            "BrainChatSession::sendHumanMessage: the answer failed for message %1 — %2")
+            .arg(brainMessageIndex).arg(humanReadableReason);
+
         // The unanswered message becomes an honest notice — never a blank
         // bubble pretending something happened.
         transcriptMessages[brainMessageIndex].author = BrainChatMessage::Author::SystemNotice;
@@ -155,6 +163,10 @@ void BrainChatSession::clearConversation()
     // A response mid-stream keeps running server-side but its fragments have
     // nowhere to land; drop the reply object and start clean.
     if (activeBrainReply != nullptr) {
+        // Cut the reply off from this session first. It is only deleted on
+        // the next pass of the event loop, and an answer that lands before
+        // then must not reach the handlers above, which expect a live reply.
+        disconnect(activeBrainReply, nullptr, this, nullptr);
         activeBrainReply->deleteLater();
         activeBrainReply = nullptr;
         emit brainRespondingChanged();

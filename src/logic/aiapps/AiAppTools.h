@@ -36,6 +36,8 @@ inline QStringList protocolVersions()
              QStringLiteral("2024-11-05") };
 }
 
+// The version to answer with: the one the AI app asked for when Job Crush
+// knows it, otherwise the newest.
 inline QString protocolVersionFor(const QString &requestedVersion)
 {
     return protocolVersions().contains(requestedVersion) ? requestedVersion
@@ -50,12 +52,16 @@ inline const QString MoveJob      = QStringLiteral("move_job");
 inline const QString AddNote      = QStringLiteral("add_note");
 inline const QString WhatsWaiting = QStringLiteral("whats_waiting");
 
+// --- Builders for the JSON Schema that describes each action's arguments --
+
+// A text argument.
 inline QJsonObject textProperty(const QString &description)
 {
     return { { QStringLiteral("type"), QStringLiteral("string") },
              { QStringLiteral("description"), description } };
 }
 
+// A board column argument. The AI may only pass one of the listed words.
 inline QJsonObject columnProperty(const QString &description)
 {
     return { { QStringLiteral("type"), QStringLiteral("string") },
@@ -67,6 +73,7 @@ inline QJsonObject columnProperty(const QString &description)
              { QStringLiteral("description"), description } };
 }
 
+// The job_id argument: a card's number on the board.
 inline QJsonObject jobIdProperty()
 {
     return { { QStringLiteral("type"), QStringLiteral("integer") },
@@ -74,6 +81,7 @@ inline QJsonObject jobIdProperty()
                QStringLiteral("The job's number, as list_jobs shows it after the #.") } };
 }
 
+// The whole argument list of one action, and which arguments it must have.
 inline QJsonObject inputSchema(const QJsonObject &properties, const QStringList &required)
 {
     QJsonObject schema { { QStringLiteral("type"), QStringLiteral("object") },
@@ -84,6 +92,7 @@ inline QJsonObject inputSchema(const QJsonObject &properties, const QStringList 
     return schema;
 }
 
+// One action as MCP describes it: its name, what it does, and its arguments.
 inline QJsonObject tool(const QString &name, const QString &description,
                         const QJsonObject &schema)
 {
@@ -177,6 +186,7 @@ inline QJsonObject initializeResult(const QString &requestedVersion)
     };
 }
 
+// A JSON-RPC success answer to the request with this id.
 inline QJsonObject resultMessage(const QJsonValue &requestId, const QJsonObject &result)
 {
     return { { QStringLiteral("jsonrpc"), QStringLiteral("2.0") },
@@ -184,6 +194,7 @@ inline QJsonObject resultMessage(const QJsonValue &requestId, const QJsonObject 
              { QStringLiteral("result"), result } };
 }
 
+// A JSON-RPC error answer to the request with this id.
 inline QJsonObject errorMessage(const QJsonValue &requestId, int errorCode,
                                 const QString &errorText)
 {

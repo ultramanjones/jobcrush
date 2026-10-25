@@ -1,5 +1,6 @@
 #include "PostedJobPageReader.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -21,6 +22,13 @@ namespace {
 // A job page is text. Anything past this is not a job page, it is a mistake,
 // and reading all of it into memory helps nobody.
 constexpr qint64 mostBytesWorthReading = 4 * 1024 * 1024;
+
+// How long one page may take to arrive, in milliseconds, before the request
+// is dropped. Twenty seconds is far longer than a working site needs.
+constexpr int pageTransferTimeoutMilliseconds = 20000;
+
+// The length of a plain date written the ISO way: "2026-10-25".
+constexpr int isoDateLength = 10;
 
 // A name that may arrive as a string or as an object with a "name" field.
 // JSON-LD allows both and sites use both.
@@ -170,32 +178,49 @@ QString payTextFrom(const QJsonValue &baseSalaryValue)
 }
 
 // The date the block gives, read from the few shapes sites use.
+//
+// First it is read as a full ISO date and time: "2026-10-25T09:30:00Z". If
+// that fails, only the first ten characters are read, as a plain date at
+// midnight. That covers "2026-10-25" and dates with an odd time part after
+// them. An empty or unreadable date gives an invalid QDateTime.
 QDateTime dateFrom(const QString &dateText)
 {
-    const QString trimmed = dateText.trimmed();
-    if (trimmed.isEmpty()) {
+    const QString trimmedDateText = dateText.trimmed();
+    if (trimmedDateText.isEmpty()) {
         return QDateTime();
     }
-    QDateTime parsed = QDateTime::fromString(trimmed, Qt::ISODate);
-    if (!parsed.isValid()) {
-        parsed = QDateTime(QDate::fromString(trimmed.left(10), Qt::ISODate), QTime(0, 0));
+    QDateTime parsedDate = QDateTime::fromString(trimmedDateText, Qt::ISODate);
+    if (!parsedDate.isValid()) {
+        parsedDate = QDateTime(
+            QDate::fromString(trimmedDateText.left(isoDateLength), Qt::ISODate), QTime(0, 0));
     }
-    return parsed.isValid() ? parsed : QDateTime();
+    return parsedDate.isValid() ? parsedDate : QDateTime();
 }
 
 // The content of one <meta> tag, by its name or property. Empty when the
 // page has none.
 QString metaContentIn(const QString &pageHtml, const QString &nameOrProperty)
 {
-    // Both orders occur: content before name, and name before content.
-    const QString escaped = QRegularExpression::escape(nameOrProperty);
+    // Both orders occur: content before name, and name before content, so
+    // there are two patterns. Both ignore case.
+    //
+    // nameFirst is: "<meta", then any characters that are not ">", then
+    // "name" or "property", "=", a quote, the wanted name, a quote, then
+    // more characters that are not ">", then "content", "=", a quote, the
+    // content (captured), and a quote. Spaces are allowed around each "=".
+    //
+    // contentFirst is the same with the two attributes the other way round.
+    //
+    // The wanted name is escaped first, so a name like "og:title" is
+    // matched as plain text and not read as pattern symbols.
+    const QString escapedName = QRegularExpression::escape(nameOrProperty);
     const QRegularExpression nameFirst(
         QStringLiteral("<meta[^>]*(?:name|property)\\s*=\\s*[\"']%1[\"'][^>]*content\\s*=\\s*[\"']([^\"']*)[\"']")
-            .arg(escaped),
+            .arg(escapedName),
         QRegularExpression::CaseInsensitiveOption);
     const QRegularExpression contentFirst(
         QStringLiteral("<meta[^>]*content\\s*=\\s*[\"']([^\"']*)[\"'][^>]*(?:name|property)\\s*=\\s*[\"']%1[\"']")
-            .arg(escaped),
+            .arg(escapedName),
         QRegularExpression::CaseInsensitiveOption);
     QRegularExpressionMatch match = nameFirst.match(pageHtml);
     if (!match.hasMatch()) {
@@ -211,6 +236,17 @@ QString metaContentIn(const QString &pageHtml, const QString &nameOrProperty)
 
 // The page's <title>, with the site's name cut off the end when it is
 // written the usual way: "Senior Engineer - Acme" or "Senior Engineer | Acme".
+//
+// The steps, in order:
+//  1. Find the text between "<title ...>" and "</title>". The "?" stops at
+//     the first "</title>", and the match may span line breaks.
+//  2. Decode one layer of character entities and squeeze the white space.
+//  3. Split the title on a separator with a space on each side: "|", a
+//     dash, a bullet, a middle dot or ":". The spaces matter, so a word
+//     with a dash in it, like "Full-Stack", is not split.
+//  4. With two or more pieces, the first is the job title and the last is
+//     the site's name, which goes into siteNameOut. With one piece, the
+//     whole title comes back and siteNameOut is not touched.
 QString pageTitleIn(const QString &pageHtml, QString &siteNameOut)
 {
     static const QRegularExpression titleTagPattern(
@@ -260,6 +296,12 @@ bool PostedJobPageReader::readJobFromHtml(const QString &pageHtml, const QString
     jobPosting.postingSource = AtsBoardName::EmployerWebsite;
 
     // --- Way 1: the structured block --------------------------------------
+    //
+    // The pattern finds each "<script ... type="application/ld+json" ...>"
+    // tag, with either kind of quote, and captures everything up to the
+    // first "</script>" after it. It ignores case and may span line breaks.
+    // A page can hold several of these blocks, so every one is tried in
+    // order until one holds a JobPosting with a title.
     static const QRegularExpression jsonLdScriptPattern(
         QStringLiteral("<script[^>]*type\\s*=\\s*[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>"),
         QRegularExpression::CaseInsensitiveOption
@@ -271,7 +313,11 @@ bool PostedJobPageReader::readJobFromHtml(const QString &pageHtml, const QString
         QJsonParseError parseError;
         const QJsonDocument document = QJsonDocument::fromJson(blockText.toUtf8(), &parseError);
         if (parseError.error != QJsonParseError::NoError) {
-            continue;   // a block the site wrote badly; the next one may be fine
+            // A block the site wrote badly. The next one may be fine.
+            qWarning().noquote() << QStringLiteral(
+                "PostedJobPageReader::readJobFromHtml: skipped a JSON-LD block on %1 "
+                "that is not valid JSON — %2").arg(pageUrl, parseError.errorString());
+            continue;
         }
         const QJsonObject block = jobPostingBlockIn(
             document.isArray() ? QJsonValue(document.array()) : QJsonValue(document.object()));
@@ -309,6 +355,9 @@ bool PostedJobPageReader::readJobFromHtml(const QString &pageHtml, const QString
 
     // --- Way 2: the page title ----------------------------------------------
     QString siteName;
+    // The og:title meta tag is usually the cleaner title, so it is tried
+    // first. The <title> tag is read either way, because it is also where
+    // the site's name comes from.
     QString title = metaContentIn(pageHtml, QStringLiteral("og:title"));
     if (title.isEmpty()) {
         title = pageTitleIn(pageHtml, siteName);
@@ -363,7 +412,7 @@ JobScoutReply *PostedJobPageReader::readJobFromPage(const QString &pageUrl,
                                 QByteArrayLiteral("text/html,application/xhtml+xml"));
     networkRequest.setRawHeader(QByteArrayLiteral("Accept-Language"),
                                 QByteArrayLiteral("en-US,en"));
-    networkRequest.setTransferTimeout(20000);
+    networkRequest.setTransferTimeout(pageTransferTimeoutMilliseconds);
 
     QNetworkReply *networkReply = networkAccessManager.get(networkRequest);
     networkReply->setParent(scoutReply);
@@ -383,6 +432,9 @@ JobScoutReply *PostedJobPageReader::readJobFromPage(const QString &pageUrl,
         const QByteArray responseBody = networkReply->readAll();
 
         if (networkReply->error() != QNetworkReply::NoError) {
+            // 401, 403 and 429 mean the site refused: not allowed, forbidden,
+            // or too many requests. 404 and 410 mean the page is not there.
+            // Anything else is reported with the network's own words.
             if (httpStatusCode == 403 || httpStatusCode == 401 || httpStatusCode == 429) {
                 scoutReply->markFailed(QStringLiteral(
                     "The site turned Job Crush away (HTTP %1) — some sites refuse "

@@ -1,6 +1,7 @@
 #include "StagingWorkbench.h"
 
 #include <QDateTime>
+#include <QDebug>
 
 #include "../../model/CareerHistoryRepository.h"
 #include "../../model/JobApplicationRepository.h"
@@ -72,6 +73,9 @@ void StagingWorkbench::startPacketFor(qint64 jobApplicationId)
 {
     TaskBriefing briefing;
     if (!buildBriefingFor(jobApplicationId, briefing)) {
+        qWarning().noquote() << QStringLiteral(
+            "StagingWorkbench::startPacketFor: no packet started for job application %1 "
+            "— it is not on the board").arg(jobApplicationId);
         return;
     }
 
@@ -89,10 +93,17 @@ void StagingWorkbench::startPacketFor(qint64 jobApplicationId)
     checklistDocument.createdTimestamp = QDateTime::currentDateTime();
     checklistDocument.lastEditedTimestamp = checklistDocument.createdTimestamp;
 
+    // A checklist the user edited is kept. replaceGeneratedDocument says so
+    // through refusedBecauseEdited, and nothing more needs doing here.
     bool refusedBecauseEdited = false;
     if (stagedDocumentRepository.replaceGeneratedDocument(checklistDocument,
                                                           refusedBecauseEdited)) {
         emit packetChanged(jobApplicationId);
+    } else {
+        qWarning().noquote() << QStringLiteral(
+            "StagingWorkbench::startPacketFor: could not save the checklist for job "
+            "application %1 — %2")
+                .arg(jobApplicationId).arg(stagedDocumentRepository.lastErrorText());
     }
 
     if (!aiBrain.isConfigured()) {
@@ -145,6 +156,8 @@ void StagingWorkbench::startNextTaskIfIdle()
 
     activeTask = waitingTasks.takeFirst();
 
+    // When a task cannot start, the user is told and the next task in the
+    // queue gets its turn.
     TaskBriefing briefing;
     if (!buildBriefingFor(activeTask.jobApplicationId, briefing)) {
         emit taskFailed(activeTask.jobApplicationId,
@@ -176,6 +189,9 @@ void StagingWorkbench::startNextTaskIfIdle()
     aTaskIsActive = true;
     emit busyStateChanged();
 
+    // The reply streams in as fragments. Each one is added to the live text
+    // the screen shows. The reply then either finishes with the whole text
+    // or fails with a reason.
     connect(activeReply, &AiBrainReply::textFragmentReceived, this,
             [this](const QString &textFragment) {
                 accumulatedStreamingText += textFragment;
@@ -298,9 +314,16 @@ void StagingWorkbench::storeOutcome(qint64 jobApplicationId,
         return;
     }
 
+    // The score is also saved with the job itself, so the Staging list can
+    // show it without reading the draft.
     if (taskKind == AiBrainTaskKind::ScoreFit && outcome.fitScorePercent >= 0) {
-        jobApplicationRepository.updateFitScorePercent(jobApplicationId,
-                                                       outcome.fitScorePercent);
+        if (!jobApplicationRepository.updateFitScorePercent(jobApplicationId,
+                                                            outcome.fitScorePercent)) {
+            qWarning().noquote() << QStringLiteral(
+                "StagingWorkbench::storeOutcome: could not save the fit score for job "
+                "application %1 — %2")
+                    .arg(jobApplicationId).arg(jobApplicationRepository.lastErrorText());
+        }
         jobPipelines.loadFromDatabase();
     }
 
@@ -380,6 +403,7 @@ QString StagingWorkbench::careerHistoryTextForBriefing() const
 
 QString StagingWorkbench::documentTextForBriefing() const
 {
+    // The same reason for the const_cast as in careerHistoryTextForBriefing.
     ProfessionalDocumentRepository &repository =
         const_cast<ProfessionalDocumentRepository &>(professionalDocumentRepository);
 

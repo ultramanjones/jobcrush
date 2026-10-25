@@ -7,11 +7,14 @@ import JobCrush
 //
 // The charts are plain rectangles in a Repeater. No chart library. Qt Charts
 // is GPL only and this project is MIT. A bar whose height is a binding is also
-// easier to theme and change than a widget with two hundred properties.
+// easy to theme and change.
 //
 // The rule for this page: a job search produces small, discouraging numbers.
 // Report them honestly and do not scold. Only show a percent when there is
 // enough data for one. Count reading and drafting as work, because they are.
+//
+// This is the view layer. The counting is done in JobSearchStatistics in
+// the logic layer. This page only draws the numbers it is given.
 Rectangle {
     id: statsPage
 
@@ -92,6 +95,10 @@ Rectangle {
             // The four headline numbers.
             // ----------------------------------------------------------
             Row {
+                id: headlineTileRow
+
+                readonly property int headlineTileCount: 4
+
                 width: parent.width
                 spacing: 14
 
@@ -124,7 +131,11 @@ Rectangle {
 
                         required property var modelData
 
-                        width: (statsColumn.width - 42) / 4
+                        // The tiles share the width evenly, after the gaps
+                        // between them.
+                        width: (statsColumn.width
+                                - (headlineTileRow.headlineTileCount - 1) * headlineTileRow.spacing)
+                               / headlineTileRow.headlineTileCount
                         height: statTileColumn.implicitHeight + 32
                         radius: 8
                         color: JobCrushTheme.panelBackgroundColor
@@ -235,11 +246,20 @@ Rectangle {
                                 radius: 4
                                 color: JobCrushTheme.appBackgroundColor
 
+                                // The filled bar. shareOfWidest is 0 to 1,
+                                // where 1 is the level with the most jobs.
+                                // A level with even one job gets a sliver,
+                                // so it never looks the same as zero.
                                 Rectangle {
+                                    readonly property int shortestVisibleBarWidth: 4
+
                                     height: parent.height
                                     width: Math.max(parent.width * funnelRow.modelData.shareOfWidest,
-                                                    funnelRow.modelData.count > 0 ? 4 : 0)
+                                                    funnelRow.modelData.count > 0
+                                                        ? shortestVisibleBarWidth : 0)
                                     radius: 4
+                                    // The stage's color from the theme. Saved,
+                                    // and anything unknown, get the Saved color.
                                     color: {
                                         if (funnelRow.modelData.stageName === "applied")
                                             return JobCrushTheme.stageAppliedColor
@@ -330,13 +350,30 @@ Rectangle {
                         }
                     }
 
+                    // Two bars per week, side by side: jobs crushed and jobs
+                    // sent. The bars are scaled so the busiest week fills the
+                    // chart.
+                    //
+                    // The steps for one bar's height: take the count, divide
+                    // by the busiest week's count to get a share from 0 to 1,
+                    // and multiply by the tallest a bar may be.
                     Item {
                         id: weeklyChart
                         width: weeklyColumn.width
                         height: 150
 
+                        // At least 1, so an empty six months never divides
+                        // by zero.
                         readonly property int tallestBarValue:
                             Math.max(1, statsPage.jobSearchStatsViewModel.busiestWeekCount)
+
+                        // The chart's height, less 30 pixels: room below the
+                        // bars for the date labels, and a little room above.
+                        readonly property real tallestBarHeight: weeklyChart.height - 30
+
+                        // A date under every fourth week. All 26 would run
+                        // into each other.
+                        readonly property int weeksBetweenDateLabels: 4
 
                         Row {
                             anchors.fill: parent
@@ -351,6 +388,9 @@ Rectangle {
                                     required property var modelData
                                     required property int index
 
+                                    // One equal slice of the chart per week.
+                                    // At least 1, so an empty list never
+                                    // divides by zero.
                                     width: weeklyChart.width / Math.max(1,
                                         statsPage.jobSearchStatsViewModel.weeksOfEffort.length)
                                     height: weeklyChart.height
@@ -365,6 +405,12 @@ Rectangle {
                                         color: JobCrushTheme.hairlineBorderColor
                                     }
 
+                                    // The two bars, standing on the baseline.
+                                    // Each bar is half the week's slice, less
+                                    // 6 pixels shared between the 2-pixel gap
+                                    // inside the pair and the space between
+                                    // weeks. Never thinner than 3 pixels, so
+                                    // a bar can always be seen.
                                     Row {
                                         anchors.bottom: parent.bottom
                                         anchors.bottomMargin: 19
@@ -374,7 +420,7 @@ Rectangle {
                                         Rectangle {
                                             width: Math.max(3, (weekColumnItem.width - 6) / 2)
                                             height: weekColumnItem.modelData.crushedCount
-                                                    * (weeklyChart.height - 30)
+                                                    * weeklyChart.tallestBarHeight
                                                     / weeklyChart.tallestBarValue
                                             color: JobCrushTheme.stageSavedColor
                                             radius: 1
@@ -382,19 +428,20 @@ Rectangle {
                                         Rectangle {
                                             width: Math.max(3, (weekColumnItem.width - 6) / 2)
                                             height: weekColumnItem.modelData.appliedCount
-                                                    * (weeklyChart.height - 30)
+                                                    * weeklyChart.tallestBarHeight
                                                     / weeklyChart.tallestBarValue
                                             color: JobCrushTheme.stageAppliedColor
                                             radius: 1
                                         }
                                     }
 
-                                    // A date label every four weeks. All 26
+                                    // A date label every few weeks. All 26
                                     // would be unreadable.
                                     Text {
                                         anchors.bottom: parent.bottom
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        visible: weekColumnItem.index % 4 === 0
+                                        visible: weekColumnItem.index
+                                                 % weeklyChart.weeksBetweenDateLabels === 0
                                         text: weekColumnItem.modelData.weekLabel
                                         color: JobCrushTheme.mutedTextColor
                                         font.pixelSize: 9
@@ -479,64 +526,88 @@ Rectangle {
                             }
                         }
 
-                    Grid {
-                        id: heatmapGrid
+                        // One square per day. The days arrive oldest first,
+                        // and the grid fills top to bottom, so each column
+                        // is one week.
+                        Grid {
+                            id: heatmapGrid
 
-                        readonly property int cellSize: Math.max(8,
-                            Math.min(14, (heatmapColumn.width - 40) / 26 - 3))
-                        readonly property int busiest: Math.max(1,
-                            statsPage.jobSearchStatsViewModel.busiestDayCount)
+                            // The square's size, so 26 weeks fit the panel.
+                            // The steps: take the panel width, less 40 pixels
+                            // for the day labels on the left. Split it into
+                            // 26 week columns. Take off the 3-pixel gap
+                            // between squares. Then keep the result between
+                            // 8 and 14 pixels, so a square is never too
+                            // small to point at or too big for the panel.
+                            //
+                            // 26 is the number of weeks the logic layer
+                            // sends (weeksShown in JobSearchStatistics.cpp).
+                            readonly property int cellSize: Math.max(8,
+                                Math.min(14, (heatmapColumn.width - 40) / 26 - 3))
 
-                        rows: 7
-                        columns: Math.ceil(
-                            statsPage.jobSearchStatsViewModel.daysOfEffort.length / 7)
-                        flow: Grid.TopToBottom
-                        spacing: 3
+                            // The most things done on any one day. At least
+                            // 1, so an empty six months never divides by
+                            // zero.
+                            readonly property int busiestDayActivityCount: Math.max(1,
+                                statsPage.jobSearchStatsViewModel.busiestDayCount)
 
-                        Repeater {
-                            model: statsPage.jobSearchStatsViewModel.daysOfEffort
+                            rows: 7
+                            columns: Math.ceil(
+                                statsPage.jobSearchStatsViewModel.daysOfEffort.length / 7)
+                            flow: Grid.TopToBottom
+                            spacing: 3
 
-                            delegate: Rectangle {
-                                id: heatmapCell
+                            Repeater {
+                                model: statsPage.jobSearchStatsViewModel.daysOfEffort
 
-                                required property var modelData
+                                delegate: Rectangle {
+                                    id: heatmapCell
 
-                                width: heatmapGrid.cellSize
-                                height: heatmapGrid.cellSize
-                                radius: 2
-                                color: heatmapCell.modelData.activityCount > 0
-                                    ? JobCrushTheme.accentColor
-                                    : JobCrushTheme.appBackgroundColor
-                                // Four steps, not a smooth gradient. These
-                                // numbers are too small for a gradient to mean
-                                // anything.
-                                opacity: {
-                                    if (heatmapCell.modelData.activityCount === 0) return 1.0
-                                    const share = heatmapCell.modelData.activityCount
-                                                / heatmapGrid.busiest
-                                    if (share > 0.66) return 1.0
-                                    if (share > 0.33) return 0.7
-                                    return 0.4
+                                    required property var modelData
+
+                                    width: heatmapGrid.cellSize
+                                    height: heatmapGrid.cellSize
+                                    radius: 2
+                                    color: heatmapCell.modelData.activityCount > 0
+                                        ? JobCrushTheme.accentColor
+                                        : JobCrushTheme.appBackgroundColor
+                                    // Four steps, not a smooth gradient. These
+                                    // numbers are too small for a gradient to mean
+                                    // anything.
+                                    //
+                                    // The steps: a day with nothing done is an
+                                    // empty square at full strength. Any other
+                                    // day is compared to the busiest day. Over
+                                    // two thirds of it is full color. Over one
+                                    // third is 70 percent. Anything less is
+                                    // 40 percent.
+                                    opacity: {
+                                        if (heatmapCell.modelData.activityCount === 0) return 1.0
+                                        const shareOfBusiestDay = heatmapCell.modelData.activityCount
+                                                    / heatmapGrid.busiestDayActivityCount
+                                        if (shareOfBusiestDay > 0.66) return 1.0
+                                        if (shareOfBusiestDay > 0.33) return 0.7
+                                        return 0.4
+                                    }
+                                    border.width: heatmapCell.modelData.activityCount > 0 ? 0 : 1
+                                    border.color: JobCrushTheme.hairlineBorderColor
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        onEntered: heatmapPanel.hoveredDayText =
+                                            heatmapCell.modelData.dateLabel + "  —  "
+                                            + (heatmapCell.modelData.activityCount === 0
+                                                  ? "nothing"
+                                                  : heatmapCell.modelData.activityCount === 1
+                                                        ? "1 thing"
+                                                        : heatmapCell.modelData.activityCount + " things")
+                                        onExited: heatmapPanel.hoveredDayText = ""
+                                    }
+
                                 }
-                                border.width: heatmapCell.modelData.activityCount > 0 ? 0 : 1
-                                border.color: JobCrushTheme.hairlineBorderColor
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onEntered: heatmapPanel.hoveredDayText =
-                                        heatmapCell.modelData.dateLabel + "  —  "
-                                        + (heatmapCell.modelData.activityCount === 0
-                                              ? "nothing"
-                                              : heatmapCell.modelData.activityCount === 1
-                                                    ? "1 thing"
-                                                    : heatmapCell.modelData.activityCount + " things")
-                                    onExited: heatmapPanel.hoveredDayText = ""
-                                }
-
                             }
                         }
-                    }
                     }
 
                     // Keeps its height even when empty, so the panel does not

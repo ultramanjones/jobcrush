@@ -9,8 +9,9 @@ class JobCrushDatabase;
 
 // PostingSourceRepository
 //
-// The model-layer gateway for the routes to one job. Everything above speaks
-// in PostingSource structs; only this class speaks SQL.
+// Reads and writes the routes to each job: every place one job can be read
+// or applied to. Callers pass and get back plain PostingSource records. Only
+// this class writes SQL for them.
 class PostingSourceRepository {
 public:
     explicit PostingSourceRepository(JobCrushDatabase &database);

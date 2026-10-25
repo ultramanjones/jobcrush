@@ -1,5 +1,6 @@
 #include "AiAppRequests.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QList>
 #include <QStringList>
@@ -13,17 +14,27 @@
 
 namespace {
 
+// An application sent this many days ago with no news is due a follow-up.
+constexpr int daysBeforeFollowUp = 14;
+
+// A typed applied date has no time of day, so it is stored at noon. Noon
+// keeps the date the same in any time zone a few hours away.
+const QTime appliedDateTimeOfDay = QTime(12, 0);
+
 AiAppAnswer errorAnswer(const QString &text)
 {
     return { text, true };
 }
 
-QString argumentText(const QJsonObject &arguments, const QString &name)
+// One argument as trimmed text. A number the AI sent is turned into text,
+// and a missing argument is empty.
+QString argumentText(const QJsonObject &arguments, const QString &argumentName)
 {
-    return arguments.value(name).toVariant().toString().trimmed();
+    return arguments.value(argumentName).toVariant().toString().trimmed();
 }
 
-// The job a job_id names, or false when there is none.
+// Finds the card whose number is the job_id argument and copies it into
+// cardFound. Returns false when the number is missing or no card has it.
 bool findCard(const JobPipelines &board, const QJsonObject &arguments, TargetedJob &cardFound)
 {
     const qint64 jobId = arguments.value(QStringLiteral("job_id")).toVariant().toLongLong();
@@ -46,27 +57,28 @@ QString noSuchJobText()
 }
 
 // One job as one line: "#12 | Acme | Qt Dev | Applied | applied 10/14/2026".
+// Notes and the folder, when there are any, go on indented lines below it.
 QString lineForCard(const TargetedJob &card, const ActiveJobsFolder &activeJobs)
 {
-    QStringList parts;
-    parts.append(QStringLiteral("#%1").arg(card.campaign.jobApplicationId));
-    parts.append(card.posting.companyName);
-    parts.append(card.posting.positionTitle);
-    parts.append(JobQuestFile::statusWordFor(card.campaign.pipelineStage));
+    QStringList lineFields;
+    lineFields.append(QStringLiteral("#%1").arg(card.campaign.jobApplicationId));
+    lineFields.append(card.posting.companyName);
+    lineFields.append(card.posting.positionTitle);
+    lineFields.append(JobQuestFile::statusWordFor(card.campaign.pipelineStage));
     if (card.campaign.appliedTimestamp.isValid()) {
-        parts.append(QStringLiteral("applied %1")
-                         .arg(JobQuestFile::appliedOnTextFor(card.campaign.appliedTimestamp.date())));
+        lineFields.append(QStringLiteral("applied %1")
+                              .arg(JobQuestFile::appliedOnTextFor(card.campaign.appliedTimestamp.date())));
     }
     if (!card.posting.locationText.isEmpty()) {
-        parts.append(card.posting.locationText);
+        lineFields.append(card.posting.locationText);
     }
     if (!card.posting.salaryText.isEmpty()) {
-        parts.append(QStringLiteral("pay %1").arg(card.posting.salaryText));
+        lineFields.append(QStringLiteral("pay %1").arg(card.posting.salaryText));
     }
     if (!card.posting.sourceUrl.isEmpty()) {
-        parts.append(card.posting.sourceUrl);
+        lineFields.append(card.posting.sourceUrl);
     }
-    QString line = parts.join(QStringLiteral(" | "));
+    QString line = lineFields.join(QStringLiteral(" | "));
     if (!card.campaign.notesText.trimmed().isEmpty()) {
         QString notes = card.campaign.notesText.trimmed();
         notes.replace(QLatin1Char('\n'), QStringLiteral(" / "));
@@ -173,6 +185,7 @@ AiAppAnswer AiAppRequests::addJob(const QJsonObject &arguments, const QDate &tod
 
     PipelineStage stage = PipelineStage::Saved;
     const QString columnText = argumentText(arguments, QStringLiteral("column"));
+    // readStatus fills stage only when it can read the column word.
     if (!columnText.isEmpty() && !JobQuestFile::readStatus(columnText, stage)) {
         return errorAnswer(QStringLiteral("\"%1\" is not a column. The columns are Saved, "
                                           "Applied, Interview, Offer and Closed. Nothing "
@@ -190,6 +203,8 @@ AiAppAnswer AiAppRequests::addJob(const QJsonObject &arguments, const QDate &tod
         return errorAnswer(QStringLiteral("The applied date is in the future. Nothing was "
                                           "added."));
     }
+    // An applied date with no column means the job was applied to. Any
+    // column past Saved means it was applied to, so a missing date is today.
     if (columnText.isEmpty() && appliedDate.isValid()) {
         stage = PipelineStage::Applied;
     }
@@ -208,15 +223,19 @@ AiAppAnswer AiAppRequests::addJob(const QJsonObject &arguments, const QDate &tod
         }
     }
     if (jobPostingId != 0) {
-        const qint64 existingCard = board.jobApplicationIdForPosting(jobPostingId);
-        if (existingCard != 0) {
+        const qint64 existingCardId = board.jobApplicationIdForPosting(jobPostingId);
+        if (existingCardId != 0) {
             return { QStringLiteral("That job is already on the board as #%1. Nothing was "
                                     "added. Use mark_applied, move_job or add_note to "
-                                    "change it.").arg(existingCard),
+                                    "change it.").arg(existingCardId),
                      false };
         }
     } else {
         if (!postingRepository.insertJobPosting(newPosting)) {
+            qWarning().noquote() << QStringLiteral(
+                "AiAppRequests::addJob: could not save \"%1\" at \"%2\" — %3")
+                .arg(newPosting.positionTitle, newPosting.companyName,
+                     postingRepository.lastErrorText());
             return errorAnswer(QStringLiteral("Job Crush could not save the job: %1")
                                    .arg(postingRepository.lastErrorText()));
         }
@@ -226,7 +245,7 @@ AiAppAnswer AiAppRequests::addJob(const QJsonObject &arguments, const QDate &tod
     QString reasonText;
     const qint64 newCardId = board.putOnBoardFromJobFolder(
         jobPostingId, stage,
-        appliedDate.isValid() ? QDateTime(appliedDate, QTime(12, 0)) : QDateTime(),
+        appliedDate.isValid() ? QDateTime(appliedDate, appliedDateTimeOfDay) : QDateTime(),
         argumentText(arguments, QStringLiteral("notes")), reasonText);
     if (newCardId == 0) {
         return errorAnswer(reasonText);
@@ -262,6 +281,8 @@ AiAppAnswer AiAppRequests::markApplied(const QJsonObject &arguments, const QDate
     const qint64 cardId = card.campaign.jobApplicationId;
     if (card.campaign.pipelineStage != PipelineStage::Applied
             && !board.moveToStage(cardId, PipelineStage::Applied)) {
+        qWarning().noquote() << QStringLiteral(
+            "AiAppRequests::markApplied: could not move card #%1 to Applied").arg(cardId);
         return errorAnswer(QStringLiteral("Job Crush could not move the job. Nothing "
                                           "changed."));
     }
@@ -290,6 +311,10 @@ AiAppAnswer AiAppRequests::moveJob(const QJsonObject &arguments) const
                                .arg(columnText));
     }
     if (!board.moveToStage(card.campaign.jobApplicationId, stage)) {
+        qWarning().noquote() << QStringLiteral(
+            "AiAppRequests::moveJob: could not move card #%1 to %2")
+            .arg(card.campaign.jobApplicationId)
+            .arg(JobQuestFile::statusWordFor(stage));
         return errorAnswer(QStringLiteral("Job Crush could not move the job. Nothing "
                                           "changed."));
     }
@@ -318,11 +343,17 @@ AiAppAnswer AiAppRequests::addNote(const QJsonObject &arguments, const QDate &to
         ? datedNote
         : existingNotes + QLatin1Char('\n') + datedNote;
     if (!board.setNotesText(card.campaign.jobApplicationId, allNotes)) {
+        qWarning().noquote() << QStringLiteral(
+            "AiAppRequests::addNote: could not save the note on card #%1")
+            .arg(card.campaign.jobApplicationId);
         return errorAnswer(QStringLiteral("Job Crush could not save the note."));
     }
     return { QStringLiteral("Note added to #%1.").arg(card.campaign.jobApplicationId), false };
 }
 
+// Sorts the open cards into three lists: saved but not applied to, applied
+// long ago with no news, and at the interview stage. Offers and closed jobs
+// are left out.
 AiAppAnswer AiAppRequests::whatsWaiting(const QDate &today) const
 {
     QStringList notAppliedYet;
@@ -336,7 +367,7 @@ AiAppAnswer AiAppRequests::whatsWaiting(const QDate &today) const
             break;
         case PipelineStage::Applied:
             if (card.campaign.appliedTimestamp.isValid()
-                    && card.campaign.appliedTimestamp.date().daysTo(today) > 14) {
+                    && card.campaign.appliedTimestamp.date().daysTo(today) > daysBeforeFollowUp) {
                 followUp.append(lineForCard(card, activeJobs));
             }
             break;

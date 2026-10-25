@@ -9,7 +9,20 @@
 
 namespace {
 
+// A company name cut down to the part that tells companies apart, so two
+// ways of writing the same name compare equal.
 // "Collins Aerospace (RTX), Inc." -> "collinsaerospace"
+//
+// The steps, in order:
+//  1. Lowercase everything.
+//  2. Remove anything in round brackets, brackets included: "(rtx)". The
+//     "?" makes the match stop at the first ")", so "a (b) c (d)" loses
+//     only the two bracketed parts and keeps " c ".
+//  3. Remove the legal and filler words (inc, llc, corp, group...). "\b"
+//     on both sides means whole words only, so the "co" inside "costco"
+//     is kept.
+//  4. Remove every character that is not a letter or a digit. This also
+//     removes the spaces, so the result is one run of letters and digits.
 QString plainNameOf(const QString &companyName)
 {
     QString plainName = companyName.toLower();

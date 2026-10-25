@@ -9,8 +9,8 @@ class JobCrushDatabase;
 
 // ProfessionalDocumentRepository
 //
-// The model-layer gateway for ProDocs rows. Everything above speaks in
-// ProfessionalDocument structs; only this class speaks SQL.
+// Reads and writes ProDocs rows. Callers pass and get back plain
+// ProfessionalDocument records. Only this class writes SQL for them.
 class ProfessionalDocumentRepository {
 public:
     explicit ProfessionalDocumentRepository(JobCrushDatabase &database);
@@ -21,7 +21,7 @@ public:
     // Everything ProDocs holds, newest first.
     QList<ProfessionalDocument> loadAllProfessionalDocuments();
 
-    // Just one kind — the resume, the transcripts, and so on.
+    // Only one kind — the resume, the transcripts, and so on. Newest first.
     QList<ProfessionalDocument> loadProfessionalDocumentsOfKind(const QString &documentKind);
 
     // Records that jobs and schooling have been read out of this document,
@@ -41,11 +41,12 @@ public:
     // which is the only one that knows where files live.
     bool removeProfessionalDocument(qint64 professionalDocumentId);
 
-    // Every word from every readable document, joined. This is the seed the
-    // rest of Job Crush grows from — the search profile tops itself up from
-    // here, so scoring gets sharper the moment documents arrive.
+    // Every word from every readable document, joined with blank lines. The
+    // search profile adds terms from this text, so job scores improve as
+    // soon as documents are added.
     QString allExtractedTextJoined();
 
+    // Why the last write failed.
     QString lastErrorText() const;
 
 private:

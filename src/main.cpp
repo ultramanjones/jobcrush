@@ -59,7 +59,7 @@
 //
 //     database -> repositories -> logic classes -> viewmodels -> QML engine
 //
-// No dependency framework, no container — just constructors.
+// No dependency framework and no container. Only constructors.
 int main(int argc, char *argv[])
 {
     QGuiApplication application(argc, argv);
@@ -78,8 +78,9 @@ int main(int argc, char *argv[])
 
     JobCrushDatabase jobCrushDatabase;
     if (!jobCrushDatabase.openAtFilePath(databaseFilePath)) {
-        qCritical() << "Job Crush could not open its database:"
-                    << jobCrushDatabase.lastErrorText();
+        qCritical().noquote() << QStringLiteral(
+            "main: could not open the database at %1 — %2")
+                .arg(databaseFilePath, jobCrushDatabase.lastErrorText());
         return -1;
     }
     qInfo() << "Job Crush database ready at" << databaseFilePath;
@@ -92,10 +93,6 @@ int main(int argc, char *argv[])
     CareerHistoryRepository careerHistoryRepository(jobCrushDatabase);
     StagedDocumentRepository stagedDocumentRepository(jobCrushDatabase);
     ActiveJobFolderRepository activeJobFolderRepository(jobCrushDatabase);
-
-    // (The Job Pipelines board arrives in Phase 4; its repository stays wired
-    //  so the startup path is proven end to end.)
-    Q_UNUSED(jobApplicationRepository);
 
     // --- Logic layer: preferences, AIBrain, Brain Chat -----------------
     AppPreferences appPreferences;
@@ -111,23 +108,25 @@ int main(int argc, char *argv[])
     ProDocsIntake proDocsIntake(professionalDocumentRepository, careerHistoryRepository,
                                 applicationDataFolderPath);
 
-    // A database that got itself into a mess before the guard existed heals
-    // here rather than leaving the user to delete rows by hand. Re-reading
-    // documents used to duplicate every entry the user had confirmed, so
-    // there are databases in the wild carrying twins of everything.
-    careerHistoryRepository.removeDuplicateEntries();
+    // Re-reading documents used to duplicate every entry the user had
+    // confirmed, so some databases hold two of everything. They are cleaned
+    // up here, so the user does not have to delete rows by hand.
+    if (careerHistoryRepository.removeDuplicateEntries() < 0) {
+        qWarning().noquote() << QStringLiteral(
+            "main: could not remove duplicate career history entries from %1 — %2")
+                .arg(databaseFilePath, careerHistoryRepository.lastErrorText());
+    }
 
-    // Anything dropped before Job Crush knew how to read jobs and schooling
-    // out of documents gets read now, once, so the Experience tab is
-    // populated the first time the user opens it rather than sitting empty
-    // behind a button nobody knew to press.
     // The resume reader improves between builds. When the running one is
-    // newer than the one that last read this database, its predecessor's work
-    // is thrown out and every document is read again — so a mistake fixed in
-    // the code actually reaches the person who was living with it, rather
-    // than waiting for them to notice a button.
+    // newer than the one that last read this database, the old reader's work
+    // is thrown out and every document is read again. That way a mistake
+    // fixed in the code reaches the user without them pressing a button.
     proDocsIntake.rereadEverythingIfTheReaderImproved();
 
+    // Anything dropped before Job Crush knew how to read jobs and schooling
+    // out of documents gets read now, once. The Experience tab is then full
+    // the first time the user opens it, not empty behind a button nobody
+    // knew to press.
     proDocsIntake.readAnyDocumentsNotReadYet();
 
     JobSearchProfile jobSearchProfile;
@@ -147,10 +146,10 @@ int main(int argc, char *argv[])
     JobScout jobScout(jobPostingRepository, postingSourceRepository,
                       jobSourceRoster, followedEmployerRoster,
                       jobSearchProfile, aiBrain,
-                      applicationDataFolderPath);
+                      applicationDataFolderPath, databaseFilePath);
 
     // The board. Loaded now so every screen that asks "is this job already on
-    // my board?" gets a straight answer from the first frame.
+    // my board?" gets a correct answer from the first frame.
     JobPipelines jobPipelines(jobApplicationRepository, jobPostingRepository,
                               postingSourceRepository);
     jobPipelines.loadFromDatabase();
@@ -203,9 +202,10 @@ int main(int argc, char *argv[])
     activeJobsFolder.loadFromSettings();
     activeJobsFolder.startKeepingTheBoardAndFolderTheSame();
 
-    // The door AI apps use to work Job Crush directly (see
+    // The connection AI apps use to work Job Crush directly (see
     // tools/ai-app-bridge). Job Crush stays the only program that writes its
-    // database: the AI asks, and the same Logic the screens use does it.
+    // database: the AI asks, and the same Logic classes the screens use do
+    // the work.
     AiAppRequests aiAppRequests(jobPipelines, jobPostingRepository, activeJobsFolder);
     AiAppConnection aiAppConnection(aiAppRequests);
     aiAppConnection.loadFromSettings();
@@ -241,12 +241,16 @@ int main(int argc, char *argv[])
     JobSearchStatsViewModel jobSearchStatsViewModel(jobSearchStatistics, stagingWorkbench);
 
     // --- View layer: the QML engine ----------------------------------------
+    // If Main.qml fails to load, quit with an error code instead of running
+    // with no window. Queued so the exit happens once the event loop runs.
     QQmlApplicationEngine qmlEngine;
     QObject::connect(
         &qmlEngine, &QQmlApplicationEngine::objectCreationFailed,
         &application, [] { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
 
+    // Hands each viewmodel to Main.qml as a required property. The names
+    // must match the property names declared in Main.qml.
     qmlEngine.setInitialProperties({
         { QStringLiteral("brainChatConversationViewModel"),
           QVariant::fromValue(&brainChatConversationViewModel) },

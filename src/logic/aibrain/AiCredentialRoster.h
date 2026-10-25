@@ -28,12 +28,15 @@ public:
 
     int credentialCount() const;
 
+    // The credential at one roster position, or an empty one when the
+    // position is out of range.
     AiCredential credentialAt(int rosterIndex) const;
 
     // Registers a credential at the end of the roster and persists.
     void addCredential(const AiCredential &credential);
 
-    // Removes by roster position and persists. Out-of-range is ignored.
+    // Removes by roster position and persists. Out-of-range is logged and
+    // ignored.
     void removeCredentialAt(int rosterIndex);
 
     // Removes every credential for one provider and persists — the Settings
@@ -41,7 +44,8 @@ public:
     // surprises anyone afterward.
     void removeAllCredentialsFor(AiProviderKind providerKind);
 
-    // Flips a credential's enabled state and persists. Out-of-range ignored.
+    // Flips a credential's enabled state and persists. Out-of-range is
+    // logged and ignored.
     void setCredentialEnabled(int rosterIndex, bool isEnabled);
 
     // The first enabled credential for the given provider — what AIBrain
@@ -57,6 +61,7 @@ signals:
     void rosterChanged();
 
 private:
+    // Writes the whole roster to settings, replacing what was there.
     void saveToSettings() const;
 
     QList<AiCredential> registeredCredentials;

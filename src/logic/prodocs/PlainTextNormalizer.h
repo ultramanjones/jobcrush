@@ -6,7 +6,8 @@
 
 // PlainTextNormalizer
 //
-// One alphabet, for everything that reads a person's documents.
+// Turns lookalike characters into the plain ones, for everything that reads
+// a person's documents.
 //
 // Shared by DocumentTextExtractor (so text is normalized on the way IN) and
 // ResumeInsightParser (so text already stored from an older build is
@@ -24,8 +25,12 @@
 // "Tulsa Community College 2000 - 2001 Auburn University 1993 - 1994".
 //
 // Bullets have the same problem. The characters ∙ • · ● all mean "next field".
-// The parser should only have to know one of them, so they all become that
-// one.
+// The parser should only have to know one of them, so they all become the
+// middle dot "·".
+//
+// The steps, in order: odd spaces become a plain space, bullets become "·",
+// odd dashes become "-", invisible characters are deleted, and every kind
+// of line break becomes "\n".
 //
 // Doing this HERE means every reader downstream — the resume parser today,
 // whatever reads a cover letter tomorrow — is handed plain, ordinary text.

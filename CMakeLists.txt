@@ -93,6 +93,8 @@ qt_add_executable(jobcrush
     src/logic/jobscout/AshbyBoardSource.cpp
     src/logic/jobscout/WorkdayBoardSource.h
     src/logic/jobscout/WorkdayBoardSource.cpp
+    src/logic/jobscout/TaleoBoardSource.h
+    src/logic/jobscout/TaleoBoardSource.cpp
     src/logic/jobscout/SmartRecruitersBoardSource.h
     src/logic/jobscout/SmartRecruitersBoardSource.cpp
     src/logic/jobscout/EmployerTenantGuesser.h
@@ -128,6 +130,8 @@ qt_add_executable(jobcrush
     src/logic/jobscout/JobSourceRoster.cpp
     src/logic/jobscout/ProspectScorer.h
     src/logic/jobscout/ProspectScorer.cpp
+    src/logic/jobscout/DiscoveryWorker.h
+    src/logic/jobscout/DiscoveryWorker.cpp
     src/logic/jobscout/JobScout.h
     src/logic/jobscout/JobScout.cpp
     src/logic/prodocs/DocumentKind.h
@@ -146,6 +150,8 @@ qt_add_executable(jobcrush
     src/logic/pipelines/JobPipelines.cpp
     src/logic/pipelines/TypedDateReader.h
     src/logic/pipelines/TypedDateReader.cpp
+    src/logic/pipelines/PostingGoneConfirmer.h
+    src/logic/pipelines/PostingGoneConfirmer.cpp
     src/logic/pipelines/PostingStillListedChecker.h
     src/logic/pipelines/PostingStillListedChecker.cpp
     src/logic/prodocs/PlainTextNormalizer.h

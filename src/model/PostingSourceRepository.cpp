@@ -1,5 +1,6 @@
 #include "PostingSourceRepository.h"
 
+#include <QDebug>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QVariant>
@@ -15,6 +16,7 @@ bool PostingSourceRepository::recordPostingSourceIfNew(const PostingSource &post
 {
     // A route with no job, no board or no link is not a route. Refusing it
     // here keeps rows out of the table that the card would have to skip.
+    // It returns true because skipping such a route is not a failure.
     if (postingSource.jobPostingId == 0
             || postingSource.boardName.trimmed().isEmpty()
             || postingSource.postingUrl.trimmed().isEmpty()) {
@@ -22,7 +24,8 @@ bool PostingSourceRepository::recordPostingSourceIfNew(const PostingSource &post
     }
 
     // Ask first rather than leaning on the unique index to reject the insert.
-    // "do I already have this route?" has a legitimate answer.
+    // "Do I already have this route?" is a normal question, and a yes is not
+    // an error.
     QSqlQuery existingRouteQuery(jobCrushDatabase.connection());
     existingRouteQuery.prepare(QStringLiteral(
         "SELECT postingSourceId FROM jobPostingSource "
@@ -48,7 +51,8 @@ bool PostingSourceRepository::recordPostingSourceIfNew(const PostingSource &post
     insertQuery.bindValue(QStringLiteral(":jobPostingId"), postingSource.jobPostingId);
     insertQuery.bindValue(QStringLiteral(":boardName"),    postingSource.boardName);
     // A QString nobody assigned is null, and a null binds as SQL NULL, which a
-    // NOT NULL column refuses. The job posting table learned this the hard way.
+    // NOT NULL column refuses. This bug once cost the job posting table a
+    // whole board's worth of jobs.
     insertQuery.bindValue(QStringLiteral(":externalId"),
                           postingSource.externalId.isNull()
                               ? QString::fromLatin1("") : postingSource.externalId);
@@ -70,7 +74,13 @@ QList<PostingSource> PostingSourceRepository::loadPostingSourcesFor(qint64 jobPo
         "SELECT * FROM jobPostingSource WHERE jobPostingId = :jobPostingId "
         "ORDER BY postingSourceId ASC"));
     selectQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
-    selectQuery.exec();
+    if (!selectQuery.exec()) {
+        // The caller gets an empty list, the same as a job with no routes.
+        qWarning().noquote() << QStringLiteral(
+            "PostingSourceRepository::loadPostingSourcesFor: query failed for job "
+            "posting %1 — %2").arg(jobPostingId).arg(selectQuery.lastError().text());
+        return postingSources;
+    }
 
     while (selectQuery.next()) {
         PostingSource postingSource;

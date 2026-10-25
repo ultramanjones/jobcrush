@@ -6,9 +6,10 @@
 
 // IsolatedTestSettings
 //
-// JobSearchProfile saves itself through QSettings. On Windows that is the
-// registry, under the app's own name. A test must never write into the real
-// user's settings, so every test that touches a profile calls this first.
+// Some Logic classes save through QSettings, such as JobSearchProfile and
+// ActiveJobsFolder. On Windows that is the registry, under the app's own
+// name. A test must never write into the real user's settings, so every
+// test that touches saved settings calls this first.
 //
 // It gives the test its own app name and an INI file in a temporary folder
 // that is deleted when the test ends.

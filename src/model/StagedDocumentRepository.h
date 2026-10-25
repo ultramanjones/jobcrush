@@ -9,9 +9,10 @@ class JobCrushDatabase;
 
 // StagedDocumentRepository
 //
-// The model-layer gateway for application packets. One row per piece of one
-// packet. A packet is every row with the same jobApplicationId. There is no
-// separate packet table because a packet has no identity of its own.
+// Reads and writes application packets. Only this class writes SQL for
+// them. One row per piece of one packet. A packet is every row with the
+// same jobApplicationId. There is no separate packet table, because a
+// packet has no identity of its own.
 class StagedDocumentRepository {
 public:
     explicit StagedDocumentRepository(JobCrushDatabase &database);
@@ -33,7 +34,8 @@ public:
     int countForApplication(qint64 jobApplicationId);
     int approvedCountForApplication(qint64 jobApplicationId);
 
-    // Replaces the piece the AI just rewrote, or inserts it if there was none.
+    // Replaces the piece the AI has rewritten, or inserts it if there was
+    // none.
     // Running the same task twice must not leave two cover letters in the
     // packet.
     //
@@ -46,6 +48,7 @@ public:
     // Deletes a whole packet, for when its campaign is deleted.
     bool removePacketForApplication(qint64 jobApplicationId);
 
+    // Why the last write or query failed.
     QString lastErrorText() const;
 
 private:

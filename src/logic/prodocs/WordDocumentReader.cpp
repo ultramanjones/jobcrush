@@ -1,5 +1,6 @@
 #include "WordDocumentReader.h"
 
+#include <QDebug>
 #include <QRegularExpression>
 
 #include "ZipArchiveReader.h"
@@ -12,21 +13,37 @@ const QString wordBodyEntryName = QStringLiteral("word/document.xml");
 
 // Turns Word's XML into plain readable text.
 //
-// The rules that matter:
+// The tags that matter:
 //   <w:t>…</w:t>   holds the actual characters
-//   <w:p>          ends a paragraph — becomes a line break
-//   <w:tab/>       becomes a tab, which keeps table-ish layouts readable
+//   </w:p>         ends a paragraph — becomes a line break
+//   <w:tab/>       becomes a tab, which keeps table-like layouts readable
 //   <w:br/>        a line break inside a paragraph
+//   </w:tc>        ends a table cell — becomes a tab
+//   </w:tr>        ends a table row — becomes a line break
 // Everything else is styling and is discarded.
+//
+// This works on the XML as text with regular expressions. It does not use
+// an XML parser. That is enough here because only the characters are kept,
+// never the structure.
+//
+// The steps, in order:
+//   1. Turn the tags above into line breaks and tabs.
+//   2. Delete every other tag. What is left is the text inside <w:t>.
+//   3. Turn XML escapes such as &amp; back into the characters they stand for.
+//   4. Tidy up the blank space left behind.
 QString plainTextFromWordXml(const QString &documentXml)
 {
     QString workingText = documentXml;
 
-    // Structure first, while the tags are still there to recognise.
+    // Step 1. Structure first, while the tags are still there to recognise.
     static const QRegularExpression paragraphEndPattern(
         QStringLiteral("</w:p>"), QRegularExpression::CaseInsensitiveOption);
     workingText.replace(paragraphEndPattern, QStringLiteral("\n"));
 
+    // "<w:br", then any spaces, then an optional "/", then ">". This matches
+    // "<w:br/>", "<w:br />" and "<w:br>". It does not match a <w:br> that
+    // carries attributes, such as <w:br w:type="page"/>. Those are removed
+    // in step 2 with no line break.
     static const QRegularExpression lineBreakPattern(
         QStringLiteral("<w:br\\s*/?>"), QRegularExpression::CaseInsensitiveOption);
     workingText.replace(lineBreakPattern, QStringLiteral("\n"));
@@ -45,11 +62,14 @@ QString plainTextFromWordXml(const QString &documentXml)
         QStringLiteral("</w:tr>"), QRegularExpression::CaseInsensitiveOption);
     workingText.replace(tableRowEndPattern, QStringLiteral("\n"));
 
-    // Then every remaining tag goes.
+    // Step 2. Every remaining tag goes: "<", then anything that is not ">",
+    // then ">".
     static const QRegularExpression anyTagPattern(QStringLiteral("<[^>]*>"));
     workingText.remove(anyTagPattern);
 
-    // XML's five escapes, plus the non-breaking space Word is fond of.
+    // Step 3. XML's five escapes, plus the non-breaking space Word uses
+    // often. Numeric escapes such as &#8217; are not decoded and stay as
+    // they are.
     workingText.replace(QStringLiteral("&amp;"),  QStringLiteral("&"));
     workingText.replace(QStringLiteral("&lt;"),   QStringLiteral("<"));
     workingText.replace(QStringLiteral("&gt;"),   QStringLiteral(">"));
@@ -57,7 +77,10 @@ QString plainTextFromWordXml(const QString &documentXml)
     workingText.replace(QStringLiteral("&apos;"), QStringLiteral("'"));
     workingText.replace(QChar(0x00A0), QLatin1Char(' '));
 
-    // Tidy the blank space that stripping always leaves behind.
+    // Step 4. Tidy the blank space that stripping always leaves behind.
+    // Spaces and tabs at the end of a line are dropped. Then three or more
+    // line breaks in a row become two, so there is never more than one
+    // blank line between paragraphs.
     static const QRegularExpression trailingSpacePattern(QStringLiteral("[ \\t]+\\n"));
     workingText.replace(trailingSpacePattern, QStringLiteral("\n"));
     static const QRegularExpression runOfBlankLinesPattern(QStringLiteral("\\n{3,}"));
@@ -82,6 +105,10 @@ QString WordDocumentReader::readTextFrom(const QString &wordDocumentFilePath,
     }
 
     if (!archiveReader.containsEntry(wordBodyEntryName)) {
+        qWarning().noquote() << QStringLiteral(
+            "WordDocumentReader::readTextFrom: \"%1\" has no %2"
+            " — it is a ZIP archive but not a Word document")
+                .arg(wordDocumentFilePath, wordBodyEntryName);
         // A .docx that has no word/document.xml is almost always something
         // else wearing the extension — most often an old .doc renamed.
         reasonText = QStringLiteral("That file is named .docx but isn't shaped like a "
@@ -94,6 +121,9 @@ QString WordDocumentReader::readTextFrom(const QString &wordDocumentFilePath,
     bool found = false;
     const QByteArray documentXmlBytes = archiveReader.readEntry(wordBodyEntryName, found);
     if (!found || documentXmlBytes.isEmpty()) {
+        qWarning().noquote() << QStringLiteral(
+            "WordDocumentReader::readTextFrom: could not unpack %1 from \"%2\"")
+                .arg(wordBodyEntryName, wordDocumentFilePath);
         reasonText = QStringLiteral("Job Crush found the text inside that Word file but "
                                     "couldn't unpack it. Opening it in Word and saving a "
                                     "fresh copy usually sorts it out — or export it as a "

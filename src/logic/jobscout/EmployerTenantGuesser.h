@@ -58,10 +58,23 @@ public:
 private:
     // The company name reduced to lowercase words: no punctuation, no legal
     // suffix, no leading "the". Board accounts never carry any of that.
+    //
+    // Steps, in this order:
+    //   1. Lowercase the whole name.
+    //   2. Take a legal suffix off the end, twice.
+    //   3. Take "the " off the front.
+    //   4. Turn "&" into " and ".
+    //   5. Drop every character that is not a letter, a digit or a space.
+    //   6. Squeeze runs of spaces into one and trim the ends.
     static QString plainCompanyWords(const QString &companyName)
     {
         QString plainName = companyName.toLower();
 
+        // The pattern reads: one or more commas or spaces ([,\s]+), then one
+        // legal suffix from the list (inc, llc, ltd, corp, gmbh, plc and the
+        // rest, with or without their dots), then an optional dot (\.?),
+        // then any trailing spaces (\s*), then the end of the name ($). It
+        // only matches at the end, so "Incline Corp" keeps "incline".
         static const QRegularExpression legalSuffixPattern(
             QStringLiteral("[,\\s]+(?:inc|inc\\.|llc|l\\.l\\.c\\.|ltd|ltd\\.|limited|corp"
                            "|corp\\.|corporation|co|co\\.|company|gmbh|s\\.a\\.|sa|bv|nv"
@@ -71,6 +84,7 @@ private:
         plainName.remove(legalSuffixPattern);
         plainName.remove(legalSuffixPattern);
 
+        // "the" and the spaces after it, only at the very start.
         static const QRegularExpression leadingArticlePattern(
             QStringLiteral("^the\\s+"), QRegularExpression::CaseInsensitiveOption);
         plainName.remove(leadingArticlePattern);
@@ -79,6 +93,8 @@ private:
         // on a board far more often than "proctergamble".
         plainName.replace(QLatin1Char('&'), QStringLiteral(" and "));
 
+        // Any one character that is not a lowercase letter, a digit or a
+        // space. The name is already lowercase, so this drops punctuation.
         static const QRegularExpression punctuationPattern(QStringLiteral("[^a-z0-9 ]"));
         plainName.remove(punctuationPattern);
 

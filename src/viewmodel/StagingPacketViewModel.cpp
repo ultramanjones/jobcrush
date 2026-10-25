@@ -8,6 +8,7 @@
 #include "../logic/activejobs/ActiveJobsFolder.h"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QRegularExpression>
@@ -22,6 +23,7 @@
 
 namespace {
 
+// The label shown on each piece of the packet.
 QString displayNameForKind(StagedDocumentKind documentKind)
 {
     switch (documentKind) {
@@ -36,6 +38,8 @@ QString displayNameForKind(StagedDocumentKind documentKind)
     return QStringLiteral("Note");
 }
 
+// The stage name shown in the packet header. Same words as the Staging list:
+// the Saved stage reads "On the board".
 QString stageDisplayNameFor(PipelineStage pipelineStage)
 {
     switch (pipelineStage) {
@@ -91,8 +95,15 @@ StagingPacketViewModel::StagingPacketViewModel(StagingWorkbench &workbench,
                     QStringLiteral("Delete that piece if you'd like a fresh one written."),
                     false);
             });
-    connect(&board, &JobPipelines::boardChanged, this,
-            [this]() { emit selectedJobChanged(); });
+    // A job moved to Closed, or taken off the board, leaves Staging. If it was
+    // the one showing, the packet panel is cleared too.
+    connect(&board, &JobPipelines::boardChanged, this, [this]() {
+        if (selectedJobApplicationId > 0 && !selectedJobIsStillOpen()) {
+            showPacketFor(0);
+            return;
+        }
+        emit selectedJobChanged();
+    });
     connect(&preferences, &AppPreferences::defaultDownloadFormatChanged, this,
             [this]() { emit downloadFormatChanged(); });
     connect(&preferences, &AppPreferences::exportFolderPathChanged, this,
@@ -150,6 +161,16 @@ QHash<int, QByteArray> StagingPacketViewModel::roleNames() const
 }
 
 // --- Which packet ----------------------------------------------------------
+
+bool StagingPacketViewModel::selectedJobIsStillOpen() const
+{
+    for (const TargetedJob &targetedJob : jobPipelines.everyOpenTargetedJob()) {
+        if (targetedJob.campaign.jobApplicationId == selectedJobApplicationId) {
+            return true;
+        }
+    }
+    return false;
+}
 
 void StagingPacketViewModel::showPacketFor(qint64 jobApplicationId)
 {
@@ -441,9 +462,24 @@ QVariantList StagingPacketViewModel::applyRoutes() const
 
 void StagingPacketViewModel::openApplyRoute(const QString &routeUrl) const
 {
+    // Only web links and email links are opened. The link comes from the
+    // database or from AI-written text, not typed by the user, and a link
+    // like file:// could make the computer do something other than show a
+    // web page or start an email.
     const QUrl url(routeUrl);
-    if (url.scheme() == QStringLiteral("http") || url.scheme() == QStringLiteral("https")) {
-        QDesktopServices::openUrl(url);
+    const QString urlScheme = url.scheme().toLower();
+    if (urlScheme != QStringLiteral("http") && urlScheme != QStringLiteral("https")
+            && urlScheme != QStringLiteral("mailto")) {
+        qWarning().noquote() << QStringLiteral(
+            "StagingPacketViewModel::openApplyRoute: refused to open \"%1\" while job "
+            "application %2 is showing, because it is not a web or email link")
+                .arg(routeUrl).arg(selectedJobApplicationId);
+        return;
+    }
+    if (!QDesktopServices::openUrl(url)) {
+        qWarning().noquote() << QStringLiteral(
+            "StagingPacketViewModel::openApplyRoute: could not open \"%1\" — the system "
+            "browser refused it").arg(routeUrl);
     }
 }
 
@@ -461,7 +497,11 @@ QString StagingPacketViewModel::fileNameForCurrentPacket() const
         fileName = QStringLiteral("Application packet");
     }
 
-    // Windows rejects these characters in filenames.
+    // Windows refuses these characters in a file name. The pattern is one
+    // character class holding < > : " / and a backslash, then | ? *, then
+    // every control character from code 0 to code 31. The backslash is
+    // written four times over because both C++ and the pattern need it
+    // escaped.
     static const QRegularExpression charactersAFilesystemRefuses(
         QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1F]"));
     fileName.remove(charactersAFilesystemRefuses);
@@ -493,9 +533,19 @@ void StagingPacketViewModel::exportPacketNow()
 
 void StagingPacketViewModel::openExportFolder()
 {
+    // The folder is made first, because a folder nobody has exported to yet
+    // may not exist.
     const QString folderPath = folderExportsGoTo();
-    QDir().mkpath(folderPath);
-    QDesktopServices::openUrl(QUrl::fromLocalFile(folderPath));
+    if (!QDir().mkpath(folderPath)) {
+        qWarning().noquote() << QStringLiteral(
+            "StagingPacketViewModel::openExportFolder: could not make the folder "
+            "\"%1\" — the path may be read-only or not allowed").arg(folderPath);
+    }
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(folderPath))) {
+        qWarning().noquote() << QStringLiteral(
+            "StagingPacketViewModel::openExportFolder: could not open \"%1\" — the "
+            "system file manager refused it").arg(folderPath);
+    }
 }
 
 void StagingPacketViewModel::markAsSent()

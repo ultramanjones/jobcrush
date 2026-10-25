@@ -69,18 +69,37 @@ Rectangle {
     // Takes the user to the job they just added: switches to Manual Add,
     // finds the row, scrolls to it and marks it.
     //
-    // The order matters. The tab must change first, because changing it
-    // rebuilds the rows, and the job is not among the old ones.
+    // The rows are prepared on a background thread, so the job may not be
+    // among them yet. Then the jump waits until the next rows arrive.
+    property bool jumpToTheJobJustAddedIsWaiting: false
+
     function showTheJobJustAdded() {
         discoveriesPage.selectTab(discoveriesPage.manualAddTabSourceName)
+        if (!discoveriesPage.jumpToTheJobJustAddedIfItIsThere()) {
+            discoveriesPage.jumpToTheJobJustAddedIsWaiting = true
+        }
+    }
 
+    function jumpToTheJobJustAddedIfItIsThere() {
         const rowIndex = discoveredJobListViewModel.rowOfMostRecentlyHandAddedJob()
         if (rowIndex < 0) {
-            return
+            return false
         }
         discoveredJobListView.positionViewAtIndex(rowIndex, ListView.Beginning)
         discoveriesPage.highlightedRowIndex = rowIndex
         highlightFadeTimer.restart()
+        return true
+    }
+
+    Connections {
+        target: discoveriesPage.discoveredJobListViewModel
+        function onDiscoveredJobsChanged() {
+            if (discoveriesPage.jumpToTheJobJustAddedIsWaiting
+                    && !discoveriesPage.discoveredJobListViewModel.rowsAreLoading) {
+                discoveriesPage.jumpToTheJobJustAddedIsWaiting = false
+                discoveriesPage.jumpToTheJobJustAddedIfItIsThere()
+            }
+        }
     }
 
     // Whether the "add one job by hand" panel is open. Closed at first,
@@ -919,6 +938,10 @@ Rectangle {
         border.color: JobCrushTheme.hairlineBorderColor
         border.width: 1
 
+        // The rows are being prepared on the background thread. The card says
+        // that, instead of "nothing found", until they arrive.
+        readonly property bool rowsAreLoading:
+            discoveriesPage.discoveredJobListViewModel.rowsAreLoading
         readonly property bool noSitesTicked:
             discoveriesPage.jobSourceRosterViewModel.enabledJobSourceTabs.length === 0
         readonly property bool noProfileYet:
@@ -939,7 +962,9 @@ Rectangle {
 
             Text {
                 width: parent.width
-                text: discoveriesEmptyStateCard.noSitesTicked
+                text: discoveriesEmptyStateCard.rowsAreLoading
+                    ? "Getting these jobs ready…"
+                    : discoveriesEmptyStateCard.noSitesTicked
                     ? "No job sites are switched on"
                     : (discoveriesEmptyStateCard.everythingFilteredOut
                            ? "Nothing where you said you'd work"
@@ -954,6 +979,7 @@ Rectangle {
 
             Text {
                 width: parent.width
+                visible: !discoveriesEmptyStateCard.rowsAreLoading
                 text: discoveriesEmptyStateCard.noSitesTicked
                     ? "Pick the job sites you want Job Crush to watch in Settings. "
                       + "Every one of them is free."
@@ -974,9 +1000,10 @@ Rectangle {
 
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
-                visible: discoveriesEmptyStateCard.noSitesTicked
-                         || discoveriesEmptyStateCard.noProfileYet
-                         || discoveriesEmptyStateCard.everythingFilteredOut
+                visible: !discoveriesEmptyStateCard.rowsAreLoading
+                         && (discoveriesEmptyStateCard.noSitesTicked
+                             || discoveriesEmptyStateCard.noProfileYet
+                             || discoveriesEmptyStateCard.everythingFilteredOut)
                 width: openSettingsFromDiscoveriesLabel.implicitWidth + 36
                 height: 36
                 radius: 8

@@ -17,6 +17,8 @@
 
 namespace {
 
+// Writes UTF-8 text to a file, making its folders first. Fails the test if
+// the file cannot be opened.
 void writeTextFile(const QString &filePath, const QString &fileText)
 {
     QDir().mkpath(QFileInfo(filePath).absolutePath());
@@ -25,6 +27,8 @@ void writeTextFile(const QString &filePath, const QString &fileText)
     file.write(fileText.toUtf8());
 }
 
+// Reads a file as UTF-8 text. A missing file reads as empty text, so a test
+// can check that a file was not written.
 QString readTextFile(const QString &filePath)
 {
     QFile file(filePath);
@@ -65,16 +69,22 @@ private:
     std::unique_ptr<JobPipelines> board;
     std::unique_ptr<ActiveJobsFolder> activeJobs;
 
+    // The path of the JobQuest.txt file inside one job folder.
     QString questPath(const QString &folderName) const
     {
         return QDir(QDir(activeJobsPath).filePath(folderName)).filePath(QStringLiteral("JobQuest.txt"));
     }
 
+    // The one card on the board. Most tests put exactly one job on it. Any
+    // other count is logged and returns an empty card, so the checks that
+    // follow fail with a clear reason.
     TargetedJob onlyCard() const
     {
         const QList<TargetedJob> cards = board->everyTargetedJob();
         if (cards.count() != 1) {
-            qWarning() << "expected one card, found" << cards.count();
+            qWarning().noquote() << QStringLiteral(
+                "ActiveJobsFolderTest::onlyCard: expected one card on the board — found %1")
+                    .arg(cards.count());
             return TargetedJob{};
         }
         return cards.first();
@@ -93,6 +103,8 @@ private slots:
             QStringLiteral("Active Jobs %1").arg(QDateTime::currentMSecsSinceEpoch()));
         QSettings().setValue(QStringLiteral("activeJobs/folderPath"), activeJobsPath);
 
+        // Tear down in reverse order of building, then let go of the
+        // connection name so the next database can use it.
         activeJobs.reset();
         board.reset();
         linkRepository.reset();

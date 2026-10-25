@@ -9,8 +9,8 @@ class JobCrushDatabase;
 
 // ActiveJobFolderRepository
 //
-// The model-layer gateway for ActiveJobFolder rows. Structs in, structs out,
-// SQL stays inside.
+// Reads and writes ActiveJobFolder rows. Callers pass and get back plain
+// ActiveJobFolder records. Only this class writes SQL for them.
 class ActiveJobFolderRepository {
 public:
     explicit ActiveJobFolderRepository(JobCrushDatabase &database);
@@ -28,6 +28,7 @@ public:
     // folder: the old folder names mean nothing inside the new one.
     bool removeAllActiveJobFolders();
 
+    // Why the last write or query failed.
     QString lastErrorText() const;
 
 private:

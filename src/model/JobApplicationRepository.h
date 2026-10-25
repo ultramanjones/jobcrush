@@ -9,9 +9,9 @@ class JobCrushDatabase;
 
 // JobApplicationRepository
 //
-// The model-layer gateway for JobApplication rows — the campaigns that live
-// on the board. Same rules as JobPostingRepository: structs in, structs out,
-// SQL stays inside.
+// Reads and writes JobApplication rows: the campaigns that live on the
+// board. Same rules as JobPostingRepository. Callers pass and get back plain
+// JobApplication records. Only this class writes SQL for them.
 class JobApplicationRepository {
 public:
     explicit JobApplicationRepository(JobCrushDatabase &database);
@@ -42,8 +42,8 @@ public:
     // Takes a campaign off the board. The posting it targeted is untouched.
     bool removeJobApplication(qint64 jobApplicationId);
 
-    // Why the last write failed. Silence here is how a refused row turns into
-    // an afternoon of guessing.
+    // Why the last write failed, so the caller can show or log the real
+    // reason instead of guessing.
     QString lastErrorText() const;
 
 private:

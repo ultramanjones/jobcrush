@@ -19,6 +19,13 @@ const QString ashbyApiBase =
     QStringLiteral("https://api.ashbyhq.com/posting-api/job-board/");
 const QString ashbyDisplayName = QStringLiteral("Ashby");
 
+// Ashby answers this for an account name it does not have.
+constexpr int httpStatusNotFound = 404;
+
+// The whole board, with pay included:
+// https://api.ashbyhq.com/posting-api/job-board/{tenant}?includeCompensation=true
+// The tenant is percent-encoded so a space or a slash in it cannot change
+// the path.
 QUrl ashbyBoardUrl(const QString &tenant)
 {
     return QUrl(ashbyApiBase + QString::fromUtf8(QUrl::toPercentEncoding(tenant))
@@ -76,6 +83,9 @@ QString salaryTextFrom(const QJsonObject &jobObject)
         .value(QStringLiteral("scrapeableCompensationSalarySummary")).toString().trimmed();
 }
 
+// One job out of Ashby's JSON. Field names are Ashby's: id, title, jobUrl,
+// applyUrl, location, secondaryLocations, descriptionPlain, descriptionHtml,
+// publishedAt, isRemote, workplaceType, and the compensation fields.
 JobPosting postingFromAshbyJob(const QJsonObject &jobObject, const QString &tenant)
 {
     JobPosting posting;
@@ -110,8 +120,9 @@ JobPosting postingFromAshbyJob(const QJsonObject &jobObject, const QString &tena
         posting.postedTimestamp = QDateTime::fromString(publishedText, Qt::ISODate);
     }
 
-    // Ashby answers this outright in two fields. Believe them, and only read
-    // the location words when both are absent.
+    // Ashby answers this outright in two fields, isRemote and workplaceType.
+    // Either one saying remote is enough. The location words are a second
+    // look, for jobs where neither field says so.
     const QString workplaceType =
         jobObject.value(QStringLiteral("workplaceType")).toString().toLower();
     const QString locationLowered = posting.locationText.toLower();
@@ -154,6 +165,9 @@ JobScoutReply *AshbyBoardSource::fetchOneJob(const AtsBoardIdentity &boardIdenti
     return fetchBoardAndKeep(boardIdentity.tenant, boardIdentity.jobId, replyParent);
 }
 
+// Steps: one GET for the whole board. 404 means no such board. The answer
+// is {"jobs":[...]}. Each job that is listed, has a title, a link and an id,
+// and (when one job was asked for) has the wanted id, is kept.
 JobScoutReply *AshbyBoardSource::fetchBoardAndKeep(const QString &tenant,
                                                    const QString &wantedJobId,
                                                    QObject *replyParent)
@@ -178,7 +192,7 @@ JobScoutReply *AshbyBoardSource::fetchBoardAndKeep(const QString &tenant,
             networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray responseBody = networkReply->readAll();
 
-        if (httpStatusCode == 404) {
+        if (httpStatusCode == httpStatusNotFound) {
             // Asking for one job off a board that does not exist is a spelling
             // problem either way, so it gets the same answer.
             scoutReply->markFailed(noSuchBoardMessage(ashbyDisplayName, trimmedTenant), false);
@@ -214,6 +228,7 @@ JobScoutReply *AshbyBoardSource::fetchBoardAndKeep(const QString &tenant,
 
             const JobPosting posting = postingFromAshbyJob(jobObject, trimmedTenant);
 
+            // No title or no link means nothing to show and nothing to open.
             // No id means Job Crush cannot recognize it on the next sweep, so
             // it would be stored again every single time.
             if (posting.positionTitle.isEmpty() || posting.sourceUrl.isEmpty()

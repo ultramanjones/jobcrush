@@ -16,17 +16,6 @@ section before starting anything here.
 
 ## Next up
 
-**27. Never freeze the window.** Ultra, 2026-10-16. Job Crush must never
-freeze long enough for Windows to say "not responding". Not even close to it.
-After the starter list, one search brought in almost 7,000 jobs and the window
-froze until they were all saved. (A stopgap went in the same night: the saving
-is done as one batch instead of one disk write per job. That is faster, but it
-still runs on the screen's thread.) The real fix:
-- Save jobs on a background thread, never on the thread that draws the screen.
-- Save in small bursts: one company at a time, as soon as that company
-  answers. Not everything at the end.
-- Discoveries fills in as each company is saved, so the user sees them arrive.
-
 **29. Pick where Job Crush saves files.** Ultra, 2026-10-16. Job Crush
 saves copies and packets in Documents\Job Crush Packets. When OneDrive backs
 up Documents, Windows says Documents is the OneDrive one, so files land in
@@ -57,31 +46,23 @@ Remotive and Arbeitnow are wired. Every other free board is a class that
 implements `JobSourceProvider` and a row in the roster. No scraping — APIs and
 published feeds only.
 
-**3a. Taleo, and the rest of Workday.** Reading a pasted Workday link shipped
-on 2026-10-11 (see Shipped). What is left:
+**3a. The rest of Workday and Taleo.** Taleo and Workday's second link shape
+shipped on 2026-10-23 (see Shipped). What is left:
 
-- **Check it from a real install.** The Workday calls were checked live in a
-  browser against Northrop Grumman's site. They were NOT run from the app
-  itself, because the cloud machine that wrote the code cannot reach Workday.
-  If Workday refuses requests that do not come from a browser, the first pasted
-  link will say so in the message, with the status code.
+- **Check it from a real install.** The Workday and Taleo calls were checked
+  live in a browser. They were NOT run from the app itself, because the cloud
+  machine that wrote the code cannot reach them. If either refuses requests
+  that do not come from a browser, the first pasted link will say so in the
+  message, with the status code.
 - **Company and title only, no link — the rest.** Done for the 12 Workday
   companies in the company list (2026-10-16): a typed company that is on the
-  list is searched on its recorded Workday site. Any other Workday employer
-  still needs a pasted link, or its site added to the list.
-- **Workday's other link shape**, `wd3.myworkdaysite.com/recruiting/{tenant}/{site}/...`,
-  is not read yet. No example has turned up to check it against.
-- **Taleo** has no common JSON answer across companies. Cost it separately.
+  list is searched on its recorded Workday site. Any other Workday or Taleo
+  employer still needs a pasted link, or its site added to the list.
 
 **4. OAuth for OpenAI (Sign in with ChatGPT).** Launched 2 August 2026 as a
 closed beta: six partners, no open enrollment. The flow gets built against the
 published shape and sits behind an honest "waiting on OpenAI program access"
 state rather than a button that does nothing.
-
-**6. Brain levels.** Per-provider model choice, so "which brain" and "how much
-brain" are separate questions. Replaces the hardcoded model constant in each
-provider. The naming is the hard part: model version numbers mean nothing to
-somebody who just wants their cover letter to sound like them.
 
 **11. OCR for scanned documents.** People scan real-world paper and find it
 useless in the digital world — the transcript that started this was a photo of
@@ -241,6 +222,10 @@ installer" GitHub workflow once, install the result on a computer with no Qt
 database opens, a PDF drops into ProDocs, and Claude desktop can reach the
 bridge.
 
+Ultra, 2026-10-23: when the next few features and the code cleanup are done
+and he has looked at the code, remind him to put a new installer on GitHub as
+a Release, so employers can download it.
+
 **26. A website with short videos.** Ultra, 2026-10-16. Do this once the app
 is feature ready. One very fast video: set up Job Crush and get started. Then
 a few short optional ones: AI Buddy Mode, and making resumes and cover letters
@@ -263,14 +248,116 @@ from 2026-09-15: a job dropped after a closer look and a rejected application
 both land in Closed, and the Stats page cannot tell them apart. With a reason,
 it can.
 
-**31. Staging shows closed jobs at the top.** Ultra, 2026-10-23. The Staging
-page lists jobs that are in the Closed column first. Closed jobs should not be
-at the top, and may not belong on Staging at all. Ultra has not used Staging
-much, so look at the whole page with him before changing it.
+
+**33. Bugs found in the comment pass.** 2026-10-25. Found while every file
+was read for comments. Not fixed then, because that pass changed no
+behavior. Fixed in the same pass: a possible crash when a chat is cleared
+mid-answer; the education "edited by you" flag was never saved on insert; a
+scorer test that never ran; two links opened without the http/https check;
+an empty USAJOBS apply link.
+- JobSearchProfileViewModel.cpp: "$120,000.50" is read as 12000050, and a
+  number too big for an int becomes 0.
+- EducationListViewModel.cpp and WorkExperienceListViewModel.cpp: when a
+  save fails, the edit stays on screen but is not saved.
+- ProfessionalDocumentListViewModel.cpp: sizes can show 0.1 MB low (a tenth
+  of a megabyte is taken as 1024*105 bytes).
+- StagingWorkbench.cpp: the "Checklist" title branch can never run.
+- TaskInstructionWriter.cpp: with no history and no documents, the early
+  return drops the user's notes on the job.
+- ActiveJobsFolder.cpp: the folder check also refuses a sibling folder such
+  as "Active Jobs Old".
+- JobQuestFile.cpp: a blank line inside Notes can leave old note text behind
+  after a rewrite.
+- FollowedEmployerRoster.cpp: a link to a board Job Crush can't read is
+  counted as "already on your list".
+- UrlCanonicalizer.h: gh_jid and ashby_jid are stripped as tracking
+  parameters, but they are job ids, so two jobs can get the same link.
+- WordDocumentReader.cpp: "&amp;" is decoded first, so "&amp;lt;" becomes
+  "<". Numeric escapes are never decoded.
+- DroppedFileClassifier.cpp: on a tie the first kind wins, so "Reference
+  letter" is filed as a cover letter.
+- ResumeInsightParser.cpp: words match inside longer words ("lead" in
+  "Leadership").
+- AcademicTranscriptReader.cpp: winter sorts last in the year.
+- FormattedDocumentWriter.cpp: the PDF check only asks if the file exists,
+  so an old file passes.
+- InlineEditField.qml: showStoredText() breaks the binding to fieldText.
+- TokenEntryField.qml: Tab can't leave the field.
+- AppPreferences::loadFromSettings never sends moonlightTipsTurnedOnChanged.
+- removePacketForApplication is never called, so a deleted campaign leaves
+  its packet rows behind.
+- Messages that end with "try again" or no next step (UI rule): see
+  StagingWorkbench, StagingPacketViewModel, JobPipelines,
+  PostingStillListedChecker, TaskReplyReader, ProDocsIntake,
+  MoonlightDocumentCleanup, DocumentTextExtractor, Arbeitnow and Remotive
+  sources, BrainChatSession (the reply's suggested next step is never shown).
+- Logic that sits in a viewmodel or view and belongs in the Logic layer:
+  AiCredentialRosterViewModel (which provider a key is), JobSearchProfile
+  ViewModel (preset merge), StagingPacketViewModel (export folder and file
+  name), the provider list and a/an rule in SettingsPage.qml, the next
+  document kind in ProDocsPage.qml. Some viewmodels call repositories
+  directly: Education, WorkExperience, ProfessionalDocumentList,
+  StagedJobList, StagingPacket.
 
 ---
 
 ## Shipped
+
+Taleo (item 3a). A pasted Taleo link is read, a Taleo company can be
+followed, and Taleo jobs can be checked for "gone". Taleo has no public API;
+Job Crush asks the same JSON search the careers page uses, which needs a
+"portal" number read once from the site's search page. Searching for a job's
+number finds exactly that job, which is how one job is read and checked. The
+description comes from the job's own page. Followed Taleo companies are
+searched by the profile's titles, the same as Workday. Checked live in a
+browser on 2026-10-23 against hdr.taleo.net and cu.taleo.net, without
+cookies.
+
+Workday's second link shape (item 3a). Links like
+wd5.myworkdaysite.com/recruiting/uw/UWHires/job/... are read, followed and
+checked. The JSON service there is the same as on myworkdayjobs.com. Checked
+live in a browser on 2026-10-23 against the University of Washington site.
+
+The window no longer freezes during a sweep (item 27). Found jobs are saved
+on a background thread, one company at a time, as each company answers, and
+Discoveries fills in while the sweep goes on. The rows for each tab are also
+loaded and scored on that thread. The database is in WAL mode, so the screen
+can read while the background thread writes. Two more causes were found and
+fixed: the "have we seen this job?" lookup read the whole table for every job
+saved (it now uses its index), and the held-back count was worked out three
+times per screen update. Tested in the cloud with a fake sweep of 7,000 jobs:
+the window never paused for more than about 0.1 second. A real sweep has not
+been run yet.
+
+Staging leaves out closed jobs (item 31). A job in Closed is not listed, and
+if it was the one showing, the packet panel clears.
+
+"Gone" now needs two answers that agree (new item 32, Ultra 2026-10-23,
+after three jobs were marked gone that were still listed). A job is marked
+gone only when its own page on the board says "not found" AND the company's
+list of jobs, or a search of it for the title, does not have it by id or by
+title. If either answer is missing, the job counts as "couldn't be checked
+for sure". The job's own link is checked first, then every other place it
+was found; any one that still lists it wins. The sweep of followed companies
+uses the same two-answer check before marking anything. A card marked gone
+has "It's still open, I checked": the mark comes off, and Job Crush never
+marks that job gone again, even if a check was already running when the
+button was pressed. A company list cut short at the page limit counts as
+"couldn't be checked". On Workday the board is also searched for the job's
+requisition number, in case the employer changed the title. Tested with a
+fake board; not run against live boards yet.
+
+Brain levels (item 6). Each brain has Quick, Balanced and Best in Settings,
+with the real model name shown small. Model names checked 2026-10-23:
+Anthropic claude-haiku-5-5 / claude-sonnet-5-5 / claude-opus-5-5; OpenAI
+gpt-5.6-luna / terra / sol; Gemini gemini-3.5-flash-lite / gemini-3.5-flash /
+gemini-4-argon; OpenRouter's "latest" Claude names; Ollama picks the
+smallest, middle or largest model the user downloaded. This also replaced
+three old defaults that are shutting down: gemini-2.5-flash (closed to new
+projects), claude-sonnet-4-5 (shuts 2026-11-30) and gpt-5-mini (shuts
+2026-12-11). Still to do: ask each vendor for its model list at runtime, so
+a retired name never breaks a brain. Until then, this list must be updated
+by hand.
 
 "Word, laid out by Moonlight" (the layout half of item 14). On ProDocs, next
 to "Save a copy as", shown only when a brain is connected. Moonlight gets the

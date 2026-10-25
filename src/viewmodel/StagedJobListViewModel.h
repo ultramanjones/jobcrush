@@ -11,11 +11,11 @@ class StagingWorkbench;
 
 // StagedJobListViewModel
 //
-// The left column of the Staging page: every job on the board, and how far its
-// packet has got.
+// The left column of the Staging page: every open job on the board, and how
+// far its packet has got. Jobs in Closed are left out.
 //
-// Every job, including ones with no packet yet. A job crushed an hour ago and
-// not opened is usually the reason the user came to this screen.
+// Jobs with no packet yet are listed too. A job crushed an hour ago and not
+// opened is usually the reason the user came to this screen.
 class StagedJobListViewModel : public QAbstractListModel {
     Q_OBJECT
 

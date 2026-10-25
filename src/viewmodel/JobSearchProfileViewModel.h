@@ -12,8 +12,8 @@ class JobSearchProfile;
 // lists; a person types a line. This class is the translation between those
 // two shapes and nothing more.
 //
-// Instant-apply by law: every setter persists the moment it happens, no
-// Apply/OK ceremony anywhere.
+// Every setter saves the moment it is called. There is no Apply or OK
+// button anywhere.
 class JobSearchProfileViewModel : public QObject {
     Q_OBJECT
 
@@ -25,8 +25,8 @@ class JobSearchProfileViewModel : public QObject {
     Q_PROPERTY(QString skillKeywordsText READ skillKeywordsText
                    WRITE setSkillKeywordsText NOTIFY searchProfileChanged)
 
-    // A list, not a line: chips let "Pittsburgh, PA" be one entry, comma and
-    // all, which a comma-separated box could never do.
+    // A list, not a line. Chips let "Pittsburgh, PA" be one entry, comma and
+    // all. A comma-separated box would split it in two.
     Q_PROPERTY(QStringList preferredWorkLocations READ preferredWorkLocations
                    NOTIFY searchProfileChanged)
 
@@ -51,10 +51,9 @@ public:
 
     QStringList preferredWorkLocations() const;
 
-    // The chip actions. Adding something not in the suggestion list is fine —
-    // suggestions are a convenience, never a gate, and an autocomplete that
-    // refuses unfamiliar input is a form telling someone they live in the
-    // wrong place.
+    // The chip actions. Adding a place that is not in the suggestion list is
+    // fine. Suggestions only help with typing. They never limit what the user
+    // may enter, because the user's town may not be on the list.
     Q_INVOKABLE void addWorkLocation(const QString &workLocation);
     Q_INVOKABLE void removeWorkLocationAt(int locationIndex);
 

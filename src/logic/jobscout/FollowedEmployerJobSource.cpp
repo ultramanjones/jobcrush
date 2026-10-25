@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <QDebug>
 #include <QMetaObject>
 #include <QSet>
 #include <QStringList>
@@ -15,34 +16,40 @@ namespace {
 
 const QString followedEmployersStorageName = QStringLiteral("employerboards");
 
-// One sweep across every watched company.
-//
-// Held by shared_ptr and captured by the board handlers, so the last handler
-// to finish takes it with it. Nothing here points back at the lambdas, so
-// there is no cycle and nothing to clean up by hand.
-// The searches to run on one Workday site: one per job title in the profile,
-// up to three. With no titles, one search with no words, which brings back the
-// newest jobs.
-QStringList workdaySearchesFor(const JobSearchProfile &searchProfile)
+// The most title searches run on one Workday or Taleo site in one sweep.
+// Each search can be several requests, one per page.
+constexpr int mostTitleSearchesPerSite = 3;
+
+// The searches to run on one Workday or Taleo site: one per job title in the
+// profile, up to mostTitleSearchesPerSite. With no titles, one search with no
+// words, which brings back the newest jobs.
+QStringList titleSearchesFor(const JobSearchProfile &searchProfile)
 {
-    QStringList searches = searchProfile.targetJobTitles().mid(0, 3);
+    QStringList searches = searchProfile.targetJobTitles().mid(0, mostTitleSearchesPerSite);
     if (searches.isEmpty()) {
         searches.append(QString());
     }
     return searches;
 }
 
+// One sweep across every watched company.
+//
+// Held by shared_ptr and captured by the board handlers, so the last handler
+// to finish takes it with it. Nothing here points back at the lambdas, so
+// there is no cycle and nothing to clean up by hand.
 struct WatchedBoardSweep {
     JobScoutReply *scoutReply = nullptr;
     int boardsStillAnswering = 0;
     QList<JobPosting> everythingFound;
     QStringList companiesThatDidNotAnswer;
     QStringList employersReadInFull;     // "board/tenant" for each board that answered
-    QSet<QString> linksAlreadyFound;     // one Workday job can match two title searches
+    QSet<QString> linksAlreadyFound;     // one job can match two title searches
     int companiesAsked = 0;
     bool alreadyAnswered = false;
 };
 
+// Called each time a company finishes. Does nothing until the last one is in,
+// and does nothing a second time once the reply has been answered.
 void finishIfEveryBoardHasAnswered(const std::shared_ptr<WatchedBoardSweep> &sweep)
 {
     if (sweep->boardsStillAnswering > 0 || sweep->alreadyAnswered) {
@@ -85,9 +92,32 @@ FollowedEmployerJobSource::FollowedEmployerJobSource(
 
 JobSourceDescriptor FollowedEmployerJobSource::descriptor() const
 {
-    bool found = false;
-    return jobSourceDescriptorFor(followedEmployersStorageName, found);
+    bool descriptorWasFound = false;
+    const JobSourceDescriptor descriptor =
+        jobSourceDescriptorFor(followedEmployersStorageName, descriptorWasFound);
+    if (!descriptorWasFound) {
+        qWarning().noquote() << QStringLiteral(
+            "FollowedEmployerJobSource::descriptor: no catalog entry for \"%1\" — "
+            "the source catalog is missing it")
+                .arg(followedEmployersStorageName);
+    }
+    return descriptor;
 }
+
+// Steps:
+//   1. No watched companies: fail kindly and stop.
+//   2. For each company, pick the reader for its board. A board Job Crush
+//      cannot read is left out of the count.
+//   3. Ask that reader: a whole-board read, or for Workday and Taleo, one
+//      title search per profile title.
+//   4. As each answer comes in, drop jobs already found by link, pass the
+//      new ones on at once, and count the company down when its last search
+//      is in.
+//   5. When every company is counted down, finish the reply.
+//
+// Two counters do the bookkeeping. sweep->boardsStillAnswering counts
+// companies. searchesStillAnswering counts the searches for one company, and
+// that company counts as done only when it reaches zero.
 
 JobScoutReply *FollowedEmployerJobSource::searchForJobs(const JobSearchProfile &searchProfile,
                                                         QObject *replyParent)
@@ -96,9 +126,9 @@ JobScoutReply *FollowedEmployerJobSource::searchForJobs(const JobSearchProfile &
     // is fetched, and the scorer ranks it afterwards. Filtering at the request
     // would mean deciding for the user that a job at a company they chose to
     // watch is not worth showing them, which is not this class's decision.
-    // One exception: Workday. A big employer's Workday site holds thousands of
-    // jobs, so it is searched for the titles in the profile instead of read
-    // whole. See searchesFor below.
+    // Two exceptions: Workday and Taleo. A big employer's site on either holds
+    // thousands of jobs, so it is searched for the titles in the profile
+    // instead of read whole. See titleSearchesFor above.
     JobScoutReply *scoutReply = new JobScoutReply(replyParent);
 
     const QList<FollowedEmployer> watchedEmployers = followedRoster.allFollowedEmployers();
@@ -124,11 +154,13 @@ JobScoutReply *FollowedEmployerJobSource::searchForJobs(const JobSearchProfile &
             boardReader = &smartRecruitersBoard;
         } else if (employer.boardName == AtsBoardName::Workday) {
             boardReader = &workdayBoard;
+        } else if (employer.boardName == AtsBoardName::Taleo) {
+            boardReader = &taleoBoard;
         }
 
         if (boardReader == nullptr) {
             // A company saved before Job Crush could read its board. Not an
-            // error worth showing — it simply contributes nothing this sweep.
+            // error worth showing — it adds nothing this sweep.
             --sweep->boardsStillAnswering;
             --sweep->companiesAsked;
             continue;
@@ -137,35 +169,37 @@ JobScoutReply *FollowedEmployerJobSource::searchForJobs(const JobSearchProfile &
         const QString companyName = employer.displayName;
         const QString employerKey =
             QStringLiteral("%1/%2").arg(employer.boardName, employer.tenant).toLower();
-        const bool isWorkday = employer.boardName == AtsBoardName::Workday;
+        const bool isSearchedByTitle = employer.boardName == AtsBoardName::Workday
+                                       || employer.boardName == AtsBoardName::Taleo;
 
-        // Workday is searched, everything else is read whole. A Workday
-        // company counts as answered when ANY of its searches answers.
-        const QStringList searches = isWorkday ? workdaySearchesFor(searchProfile)
-                                               : QStringList { QString() };
+        // Workday and Taleo are searched, everything else is read whole. A
+        // searched company counts as answered when ANY of its searches answers.
+        const QStringList searches = isSearchedByTitle ? titleSearchesFor(searchProfile)
+                                                       : QStringList { QString() };
         auto searchesStillAnswering = std::make_shared<int>(searches.count());
         auto anySearchAnswered = std::make_shared<bool>(false);
 
         for (const QString &searchWords : searches) {
-            JobScoutReply *boardReply = isWorkday
+            JobScoutReply *boardReply = isSearchedByTitle
                 ? boardReader->fetchJobsLikeTitle(employer.tenant, searchWords, scoutReply)
                 : boardReader->fetchEveryJobForEmployer(employer.tenant, scoutReply);
 
             QObject::connect(boardReply, &JobScoutReply::finished, scoutReply,
-                             [sweep, boardReply, employerKey, isWorkday,
+                             [sweep, boardReply, employerKey, isSearchedByTitle,
                               searchesStillAnswering, anySearchAnswered](
                                  const QList<JobPosting> &boardPostings) {
                 boardReply->deleteLater();
                 *anySearchAnswered = true;
-                // A search never reads a whole board, so a Workday job missing
-                // from it is not gone. Only whole reads count.
-                if (!isWorkday && !boardReply->readOnlyPartOfTheBoard()) {
+                // A search never reads a whole board, so a job missing from it
+                // is not gone. Only whole reads count.
+                if (!isSearchedByTitle && !boardReply->readOnlyPartOfTheBoard()) {
                     sweep->employersReadInFull.append(employerKey);
                 }
                 // These land in the "Companies you follow" tab rather than a
                 // Greenhouse or Lever one, because that is the box the user
                 // ticked and tabs come from ticked boxes. Which board it came
                 // from is still there in the link on every row.
+                QList<JobPosting> newFromThisAnswer;
                 for (JobPosting posting : boardPostings) {
                     if (sweep->linksAlreadyFound.contains(posting.sourceUrl)) {
                         continue;
@@ -173,6 +207,12 @@ JobScoutReply *FollowedEmployerJobSource::searchForJobs(const JobSearchProfile &
                     sweep->linksAlreadyFound.insert(posting.sourceUrl);
                     posting.postingSource = followedEmployersStorageName;
                     sweep->everythingFound.append(posting);
+                    newFromThisAnswer.append(posting);
+                }
+                // Hand this company's jobs over now, so they are saved and
+                // shown while the other companies are still answering.
+                if (!newFromThisAnswer.isEmpty()) {
+                    sweep->scoutReply->deliverSomeJobs(newFromThisAnswer);
                 }
                 if (--*searchesStillAnswering == 0) {
                     --sweep->boardsStillAnswering;
@@ -181,9 +221,14 @@ JobScoutReply *FollowedEmployerJobSource::searchForJobs(const JobSearchProfile &
             });
 
             QObject::connect(boardReply, &JobScoutReply::failed, scoutReply,
-                             [sweep, boardReply, companyName, searchesStillAnswering,
-                              anySearchAnswered](const QString &, bool) {
+                             [sweep, boardReply, companyName, employerKey, searchesStillAnswering,
+                              anySearchAnswered](const QString &whyItFailed, bool) {
                 boardReply->deleteLater();
+                // The reason does not reach the user here (see
+                // finishIfEveryBoardHasAnswered), so it goes in the log.
+                qWarning().noquote() << QStringLiteral(
+                    "FollowedEmployerJobSource::searchForJobs: board read failed for \"%1\" — %2")
+                        .arg(employerKey, whyItFailed);
                 if (--*searchesStillAnswering == 0) {
                     // One company being unreachable must not sink the rest.
                     // Which one failed is remembered, so the report can name it.

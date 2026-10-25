@@ -27,6 +27,8 @@ Rectangle {
     // which tab holds it. It says what the user asked for and the page acts.
     signal showTheJobJustAddedRequested()
 
+    // True while Job Crush is out looking for the posting. The buttons that
+    // start a search are off until it is done.
     readonly property bool isBusy: discoveredJobListViewModel.leadIsBeingResolved
 
     color: JobCrushTheme.panelBackgroundColor
@@ -98,6 +100,7 @@ Rectangle {
         }
     }
 
+    // The panel's buttons. Grayed out, and clicks do nothing, while canBePressed is false.
     component GoButton: Rectangle {
         id: goButton
 
@@ -207,11 +210,10 @@ Rectangle {
                 font.pixelSize: JobCrushTheme.smallFontSize
             }
 
-            // The two boxes split whatever is left after the label and the
-            // button, half each. Anchored on both sides rather than given a
-            // measured width with a floor under it — a floor stops the boxes
-            // shrinking but does not stop them meeting, so on a narrow window
-            // the old version had them overlapping instead of squeezing.
+            // The two boxes split the row at its middle. Each box is anchored
+            // on both sides, so on a narrow window both boxes shrink and never
+            // overlap. A set width with a minimum would stop them shrinking
+            // but would let them run into each other.
             OneLineBox {
                 id: companyBox
                 anchors.left: typedRowLabel.right
@@ -389,6 +391,8 @@ Rectangle {
                 }
             }
 
+            // One row of the form: a label on the left, and whatever box is
+            // placed inside the row fills the rest.
             component FormRow: Item {
                 property string labelText: ""
                 default property alias boxSlot: boxHolder.data
@@ -446,6 +450,9 @@ Rectangle {
                              hintText: "Date " + filledFormColumn.emptyHint }
             }
 
+            // The Remote tick box and the two buttons. Pushed right by the
+            // 128-pixel label plus its 8-pixel gap, so the row lines up
+            // with the boxes above.
             Row {
                 spacing: 10
                 x: 136
@@ -510,12 +517,11 @@ Rectangle {
             }
         }
 
-        // What happened, in the app's own words, and the way to go see it.
+        // What happened, in the app's own words, and a button to go see it.
         //
-        // The sentence used to end here, and that was the whole complaint:
-        // being told a job is "in Discoveries" is not being told where it is.
-        // A list of a thousand rows ranked by score is not somewhere a person
-        // can go. So the sentence now comes with the trip.
+        // Being told a job is "in Discoveries" does not tell the user where
+        // it is. The list can hold a thousand rows ranked by score. So the
+        // sentence comes with a Show me button that goes to the row.
         Item {
             width: parent.width
             visible: statusSentence.text.length > 0
@@ -539,8 +545,8 @@ Rectangle {
                 id: showMeButton
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                // Only while there is somewhere to go. A button that lands on
-                // nothing is worse than no button.
+                // Shown only when there is a job to go to. A button that
+                // goes nowhere would only confuse the user.
                 visible: !addOneJobPanel.isBusy
                          && addOneJobPanel.discoveredJobListViewModel.hasSomewhereToJumpTo
                 labelText: "Show me"
@@ -548,8 +554,8 @@ Rectangle {
             }
         }
 
-        // The plain truth about which boards this can reach, so nobody thinks
-        // it is broken when a company is not on one of them.
+        // Which boards this can reach. Said up front, so nobody thinks it is
+        // broken when a company is not on one of them.
         Text {
             width: parent.width
             text: "Paste the job's own page and Job Crush reads the job off it. "

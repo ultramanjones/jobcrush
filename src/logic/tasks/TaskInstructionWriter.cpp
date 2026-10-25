@@ -2,9 +2,19 @@
 
 namespace {
 
-// Long documents get trimmed instead of sent whole. Past a couple thousand
-// characters a posting is mostly boilerplate and legal text. The user pays for
-// every character sent.
+// The most characters of each part of the briefing that are sent. The user
+// pays for every character sent, so each part stops where more text stops
+// helping. Past a few thousand characters a posting is mostly boilerplate and
+// legal text. The documents get the most room, because the drafts are built
+// from them.
+constexpr int longestPostingLength = 6000;
+constexpr int longestCareerHistoryLength = 4000;
+constexpr int longestDocumentsLength = 8000;
+constexpr int longestUserNotesLength = 2000;
+constexpr int longestExtraInstructionLength = 1000;
+
+// Long documents get trimmed instead of sent whole, with a line that says so,
+// so the AI does not treat a cut-off text as complete.
 QString trimmedToLength(const QString &text, int longestUsefulLength)
 {
     const QString tidyText = text.trimmed();
@@ -17,6 +27,9 @@ QString trimmedToLength(const QString &text, int longestUsefulLength)
 
 } // namespace
 
+// The facts about the job, then the posting text itself. Location and pay are
+// left out when the posting did not give them, so the AI is not handed an
+// empty line to fill.
 QString TaskInstructionWriter::postingSectionOf(const TaskBriefing &briefing) const
 {
     QString postingSection = QStringLiteral("THE JOB\n");
@@ -29,10 +42,14 @@ QString TaskInstructionWriter::postingSectionOf(const TaskBriefing &briefing) co
         postingSection += QStringLiteral("Pay as posted: %1\n").arg(briefing.posting.salaryText);
     }
     postingSection += QStringLiteral("\nThe posting, as published:\n%1\n")
-                          .arg(trimmedToLength(briefing.posting.fullDescriptionText, 6000));
+                          .arg(trimmedToLength(briefing.posting.fullDescriptionText,
+                                               longestPostingLength));
     return postingSection;
 }
 
+// What Job Crush knows about the user: history, documents, and their notes on
+// this job. With nothing on file, the AI is told so and told not to make
+// anything up.
 QString TaskInstructionWriter::personSectionOf(const TaskBriefing &briefing) const
 {
     QString personSection = QStringLiteral("\nTHE PERSON APPLYING\n");
@@ -48,17 +65,20 @@ QString TaskInstructionWriter::personSectionOf(const TaskBriefing &briefing) con
 
     if (!briefing.careerHistoryText.trimmed().isEmpty()) {
         personSection += QStringLiteral("\nTheir history, as read from their own documents:\n%1\n")
-                             .arg(trimmedToLength(briefing.careerHistoryText, 4000));
+                             .arg(trimmedToLength(briefing.careerHistoryText,
+                                                  longestCareerHistoryLength));
     }
     if (!briefing.professionalDocumentsText.trimmed().isEmpty()) {
         personSection += QStringLiteral("\nTheir documents, in their own words:\n%1\n")
-                             .arg(trimmedToLength(briefing.professionalDocumentsText, 8000));
+                             .arg(trimmedToLength(briefing.professionalDocumentsText,
+                                                  longestDocumentsLength));
     }
     if (!briefing.userNotesText.trimmed().isEmpty()) {
         personSection += QStringLiteral(
                              "\nTheir own notes on this job. These outrank everything else "
                              "above — they know things the documents do not:\n%1\n")
-                             .arg(trimmedToLength(briefing.userNotesText, 2000));
+                             .arg(trimmedToLength(briefing.userNotesText,
+                                                  longestUserNotesLength));
     }
     return personSection;
 }
@@ -78,6 +98,10 @@ QString TaskInstructionWriter::housekeepingRules() const
         "see beats a fact you invented.\n");
 }
 
+// The instruction is built in this order: what this task is, the job, the
+// person, what the user typed for this run, and last the rules for the
+// answer's shape. The user's own words come after the built-in task text, and
+// say they win, so a conflict is settled in the user's favor.
 QString TaskInstructionWriter::instructionsFor(AiBrainTaskKind taskKind,
                                                const TaskBriefing &briefing) const
 {
@@ -173,7 +197,8 @@ QString TaskInstructionWriter::instructionsFor(AiBrainTaskKind taskKind,
         instructions += QStringLiteral(
                             "\nWHAT THEY ASKED YOU FOR, in their own words. This wins over "
                             "any instruction above it that it contradicts:\n%1\n")
-                            .arg(trimmedToLength(briefing.extraInstructionText, 1000));
+                            .arg(trimmedToLength(briefing.extraInstructionText,
+                                                 longestExtraInstructionLength));
     }
 
     instructions += housekeepingRules();

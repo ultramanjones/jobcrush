@@ -66,8 +66,8 @@ bool JobApplicationRepository::insertJobApplication(JobApplication &jobApplicati
                           textOrEmpty(jobApplication.notesText));
 
     if (!insertQuery.exec()) {
-        // A repository that returns false and keeps the reason to itself
-        // forces every caller above it to guess. This one cost an afternoon.
+        // Keep the reason. Without it, every caller above has to guess why
+        // the row was refused.
         lastErrorDescription = insertQuery.lastError().text();
         return false;
     }
@@ -81,8 +81,14 @@ QList<JobApplication> JobApplicationRepository::loadAllJobApplications()
     QList<JobApplication> allJobApplications;
 
     QSqlQuery selectQuery(jobCrushDatabase.connection());
-    selectQuery.exec(QStringLiteral(
-        "SELECT * FROM jobApplication ORDER BY targetedTimestamp ASC"));
+    if (!selectQuery.exec(QStringLiteral(
+            "SELECT * FROM jobApplication ORDER BY targetedTimestamp ASC"))) {
+        // The board then shows no cards. The log line tells this apart from
+        // a board that really is empty.
+        qWarning().noquote() << QStringLiteral(
+            "JobApplicationRepository::loadAllJobApplications: query failed for "
+            "every job application — %1").arg(selectQuery.lastError().text());
+    }
 
     while (selectQuery.next()) {
         allJobApplications.append(jobApplicationFromQueryRow(selectQuery));
@@ -100,7 +106,13 @@ bool JobApplicationRepository::updatePipelineStage(qint64 jobApplicationId,
     updateQuery.bindValue(QStringLiteral(":pipelineStage"),
                           pipelineStageToStorageText(newPipelineStage));
     updateQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
-    return updateQuery.exec();
+    if (!updateQuery.exec()) {
+        qWarning().noquote() << QStringLiteral(
+            "JobApplicationRepository::updatePipelineStage: update failed for job "
+            "application %1 — %2").arg(jobApplicationId).arg(updateQuery.lastError().text());
+        return false;
+    }
+    return true;
 }
 
 bool JobApplicationRepository::updateNotesText(qint64 jobApplicationId,
@@ -112,7 +124,13 @@ bool JobApplicationRepository::updateNotesText(qint64 jobApplicationId,
         "WHERE jobApplicationId = :jobApplicationId"));
     updateQuery.bindValue(QStringLiteral(":notesText"), textOrEmpty(newNotesText));
     updateQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
-    return updateQuery.exec();
+    if (!updateQuery.exec()) {
+        qWarning().noquote() << QStringLiteral(
+            "JobApplicationRepository::updateNotesText: update failed for job "
+            "application %1 — %2").arg(jobApplicationId).arg(updateQuery.lastError().text());
+        return false;
+    }
+    return true;
 }
 
 bool JobApplicationRepository::updateAppliedTimestamp(qint64 jobApplicationId,
@@ -159,7 +177,13 @@ bool JobApplicationRepository::removeJobApplication(qint64 jobApplicationId)
     deleteQuery.prepare(QStringLiteral(
         "DELETE FROM jobApplication WHERE jobApplicationId = :jobApplicationId"));
     deleteQuery.bindValue(QStringLiteral(":jobApplicationId"), jobApplicationId);
-    return deleteQuery.exec();
+    if (!deleteQuery.exec()) {
+        qWarning().noquote() << QStringLiteral(
+            "JobApplicationRepository::removeJobApplication: delete failed for job "
+            "application %1 — %2").arg(jobApplicationId).arg(deleteQuery.lastError().text());
+        return false;
+    }
+    return true;
 }
 
 QString JobApplicationRepository::lastErrorText() const

@@ -19,6 +19,7 @@ public:
     AnthropicApiProvider();
 
     QString providerDisplayName() const override;
+    QString modelNameFor(AiBrainLevel brainLevel) const override;
 
     AiBrainReply *streamConversation(const QString &soulText,
                                      const QList<AiBrainConversationMessage> &conversation,

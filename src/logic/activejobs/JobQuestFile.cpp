@@ -76,6 +76,21 @@ QuestField fieldNamed(const QString &lineName)
 // "Name: value" at the start of a line. The name is short letters and spaces,
 // and a colon followed by // is a web address, so a link such as https://...
 // on a line of its own is never read as a name.
+//
+// The pattern, piece by piece:
+//   ^\s*              the start of the line, then any spaces
+//   ([A-Za-z]         capture 1, the name: it starts with a letter,
+//    [A-Za-z ]{0,30}?)  then up to 30 more letters or spaces. The ? makes
+//                       it take as few as it can, so spaces before the
+//                       colon fall to the next piece, not into the name.
+//   \s*:              any spaces, then the colon
+//   (?!//)            the colon must not be followed by //, or it is a link
+//   \s?               one space after the colon, if there is one
+//   (.*)$             capture 2, the value: the rest of the line
+//
+// The limit of 31 letters keeps a sentence with a colon in it, such as a
+// note that says "Call them back about the following: pay", from being
+// read as a line name.
 const QRegularExpression &namedLinePattern()
 {
     static const QRegularExpression pattern(
@@ -83,6 +98,7 @@ const QRegularExpression &namedLinePattern()
     return pattern;
 }
 
+// Where one field's text is kept inside a JobQuest. nullptr for NotAField.
 QString *fieldInQuest(JobQuest &quest, QuestField field)
 {
     switch (field) {
@@ -101,12 +117,17 @@ QString *fieldInQuest(JobQuest &quest, QuestField field)
     return nullptr;
 }
 
+// The invisible mark some Windows editors put at the very start of a UTF-8
+// file. It is not part of the first line.
+constexpr char16_t byteOrderMark = 0xFEFF;
+
 // The text of a file as lines, with a leading byte order mark and Windows
-// line endings taken off.
+// line endings taken off. Windows ends a line with \r\n and old Macs with \r
+// alone. Both become \n before the split.
 QStringList linesOf(const QString &fileText)
 {
     QString cleanText = fileText;
-    if (cleanText.startsWith(QChar(0xFEFF))) {
+    if (cleanText.startsWith(QChar(byteOrderMark))) {
         cleanText.remove(0, 1);
     }
     cleanText.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
@@ -122,18 +143,20 @@ const QLocale &monthFirstLocale()
     return locale;
 }
 
+// One "Name: value" line.
 QString writtenLine(const QString &writtenName, const QString &value)
 {
     return writtenName + QStringLiteral(": ") + value;
 }
 
 // Notes may hold several lines. The first goes on the "Notes:" line and the
-// rest follow it, each on its own line.
+// rest follow it, each on its own line. Blank lines are dropped, because the
+// reader skips them anyway.
 QStringList writtenLinesFor(const QString &writtenName, const QString &value)
 {
     QStringList valueLines = value.split(QLatin1Char('\n'));
-    QStringList written;
-    written.append(writtenLine(writtenName, valueLines.takeFirst().trimmed()));
+    QStringList writtenLines;
+    writtenLines.append(writtenLine(writtenName, valueLines.takeFirst().trimmed()));
     for (const QString &laterLine : valueLines) {
         // A later line that looks like "Name: value" would be read back as a
         // field. Starting it with two spaces does not stop that, so a dash
@@ -143,18 +166,27 @@ QStringList writtenLinesFor(const QString &writtenName, const QString &value)
             continue;
         }
         if (namedLinePattern().match(trimmedLine).hasMatch()) {
-            written.append(QStringLiteral("- ") + trimmedLine);
+            writtenLines.append(QStringLiteral("- ") + trimmedLine);
         } else {
-            written.append(trimmedLine);
+            writtenLines.append(trimmedLine);
         }
     }
-    return written;
+    return writtenLines;
 }
 
 } // namespace
 
 namespace JobQuestFile {
 
+// Reads the file one line at a time. Each line is one of three kinds:
+//   1. A known "Name: value" line. Its value goes into that field, and that
+//      field becomes the one being read.
+//   2. An unknown "Name: value" line. It is skipped, and no field is being
+//      read after it.
+//   3. A line with no name. If a field is being read, the line is added to
+//      it on a new line. This is how notes run over several lines.
+// After every line is read, the fields are checked and each problem gets a
+// sentence.
 ReadResult readQuestText(const QString &fileText)
 {
     ReadResult result;
@@ -236,6 +268,8 @@ bool readStatus(const QString &statusText, PipelineStage &stageRead)
         { QStringLiteral("withdrawn"),    PipelineStage::Closed },
         { QStringLiteral("declined"),     PipelineStage::Closed },
     };
+    // Lowercase, single spaces, and any full stops or exclamation marks at
+    // the end taken off, so "Applied." and "APPLIED!" both read as applied.
     const QString cleanWord = statusText.simplified().toLower()
         .remove(QRegularExpression(QStringLiteral("[.!]+$")));
     const auto found = acceptedWords.constFind(cleanWord);
@@ -273,6 +307,8 @@ QString appliedOnTextFor(const QDate &appliedDate)
 
 QString questTextFor(const JobQuest &quest)
 {
+    // A copy, because fieldInQuest hands back a pointer it could write
+    // through, and the caller's quest must not change.
     JobQuest questToWrite = quest;
     QStringList lines;
     for (const FieldName &fieldName : fieldsInWritingOrder()) {
@@ -313,6 +349,14 @@ QString questTextWithBoardChanges(const QString &existingText,
         { QuestField::Notes,     QStringLiteral("Notes"),      notesText },
     };
 
+    // Walks the old file one line at a time and builds the new one:
+    //   - A Status, Applied on or Notes line is replaced by the board's
+    //     value. The lines with no name that follow it belonged to its old
+    //     value, so they are skipped until the next named line or blank
+    //     line. A second copy of the same line is dropped.
+    //   - Any other named line is kept as it is.
+    //   - A line with no name that is not part of an old board value is kept.
+    // A board field with an empty value is left out, which removes its line.
     QStringList newLines;
     bool skippingOldValueLines = false;
     for (const QString &line : existingLines) {

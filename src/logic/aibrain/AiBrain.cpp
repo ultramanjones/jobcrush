@@ -1,5 +1,6 @@
 #include "AiBrain.h"
 
+#include <QDebug>
 #include <QLocale>
 #include <QSettings>
 
@@ -30,6 +31,10 @@ const AiProviderKind providerRoutingOrder[] = {
 // preferences: app-wide QSettings, no accounts, set it and forget it.
 const QString selectedProviderSettingsKey =
     QStringLiteral("aiBrain/selectedProviderKind");
+
+// One setting per provider under this group: "aiBrain/brainLevels/gemini" =
+// "Quick", and so on.
+const QString brainLevelsSettingsGroup = QStringLiteral("aiBrain/brainLevels");
 
 // The stored value meaning "the user deliberately chose no brain at all",
 // which is a legitimate state and must not be mistaken for "never chose".
@@ -109,6 +114,15 @@ void AiBrain::loadFromSettings()
     QSettings settings;
     storedSelectionText = settings.value(selectedProviderSettingsKey).toString();
 
+    storedBrainLevels.clear();
+    settings.beginGroup(brainLevelsSettingsGroup);
+    for (const QString &providerStorageName : settings.childKeys()) {
+        storedBrainLevels.insert(providerStorageName,
+                                 aiBrainLevelFromName(settings.value(providerStorageName)
+                                                          .toString()));
+    }
+    settings.endGroup();
+
     resetConnectionStateAfterChange();
     emit selectedProviderChanged();
     emit configurationChanged();
@@ -118,6 +132,34 @@ void AiBrain::persistSelectionToSettings() const
 {
     QSettings settings;
     settings.setValue(selectedProviderSettingsKey, storedSelectionText);
+}
+
+AiBrainLevel AiBrain::brainLevelFor(AiProviderKind providerKind) const
+{
+    return storedBrainLevels.value(aiProviderKindToStorageText(providerKind),
+                                   AiBrainLevel::Balanced);
+}
+
+void AiBrain::setBrainLevelFor(AiProviderKind providerKind, AiBrainLevel brainLevel)
+{
+    const QString providerStorageName = aiProviderKindToStorageText(providerKind);
+    if (brainLevelFor(providerKind) == brainLevel
+            && storedBrainLevels.contains(providerStorageName)) {
+        return;
+    }
+    storedBrainLevels.insert(providerStorageName, brainLevel);
+
+    // Saved at once, like every other setting.
+    QSettings settings;
+    settings.setValue(QStringLiteral("%1/%2").arg(brainLevelsSettingsGroup, providerStorageName),
+                      aiBrainLevelName(brainLevel));
+    emit brainLevelsChanged();
+}
+
+QString AiBrain::modelNameFor(AiProviderKind providerKind, AiBrainLevel brainLevel) const
+{
+    const AiBrainProvider *provider = providerFor(providerKind);
+    return provider != nullptr ? provider->modelNameFor(brainLevel) : QString();
 }
 
 AiBrainProvider *AiBrain::providerFor(AiProviderKind providerKind) const
@@ -168,7 +210,7 @@ QString AiBrain::reasonProviderCannotBeSelected(AiProviderKind providerKind) con
     const QString vendorName = providerDisplayNameFor(providerKind);
 
     if (providerFor(providerKind) == nullptr) {
-        // Nothing the user did — Job Crush simply hasn't learned this one yet.
+        // Nothing the user did. Job Crush has no client for this one yet.
         return QStringLiteral("Job Crush doesn't speak %1 yet — that one is "
                               "still being built.").arg(vendorName);
     }
@@ -185,7 +227,7 @@ AiProviderKind AiBrain::effectivelySelectedProviderKind(bool &found) const
     }
 
     // An explicit choice rules, as long as it can still work. (A deleted key
-    // does not erase the choice; it just means nothing is active right now.)
+    // does not erase the choice. It means nothing is active right now.)
     if (!storedSelectionText.isEmpty()) {
         const AiProviderKind chosenKind =
             aiProviderKindFromStorageText(storedSelectionText);
@@ -241,9 +283,14 @@ QString AiBrain::selectedProviderDisplayName() const
 
 void AiBrain::selectProviderKind(AiProviderKind providerKind)
 {
-    // A brain that cannot work is never offered as a choice, so this is a
-    // belt-and-braces guard rather than a path the UI can reach.
+    // A brain that cannot work is never offered as a choice, so the UI
+    // should never reach this. It is a second guard, and it is logged
+    // because reaching it means a caller has a bug.
     if (!providerIsSelectable(providerKind)) {
+        qWarning().noquote() << QStringLiteral(
+            "AiBrain::selectProviderKind: ignored the choice of \"%1\" — it has no "
+            "client or no switched-on key")
+            .arg(aiProviderKindToStorageText(providerKind));
         return;
     }
 
@@ -255,7 +302,7 @@ void AiBrain::selectProviderKind(AiProviderKind providerKind)
     emit configurationChanged();
 
     // Switching brains is a key moment: find out right now whether the new
-    // one actually answers. The user just ticked a box, so if the vendor
+    // one actually answers. The user has ticked a box, so if the vendor
     // refuses, they hear about it rather than watching the tick vanish.
     checkConnectionBecauseUserAskedFor();
 }
@@ -401,6 +448,10 @@ void AiBrain::checkConnectionNow()
 
     connect(activeVerificationReply, &AiBrainReply::failed, this,
             [this, vendorName](const QString &humanReadableReason) {
+        qWarning().noquote() << QStringLiteral(
+            "AiBrain::checkConnectionNow: connection check failed for %1 — %2")
+            .arg(vendorName, humanReadableReason);
+
         // Facts about the situation, never a verdict about the person.
         const QString whatToDoNext = activeVerificationReply->suggestedNextStep();
         const bool announceOutLoud = checkInFlightWasStartedByUser;
@@ -427,6 +478,8 @@ AiBrainReply *AiBrain::streamConversation(
     bool found = false;
     const AiProviderKind selectedKind = effectivelySelectedProviderKind(found);
     if (!found) {
+        qWarning().noquote() << QStringLiteral(
+            "AiBrain::streamConversation: no request sent — no usable brain is selected");
         return nullptr;
     }
 
@@ -434,10 +487,19 @@ AiBrainReply *AiBrain::streamConversation(
     const AiCredential selectedCredential =
         credentialToUse(selectedKind, credentialFound);
     if (!credentialFound) {
+        qWarning().noquote() << QStringLiteral(
+            "AiBrain::streamConversation: no request sent to \"%1\" — it has no "
+            "switched-on key")
+            .arg(aiProviderKindToStorageText(selectedKind));
         return nullptr;
     }
 
+    // The caller says what the request needs. How much brain to use is the
+    // user's choice for this provider, so it is filled in here.
+    AiBrainRequestOptions optionsWithBrainLevel = requestOptions;
+    optionsWithBrainLevel.brainLevel = brainLevelFor(selectedKind);
+
     return providerFor(selectedKind)->streamConversation(
         brainSoul.assembledSoulText(), conversation, selectedCredential, replyParent,
-        requestOptions);
+        optionsWithBrainLevel);
 }

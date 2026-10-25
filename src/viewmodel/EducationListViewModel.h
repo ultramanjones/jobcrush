@@ -13,8 +13,8 @@ class ProDocsIntake;
 //
 // Serves the schooling Job Crush read out of the user's documents, and takes
 // their corrections back down. Same shape and same reasoning as
-// WorkExperienceListViewModel — every row is editable, because a parse that
-// cannot be corrected is a parse nobody can rely on.
+// WorkExperienceListViewModel. Every row is editable, because the reading
+// is a guess and the user must be able to fix it.
 class EducationListViewModel : public QAbstractListModel {
     Q_OBJECT
 

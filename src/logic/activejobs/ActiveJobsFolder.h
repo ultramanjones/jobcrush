@@ -106,33 +106,63 @@ signals:
     void folderStatusChanged();
 
 private:
+    // The watcher saw a change. Starts the one-second wait again.
     void somethingChangedOnDisk();
+
+    // Writes each card's column, applied date and notes into its JobQuest.txt
+    // when they differ from what was last written. Makes a job folder for any
+    // card that has none. Runs whenever the board changes.
     void writeBoardChangesToFolders();
+
+    // Points the disk watcher at the Active Jobs folder, every job folder in
+    // it, and every JobQuest.txt.
     void watchEveryJobFolder();
 
     // Reading one file.
+
+    // A known folder's file changed. Moves the card, sets its date and notes,
+    // and corrects the job's facts, to match the file.
     void followChangedFile(ActiveJobFolder &link, const JobQuest &quest,
                            const QDateTime &fileChangedTimestamp,
                            const QString &folderName);
+
+    // A folder Job Crush has not seen before. Ties it to the card for the same
+    // job if there is one, or puts a new card on the board. False when it
+    // could do neither; the problem list or the log says why.
     bool putNewFolderOnTheBoard(const QString &folderName, const JobQuest &quest,
                                 const QDateTime &fileChangedTimestamp);
 
     // Writing one file.
+
+    // Makes a new job folder and JobQuest.txt for a card that has none.
     void makeJobFolderForCard(const TargetedJob &targetedJob);
+
+    // Saves JobQuest.txt in one job folder and hands back the file's new
+    // last-changed time. False, with a log line, when the write failed.
     bool writeQuestFile(const QString &folderName, const QString &fileText,
                         QDateTime &fileChangedTimestamp);
 
+    // A folder name Windows accepts and no folder in Active Jobs has yet.
     QString uniqueFolderNameFor(const QString &wantedName) const;
+
+    // The saved link for one folder name or one card, or nullptr.
     ActiveJobFolder *linkForFolder(const QString &folderName);
     ActiveJobFolder *linkForCard(qint64 jobApplicationId);
     const ActiveJobFolder *linkForCard(qint64 jobApplicationId) const;
+
+    // Adds "folder name: sentence" to the list the Settings page shows.
     void reportProblem(const QString &folderName, const QString &problemSentence);
 
     JobPipelines &board;
     JobPostingRepository &postingRepository;
     ActiveJobFolderRepository &linkRepository;
 
+    // The folder the user picked. Empty means the default folder.
     QString chosenFolderPath;
+
+    // One link per job folder. A link ties a folder name to a card, and holds
+    // what was last read from or written to the file, so a change on either
+    // side can be spotted.
     QList<ActiveJobFolder> links;
     QFileSystemWatcher diskWatcher;
     QTimer waitForWritingToStop;
@@ -140,8 +170,12 @@ private:
     // True while Job Crush is following the files. The board changes as it
     // does, and those changes must not be written straight back.
     bool followingTheFiles = false;
+
+    // False until the composition root calls
+    // startKeepingTheBoardAndFolderTheSame. Nothing is read or written before.
     bool hasStarted = false;
 
+    // What the last look found, for the Settings page.
     int jobFoldersSeen = 0;
     QString lastLookSentence;
     QStringList problemSentences;

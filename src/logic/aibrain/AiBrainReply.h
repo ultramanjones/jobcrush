@@ -11,9 +11,9 @@
 // streams it (streamed text IS the progress indicator — the no-spinner law
 // is satisfied by nature here).
 //
-// Ownership: parented to whoever asked (Qt parent-child), and additionally
-// self-owned in the sense that callers should deleteLater() it once finished
-// or failed has fired.
+// Ownership: the reply is a Qt child of whoever asked, so it dies with them.
+// Callers should also deleteLater() it once finished or failed has fired, so
+// a long-lived caller does not collect old replies.
 class AiBrainReply : public QObject {
     Q_OBJECT
 public:
@@ -61,7 +61,7 @@ public:
     QString suggestedNextStep() const { return suggestedNextStepText; }
 
 signals:
-    // A new piece of response text just arrived from the provider.
+    // A new piece of response text arrived from the provider.
     void textFragmentReceived(const QString &textFragment);
 
     // The full response arrived successfully.

@@ -26,7 +26,8 @@ struct TargetedJob {
 
 // JobPipelines
 //
-// The board, as a subject rather than as a screen — a Logic layer class.
+// The board's data and rules, with nothing about how it looks. A Logic layer
+// class.
 //
 // Named plural on purpose. A job search is not one funnel that you feed and
 // wait beside; it is a dozen of them running at once, at different speeds,
@@ -60,6 +61,16 @@ public:
     // a history rather than reshuffling itself every time you look at it).
     QList<TargetedJob> everyTargetedJob() const;
 
+    // The user checked this card's job themselves and it is still open.
+    // Takes off any "gone" mark, and Job Crush never marks the job gone
+    // again. Returns false when the card is not on the board or the save
+    // failed (the repository logs why).
+    bool markStillOpenByUser(qint64 jobApplicationId);
+
+    // Every card that is not in Closed, in the same order. A closed job's
+    // search is over, so pages like Staging leave it out.
+    QList<TargetedJob> everyOpenTargetedJob() const;
+
     // Every way of reaching one job. The card shows these so the user picks
     // the route rather than the app picking it for them.
     QList<PostingSource> routesToJobPosting(qint64 jobPostingId) const;
@@ -75,8 +86,8 @@ public:
     //
     // Refuses politely if that posting is already up there: crushing the same
     // job twice is a slip, not an intention, and a second identical card
-    // teaches the user that the board lies about how many irons are in the
-    // fire. reasonText explains either outcome in words the user can read.
+    // would make the board show more jobs in play than there are. reasonText
+    // explains either outcome in words the user can read.
     bool crushJobPosting(qint64 jobPostingId, QString &reasonText);
 
     // Puts a job from a job folder on the board, in the column the folder's
@@ -143,5 +154,6 @@ private:
     JobPostingRepository &postingRepository;
     PostingSourceRepository &jobRouteRepository;
 
+    // Every card, as loadFromDatabase last read them.
     QList<TargetedJob> loadedTargetedJobs;
 };

@@ -3,6 +3,7 @@
 #include "../logic/prodocs/MoonlightDocumentCleanup.h"
 
 #include <QDate>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -37,25 +38,43 @@ QString importedWhenTextFor(const QDateTime &importedTimestamp)
                                                              QStringLiteral("MMMM d")));
 }
 
+const qint64 bytesPerKilobyte = 1024;
+const qint64 bytesPerMegabyte = 1024 * 1024;
+
+// Used to get the one digit after the point in "2.3 MB". A true tenth of a
+// megabyte is 104,857.6 bytes. This is 1024 * 105 = 107,520 bytes, a little
+// more than a true tenth, so the digit can read one lower than it should
+// near the top of each tenth. It never reaches 10.
+const qint64 bytesPerTenthOfMegabyte = 1024 * 105;
+
+// "812 bytes", "54 KB", "2.3 MB". Each step rounds down.
+// Under a kilobyte: the exact byte count.
+// Under a megabyte: whole kilobytes.
+// Otherwise: whole megabytes, a point, then the leftover bytes past the
+// whole megabytes divided into tenths, as one digit.
 QString fileSizeTextFor(qint64 fileSizeBytes)
 {
     if (fileSizeBytes <= 0) {
         return QString();
     }
-    if (fileSizeBytes < 1024) {
+    if (fileSizeBytes < bytesPerKilobyte) {
         return QStringLiteral("%1 bytes").arg(fileSizeBytes);
     }
-    if (fileSizeBytes < 1024 * 1024) {
-        return QStringLiteral("%1 KB").arg(fileSizeBytes / 1024);
+    if (fileSizeBytes < bytesPerMegabyte) {
+        return QStringLiteral("%1 KB").arg(fileSizeBytes / bytesPerKilobyte);
     }
     return QStringLiteral("%1.%2 MB")
-        .arg(fileSizeBytes / (1024 * 1024))
-        .arg((fileSizeBytes % (1024 * 1024)) / (1024 * 105));
+        .arg(fileSizeBytes / bytesPerMegabyte)
+        .arg((fileSizeBytes % bytesPerMegabyte) / bytesPerTenthOfMegabyte);
 }
 
-// Word count is the honest measure of whether a document actually loaded.
-// "2,140 words" tells the user their resume is in; "no readable text" tells
-// them it is not, and no file size or green tick can say either.
+// The word count tells the user whether a document really loaded.
+// "2,140 words" says their resume is in. "no readable text" says it is not.
+// A file size or a green tick cannot tell them either thing.
+//
+// How the count works: simplified() turns every run of spaces, tabs and
+// newlines into one space and trims both ends. The words are then the
+// spaces plus one.
 QString wordCountTextFor(const QString &extractedText)
 {
     if (extractedText.trimmed().isEmpty()) {
@@ -192,10 +211,15 @@ void ProfessionalDocumentListViewModel::setDocumentKindAt(int rowIndex,
     if (rowIndex < 0 || rowIndex >= loadedDocuments.count()) {
         return;
     }
-    if (repository.updateDocumentKind(
-            loadedDocuments.at(rowIndex).professionalDocumentId, documentKind)) {
-        reloadDocuments();
+    const qint64 professionalDocumentId = loadedDocuments.at(rowIndex).professionalDocumentId;
+    if (!repository.updateDocumentKind(professionalDocumentId, documentKind)) {
+        qWarning().noquote() << QStringLiteral(
+            "ProfessionalDocumentListViewModel::setDocumentKindAt: could not set kind "
+            "\"%1\" on document %2 — %3")
+                .arg(documentKind).arg(professionalDocumentId).arg(repository.lastErrorText());
+        return;
     }
+    reloadDocuments();
 }
 
 void ProfessionalDocumentListViewModel::removeDocumentAt(int rowIndex)
@@ -205,14 +229,25 @@ void ProfessionalDocumentListViewModel::removeDocumentAt(int rowIndex)
     }
     const ProfessionalDocument professionalDocument = loadedDocuments.at(rowIndex);
 
-    // Only Job Crush's own copy goes. The user's file was never ours to
-    // delete, and deleting somebody's only resume would be unforgivable.
-    if (!professionalDocument.storedFilePath.isEmpty()) {
-        QFile::remove(professionalDocument.storedFilePath);
+    // Only Job Crush's own copy goes. The user's original file is never
+    // deleted. It might be their only copy of their resume.
+    if (!professionalDocument.storedFilePath.isEmpty()
+            && !QFile::remove(professionalDocument.storedFilePath)) {
+        qWarning().noquote() << QStringLiteral(
+            "ProfessionalDocumentListViewModel::removeDocumentAt: could not delete Job "
+            "Crush's copy \"%1\" of document %2 — the file may be missing or in use")
+                .arg(professionalDocument.storedFilePath)
+                .arg(professionalDocument.professionalDocumentId);
     }
-    if (repository.removeProfessionalDocument(professionalDocument.professionalDocumentId)) {
-        reloadDocuments();
+    if (!repository.removeProfessionalDocument(professionalDocument.professionalDocumentId)) {
+        qWarning().noquote() << QStringLiteral(
+            "ProfessionalDocumentListViewModel::removeDocumentAt: could not remove "
+            "document %1 — %2")
+                .arg(professionalDocument.professionalDocumentId)
+                .arg(repository.lastErrorText());
+        return;
     }
+    reloadDocuments();
 }
 
 void ProfessionalDocumentListViewModel::openDocumentAt(int rowIndex) const
@@ -224,7 +259,11 @@ void ProfessionalDocumentListViewModel::openDocumentAt(int rowIndex) const
     if (storedFilePath.isEmpty()) {
         return;
     }
-    QDesktopServices::openUrl(QUrl::fromLocalFile(storedFilePath));
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(storedFilePath))) {
+        qWarning().noquote() << QStringLiteral(
+            "ProfessionalDocumentListViewModel::openDocumentAt: could not open \"%1\" — "
+            "the system refused it").arg(storedFilePath);
+    }
 }
 
 void ProfessionalDocumentListViewModel::rereadEveryDocument()
@@ -260,8 +299,11 @@ void ProfessionalDocumentListViewModel::saveCopyOfDocumentAt(int rowIndex,
 
     const ProfessionalDocument &document = loadedDocuments.at(rowIndex);
 
-    // The name the user already knows this document by, with anything the
-    // filesystem refuses taken out.
+    // The name the user already knows this document by, without its old
+    // extension, and with the characters Windows refuses in a file name taken
+    // out. The pattern is one character class holding a backslash, then
+    // / : * ? " < > |. The backslash is written four times over because both
+    // C++ and the pattern need it escaped.
     QString baseName = QFileInfo(document.displayName).completeBaseName();
     baseName.remove(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")));
     baseName = baseName.trimmed();
@@ -280,8 +322,7 @@ void ProfessionalDocumentListViewModel::saveCopyOfDocumentAt(int rowIndex,
         return;
     }
 
-    // The full path, not "saved". A file somebody cannot find was not
-    // delivered, and this is the sentence they will read to go and get it.
+    // The full path, not only "saved", so the user can go and find the file.
     reportOutcome(QStringLiteral("Saved a %1 copy: %2")
                       .arg(ExportFormat::displayNameFor(format),
                            QDir::toNativeSeparators(outcome.writtenFilePath)));

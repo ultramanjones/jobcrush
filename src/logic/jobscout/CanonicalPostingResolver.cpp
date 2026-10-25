@@ -47,6 +47,9 @@ bool sameJobAsTheLead(const JobPosting &boardPosting, const JobPosting &leadAsPo
     return DuplicateJobDetector::locationsAgree(boardPosting, leadAsPosting);
 }
 
+// The first posting on the board that is the lead's job, or nullptr when
+// none is. The pointer points into boardPostings, so it is only good while
+// that list lives.
 const JobPosting *findTheLeadIn(const QList<JobPosting> &boardPostings,
                                 const JobPosting &leadAsPosting)
 {
@@ -66,7 +69,7 @@ struct BoardBeingSearched {
     bool givenUp = false;
 };
 
-// The state of one hunt across all three boards at once.
+// The state of one hunt across every board being searched at once.
 //
 // Held by shared_ptr and captured by the reply handlers. When the last handler
 // is gone, so is this. Nothing here points back at the lambdas, so there is no
@@ -94,16 +97,18 @@ struct EmployerBoardHunt {
     }
 };
 
+// Declared here because it and handleOneBoardAnswer call each other.
 void tryTheNextAccountName(const std::shared_ptr<EmployerBoardHunt> &hunt, int boardIndex);
 
 // Some boards do not send the company's real name. Workday sends an internal
-// office name instead ("0090 CORP-Corporate Office"), so the name the user
-// gave is better than anything the board says.
+// office name instead ("0090 CORP-Corporate Office"), and Taleo sends none, so
+// the name the user gave is better than anything the board says.
 JobPosting withTheLeadsCompanyNameIfTheBoardHasNone(JobPosting boardPosting,
                                                     const JobPosting &leadAsPosting)
 {
-    if (boardPosting.postingSource == AtsBoardName::Workday
-            && !leadAsPosting.companyName.trimmed().isEmpty()) {
+    const bool boardSendsNoRealName = boardPosting.postingSource == AtsBoardName::Workday
+                                      || boardPosting.postingSource == AtsBoardName::Taleo;
+    if (boardSendsNoRealName && !leadAsPosting.companyName.trimmed().isEmpty()) {
         boardPosting.companyName = leadAsPosting.companyName.trimmed();
     }
     return boardPosting;
@@ -190,7 +195,7 @@ void handleOneBoardAnswer(const std::shared_ptr<EmployerBoardHunt> &hunt,
     BoardBeingSearched &board = hunt->boards[boardIndex];
 
     // Jobs came back, so this account name was right — this really is the
-    // employer's board. The job just is not on it, which usually means it has
+    // employer's board. The job is not on it, which usually means it has
     // been filled. Trying more spellings of a name that already worked would
     // only find other companies, so this board is done.
     if (!boardPostings.isEmpty()) {
@@ -208,6 +213,9 @@ void handleOneBoardAnswer(const std::shared_ptr<EmployerBoardHunt> &hunt,
     tryTheNextAccountName(hunt, boardIndex);
 }
 
+// Asks one board about the next account name on its list. When the list is
+// empty, the board gives up, and if every board has given up, the hunt
+// answers "not found".
 void tryTheNextAccountName(const std::shared_ptr<EmployerBoardHunt> &hunt, int boardIndex)
 {
     BoardBeingSearched &board = hunt->boards[boardIndex];
@@ -265,6 +273,7 @@ EmployerBoardProvider *CanonicalPostingResolver::boardReaderFor(const QString &b
     if (boardName == AtsBoardName::Ashby)      return &ashbyBoard;
     if (boardName == AtsBoardName::Workday)    return &workdayBoard;
     if (boardName == AtsBoardName::SmartRecruiters) return &smartRecruitersBoard;
+    if (boardName == AtsBoardName::Taleo)      return &taleoBoard;
     return nullptr;
 }
 
@@ -344,7 +353,8 @@ JobScoutReply *CanonicalPostingResolver::resolve(const JobLead &jobLead, QObject
         board.tenantsLeftToTry = { boardIdentity.tenant };
         hunt->boards.append(board);
     } else {
-        // Way 3: nothing but a company name to go on. Try all three systems.
+        // Way 3: nothing but a company name to go on. Try every system whose
+        // account names can be guessed.
         const QStringList tenantGuesses =
             EmployerTenantGuesser::tenantGuessesFor(jobLead.companyName);
         if (tenantGuesses.isEmpty() || jobLead.positionTitle.trimmed().isEmpty()) {
@@ -357,10 +367,18 @@ JobScoutReply *CanonicalPostingResolver::resolve(const JobLead &jobLead, QObject
         // posts. That is the only way to find a Workday job from a company
         // name alone: a Workday site cannot be guessed. Tried alongside the
         // guesses below.
+        //
+        // The list is read once, the first time it is needed. If it cannot be
+        // read, the hunt goes on with the guesses alone.
         static CompanyList knownCompanies = []() {
             CompanyList shippedList;
-            QString ignoredProblem;
-            CompanyList::readFromFile(shippedCppQtCompanyListPath, shippedList, ignoredProblem);
+            QString listReadProblem;
+            if (!CompanyList::readFromFile(shippedCppQtCompanyListPath, shippedList,
+                                           listReadProblem)) {
+                qWarning().noquote() << QStringLiteral(
+                    "CanonicalPostingResolver::resolve: could not read the shipped "
+                    "company list — %1").arg(listReadProblem);
+            }
             return shippedList;
         }();
         CompanyListEntry listedCompany;
@@ -375,6 +393,9 @@ JobScoutReply *CanonicalPostingResolver::resolve(const JobLead &jobLead, QObject
             }
         }
 
+        // The four systems whose account names can be guessed from a
+        // company name. Workday and Taleo are not tried with guesses. Here
+        // they are reached only through the company list above.
         for (EmployerBoardProvider *boardReader :
                  { static_cast<EmployerBoardProvider *>(&greenhouseBoard),
                    static_cast<EmployerBoardProvider *>(&leverBoard),

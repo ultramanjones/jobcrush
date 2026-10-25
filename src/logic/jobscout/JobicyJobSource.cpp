@@ -1,5 +1,6 @@
 #include "JobicyJobSource.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -27,11 +28,18 @@ const QString jobicyJobsEndpointUrl = QStringLiteral("https://jobicy.com/api/v2/
 // because closing the app and opening it again is not a new hour.
 const QString jobicyLastCheckedKey = QStringLiteral("jobScout/jobicy/lastCheckedAt");
 
-// Jobicy's stated fair use. Job Crush honours it.
+// Jobicy's stated fair use. Job Crush honors it.
 constexpr int minutesJobicyAsksUsToWait = 60;
+
+constexpr int secondsPerMinute = 60;
 
 // One sweep's worth. Jobicy's documented ceiling.
 constexpr int jobicyMaximumResultsPerSweep = 50;
+
+// An amount is treated as having cents when it is more than this far from a
+// whole number. A little over zero, so floating-point dust on a whole number
+// like 145000.0000001 does not print as $145,000.00.
+constexpr double smallestCentsWorthShowing = 0.004;
 
 // The pay line, built from the four separate fields Jobicy sends.
 //
@@ -47,7 +55,12 @@ QString payLineFrom(const QJsonObject &jobObject)
         return QString();
     }
 
+    // US English for the digit grouping: 145,000. Fixed, not the computer's
+    // own locale, so the same job reads the same on every machine.
     const QLocale plainLocale(QLocale::English, QLocale::UnitedStates);
+
+    // "$" for US dollars. Any other currency code goes in front as text,
+    // "EUR 90,000". No code at all means no mark.
     const QString currencyCode =
         jobObject.value(QStringLiteral("salaryCurrency")).toString().trimmed().toUpper();
     const QString currencyMark = currencyCode == QStringLiteral("USD")
@@ -58,10 +71,12 @@ QString payLineFrom(const QJsonObject &jobObject)
     // rounding $23.50 an hour changes the number the user is deciding on —
     // and hourly rates are exactly where the cents are real.
     auto writtenOut = [&](double amount) {
-        const bool hasCents = qAbs(amount - qRound(amount)) > 0.004;
+        const bool hasCents = qAbs(amount - qRound(amount)) > smallestCentsWorthShowing;
         return currencyMark + plainLocale.toString(amount, 'f', hasCents ? 2 : 0);
     };
 
+    // A real range prints as "low – high". One number, or two that are the
+    // same, prints as that one number.
     QString payLine;
     if (lowestPay > 0.0 && highestPay > 0.0 && highestPay > lowestPay) {
         payLine = QStringLiteral("%1 – %2").arg(writtenOut(lowestPay), writtenOut(highestPay));
@@ -120,6 +135,7 @@ JobPosting postingFromJobicyJob(const QJsonObject &jobObject, const QDateTime &s
     // posting, not on somebody's copy of it.
     jobPosting.sourceUrl = jobObject.value(QStringLiteral("url")).toString().trimmed();
 
+    // The full description when there is one, the short excerpt when not.
     jobPosting.fullDescriptionText = plainTextFromHtmlFragment(
         jobObject.value(QStringLiteral("jobDescription")).toString());
     if (jobPosting.fullDescriptionText.isEmpty()) {
@@ -146,13 +162,15 @@ int minutesLeftBeforeJobicyMayBeAskedAgain()
 
     // A clock that has gone backwards — a timezone change, a manual clock
     // set — must not lock the source out for hours. Treat it as due.
-    const qint64 minutesSince = lastChecked.secsTo(QDateTime::currentDateTime()) / 60;
+    const qint64 minutesSince =
+        lastChecked.secsTo(QDateTime::currentDateTime()) / secondsPerMinute;
     if (minutesSince < 0 || minutesSince >= minutesJobicyAsksUsToWait) {
         return 0;
     }
     return static_cast<int>(minutesJobicyAsksUsToWait - minutesSince);
 }
 
+// Starts the hour. Kept in settings so a restart does not reset it.
 void rememberThatJobicyWasJustChecked()
 {
     QSettings settings;
@@ -165,9 +183,22 @@ JobicyJobSource::JobicyJobSource() = default;
 
 JobSourceDescriptor JobicyJobSource::descriptor() const
 {
-    bool found = false;
-    return jobSourceDescriptorFor(jobicyStorageName, found);
+    bool descriptorWasFound = false;
+    const JobSourceDescriptor descriptor =
+        jobSourceDescriptorFor(jobicyStorageName, descriptorWasFound);
+    if (!descriptorWasFound) {
+        qWarning().noquote() << QStringLiteral(
+            "JobicyJobSource::descriptor: no catalog entry for \"%1\" — "
+            "the source catalog is missing it")
+                .arg(jobicyStorageName);
+    }
+    return descriptor;
 }
+
+// Steps: refuse inside the hour. Otherwise one GET with count and tag. The
+// clock starts as soon as Jobicy answers. The answer is {"jobs":[...]}, and
+// each job goes through postingFromJobicyJob. A job with no id (or id 0) or
+// no link is skipped.
 
 JobScoutReply *JobicyJobSource::searchForJobs(const JobSearchProfile &searchProfile,
                                               QObject *replyParent)

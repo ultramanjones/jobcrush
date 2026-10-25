@@ -13,8 +13,8 @@ import QtQuick
 //
 // A few tokens default to another token instead of magenta. Those are the ones
 // that are usually the same and only differ in one theme, such as the sidebar
-// text colors, which only Amish changes. A theme that needs something else just
-// sets it.
+// text colors, which only a few themes change. A theme that needs something
+// else sets it.
 QtObject {
     // What this theme is called in settings and in the saved preference.
     property string themeName: "unnamed"
@@ -51,7 +51,8 @@ QtObject {
     // Separate from the main text colors because the sidebar is the one
     // surface that can carry a solid block of color while the rest of the page
     // stays pale. Amish is the reason: dark ink on its blue sidebar would be
-    // unreadable. Every other theme uses the same colors as the page.
+    // unreadable. Wraith Wranglers sets them too, for its blue sidebar. The
+    // other themes use the same colors as the page.
     property color sidebarPrimaryTextColor: primaryTextColor
     property color sidebarSecondaryTextColor: secondaryTextColor
     property color sidebarMutedTextColor: mutedTextColor
@@ -70,7 +71,7 @@ QtObject {
     //
     // UI text is allowed to name a color. "A green dot means that slot already
     // has a key" is a useful sentence. It is not allowed to hardcode the word,
-    // because that sentence is wrong in four of the six themes. Any text that
+    // because that sentence is wrong in four of the seven themes. Any text that
     // names a color reads it from here.
     property string positiveColorName: "green"
 

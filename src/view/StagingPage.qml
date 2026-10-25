@@ -8,10 +8,15 @@ import JobCrush
 //
 // Nothing on this page sends anything to anyone. Moonlight writes drafts. The
 // user reads them, fixes them, exports the file, and sends it.
+//
+// This is the view layer. It binds to two viewmodels and holds no business
+// logic.
 Rectangle {
     id: stagingPage
 
     // Injected from Main.
+    // stagedJobListViewModel: the jobs on the board, for the left column.
+    // stagingPacketViewModel: the packet for the job picked on the left.
     property var stagedJobListViewModel
     property var stagingPacketViewModel
 
@@ -128,6 +133,7 @@ Rectangle {
                 required property string fitScoreText
                 required property string packetProgressText
 
+                // True for the job whose packet is showing on the right.
                 readonly property bool isCurrent:
                     stagingPage.stagedJobListViewModel.jobApplicationIdAt(jobRow.index)
                     === stagingPage.stagingPacketViewModel.currentJobApplicationId
@@ -351,19 +357,25 @@ Rectangle {
                                 enabled: actionButton.isAvailable
                                 cursorShape: actionButton.isAvailable
                                     ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                // Each button carries an action name from
+                                // the list above. This turns the name into
+                                // the matching viewmodel call. The three
+                                // writing jobs pass along the user's extra
+                                // instructions. Reading the posting and
+                                // scoring the fit do not take any.
                                 onClicked: {
-                                    const packet = stagingPage.stagingPacketViewModel
-                                    const extra = stagingPage.extraInstructionText
+                                    const packetViewModel = stagingPage.stagingPacketViewModel
+                                    const extraInstructions = stagingPage.extraInstructionText
                                     if (actionButton.modelData.action === "coverLetter") {
-                                        packet.draftCoverLetter(extra)
+                                        packetViewModel.draftCoverLetter(extraInstructions)
                                     } else if (actionButton.modelData.action === "resume") {
-                                        packet.tailorResume(extra)
+                                        packetViewModel.tailorResume(extraInstructions)
                                     } else if (actionButton.modelData.action === "followUp") {
-                                        packet.workOutFollowUp(extra)
+                                        packetViewModel.workOutFollowUp(extraInstructions)
                                     } else if (actionButton.modelData.action === "posting") {
-                                        packet.readThePostingAgain()
+                                        packetViewModel.readThePostingAgain()
                                     } else {
-                                        packet.scoreTheFit()
+                                        packetViewModel.scoreTheFit()
                                     }
                                 }
                             }
@@ -421,7 +433,11 @@ Rectangle {
             anchors.right: parent.right
             anchors.leftMargin: 28
             anchors.rightMargin: 28
-            height: visible ? Math.min(180, workingColumn.implicitHeight + 24) : 0
+            // The streamed text keeps growing. The cap keeps the panel from
+            // pushing the packet pieces off the screen.
+            readonly property int tallestWorkingPanelHeight: 180
+            height: visible
+                ? Math.min(tallestWorkingPanelHeight, workingColumn.implicitHeight + 24) : 0
             visible: stagingPage.stagingPacketViewModel.isBusy
             radius: 8
             color: JobCrushTheme.cardBackgroundColor
@@ -541,6 +557,9 @@ Rectangle {
             spacing: 12
             model: stagingPage.stagingPacketViewModel
 
+            // One piece of the packet: a cover letter, a resume, notes on
+            // the posting, and so on. The amber border stays on until the
+            // user ticks the box to say they have read it.
             delegate: Rectangle {
                 id: pieceCard
 
@@ -553,6 +572,8 @@ Rectangle {
                 required property bool isApprovedByUser
                 required property bool goesToTheEmployer
 
+                // True while the raw text box is open. Pressing Done saves
+                // the text to the viewmodel and shuts the box.
                 property bool isBeingEdited: false
 
                 width: packetListView.width - 14
@@ -695,14 +716,22 @@ Rectangle {
                         color: JobCrushTheme.primaryTextColor
                         font.pixelSize: JobCrushTheme.bodyFontSize
                         wrapMode: Text.WordWrap
-                        onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                        // Links in AI-written text go through the viewmodel,
+                        // which opens web and email links only.
+                        onLinkActivated: function(link) {
+                            stagingPage.stagingPacketViewModel.openApplyRoute(link)
+                        }
                     }
 
-                    // Edit view: the raw text.
+                    // Edit view: the raw text. It is never shorter than a few
+                    // lines, so a short piece still has room to type in.
                     Rectangle {
+                        readonly property int shortestEditorHeight: 140
+
                         width: parent.width
                         visible: pieceCard.isBeingEdited
-                        height: visible ? Math.max(140, pieceEditor.implicitHeight + 20) : 0
+                        height: visible
+                            ? Math.max(shortestEditorHeight, pieceEditor.implicitHeight + 20) : 0
                         radius: 6
                         color: JobCrushTheme.appBackgroundColor
                         border.width: pieceEditor.activeFocus ? 2 : 1

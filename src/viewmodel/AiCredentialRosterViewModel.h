@@ -8,11 +8,11 @@ class AiCredentialRoster;
 // AiCredentialRosterViewModel
 //
 // Serves the registered AI credentials to the Settings page as list rows,
-// and forwards the page's edits straight down to the roster. Instant-apply
-// by law: every action persists the moment it happens.
+// and forwards the page's edits straight down to the roster. Every action is
+// saved the moment it happens. There is no Apply button.
 //
-// Secret keys never travel up in full — rows expose a masked form
-// ("sk-…k3F9") so the Settings page can identify a key without displaying it.
+// Secret keys never travel up in full. Rows carry a masked form
+// ("sk-ant…k3F9") so the Settings page can name a key without showing it.
 class AiCredentialRosterViewModel : public QAbstractListModel {
     Q_OBJECT
 
@@ -57,20 +57,20 @@ public:
     // The "Delete key" action: clears the provider's slot entirely.
     Q_INVOKABLE void deleteProviderKey(const QString &providerKindName);
 
-    // Opens the provider's own official get-a-key page in the browser —
-    // the "where do I get a key?" helping hand. Setup must never require
-    // googling (easiest-app-ever law).
+    // Opens the provider's own official get-a-key page in the browser, so the
+    // user never has to search the web to find out where keys come from.
     Q_INVOKABLE void openProviderKeyInstructions(const QString &providerKindName) const;
 
-    // Usage/spend lives on the provider's own dashboard — the one accurate
-    // ledger. False only for local providers (Ollama) with nothing to meter.
+    // Usage and spending live on the provider's own dashboard, which is the
+    // only accurate record. False only for Ollama, which runs locally and has
+    // nothing to bill.
     Q_INVOKABLE bool providerHasUsagePage(const QString &providerKindName) const;
     Q_INVOKABLE void openProviderUsagePage(const QString &providerKindName) const;
 
-    // Paste guardrail: keys wear recognizable prefixes (sk-ant-, sk-or-,
-    // AIza...). If the candidate key looks like it belongs to a DIFFERENT
-    // provider than the selected slot, returns a friendly warning; empty
-    // string when all is well. Advisory only — never blocks the add.
+    // Paste check. Keys start with known prefixes (sk-ant-, sk-or-, AIza...).
+    // If the pasted key looks like it belongs to a DIFFERENT provider than
+    // the selected slot, this returns a warning. It returns an empty string
+    // when all is well. It only warns. It never blocks the add.
     Q_INVOKABLE QString keyFormatWarning(const QString &providerKindName,
                                          const QString &candidateKey) const;
 

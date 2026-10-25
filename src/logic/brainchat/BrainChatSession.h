@@ -52,7 +52,10 @@ signals:
     void brainRespondingChanged();
 
 private:
+    // Adds one message to the end of the transcript and emits messageAppended.
     void appendMessage(const BrainChatMessage &message);
+
+    // Adds a message from the app itself, such as an error, to the transcript.
     void appendSystemNotice(const QString &noticeText);
 
     // The transcript translated into what providers expect: human and brain

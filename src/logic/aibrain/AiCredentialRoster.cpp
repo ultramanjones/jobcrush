@@ -1,11 +1,13 @@
 #include "AiCredentialRoster.h"
 
+#include <QDebug>
 #include <QSettings>
 
 namespace {
-// Settings layout:
-//   aiCredentialRoster/count            — how many entries
-//   aiCredentialRoster/1/providerKind   — "anthropic" | "openai" | "ollama"
+// Settings layout (QSettings arrays count from 1 on disk):
+//   aiCredentialRoster/size             — how many entries
+//   aiCredentialRoster/1/providerKind   — "anthropic" | "openrouter" | "openai"
+//                                         | "gemini" | "ollama"
 //   aiCredentialRoster/1/secretKey
 //   aiCredentialRoster/1/displayLabel
 //   aiCredentialRoster/1/isEnabled
@@ -44,7 +46,10 @@ void AiCredentialRoster::loadFromSettings()
 void AiCredentialRoster::saveToSettings() const
 {
     QSettings settings;
-    settings.remove(settingsGroupName); // rewrite the whole array; it is tiny
+    // The whole array is rewritten each time. It holds a few keys at most, and
+    // removing the old group first means a shorter list leaves no stale
+    // entries behind.
+    settings.remove(settingsGroupName);
     settings.beginWriteArray(settingsGroupName, registeredCredentials.count());
     for (int rosterIndex = 0; rosterIndex < registeredCredentials.count(); ++rosterIndex) {
         settings.setArrayIndex(rosterIndex);
@@ -86,6 +91,10 @@ void AiCredentialRoster::addCredential(const AiCredential &credential)
 void AiCredentialRoster::removeCredentialAt(int rosterIndex)
 {
     if (rosterIndex < 0 || rosterIndex >= registeredCredentials.count()) {
+        qWarning().noquote() << QStringLiteral(
+            "AiCredentialRoster::removeCredentialAt: nothing removed for index %1 — "
+            "the roster holds %2 keys")
+            .arg(rosterIndex).arg(registeredCredentials.count());
         return;
     }
     registeredCredentials.removeAt(rosterIndex);
@@ -111,6 +120,10 @@ void AiCredentialRoster::removeAllCredentialsFor(AiProviderKind providerKind)
 void AiCredentialRoster::setCredentialEnabled(int rosterIndex, bool isEnabled)
 {
     if (rosterIndex < 0 || rosterIndex >= registeredCredentials.count()) {
+        qWarning().noquote() << QStringLiteral(
+            "AiCredentialRoster::setCredentialEnabled: nothing changed for index %1 — "
+            "the roster holds %2 keys")
+            .arg(rosterIndex).arg(registeredCredentials.count());
         return;
     }
     registeredCredentials[rosterIndex].isEnabled = isEnabled;

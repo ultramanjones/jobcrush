@@ -9,10 +9,9 @@
 
 namespace {
 
-// One comma-separated line becomes a list. Splitting on commas AND newlines
-// means a pasted column of skills works exactly as well as a typed line —
-// people paste, and an app that punishes them for it is an app that adds
-// friction for no reason.
+// One typed line becomes a list. The line is split at every comma,
+// semicolon and newline, so a pasted column of skills works as well as a
+// typed line. Each piece is trimmed, and empty pieces are dropped.
 QStringList termListFromTypedLine(const QString &typedLine)
 {
     static const QRegularExpression termSeparatorPattern(QStringLiteral("[,;\\n]"));
@@ -128,24 +127,27 @@ QString JobSearchProfileViewModel::addTheCppQtPreset()
         return problemText;
     }
 
-    // Adds what is missing, compared without case, and keeps the user's own
-    // entries first and in their order.
-    auto withAdded = [](QStringList current, const QStringList &additions, int &addedCount) {
-        for (const QString &addition : additions) {
-            if (!current.contains(addition, Qt::CaseInsensitive)) {
-                current.append(addition);
+    // Adds each preset term the list does not already have, compared without
+    // case. The user's own entries stay first and in their order. Counts how
+    // many were added, for the sentence at the end.
+    auto listWithMissingTermsAdded = [](QStringList existingTerms,
+                                        const QStringList &presetTerms, int &addedCount) {
+        for (const QString &presetTerm : presetTerms) {
+            if (!existingTerms.contains(presetTerm, Qt::CaseInsensitive)) {
+                existingTerms.append(presetTerm);
                 ++addedCount;
             }
         }
-        return current;
+        return existingTerms;
     };
 
     int titlesAdded = 0;
     int skillsAdded = 0;
-    profile.setTargetJobTitles(withAdded(profile.targetJobTitles(), preset.jobTitles,
-                                         titlesAdded));
-    profile.setSkillKeywords(withAdded(profile.skillKeywords(),
-                                       preset.strongSkills + preset.goodSkills, skillsAdded));
+    profile.setTargetJobTitles(listWithMissingTermsAdded(profile.targetJobTitles(),
+                                                         preset.jobTitles, titlesAdded));
+    profile.setSkillKeywords(listWithMissingTermsAdded(profile.skillKeywords(),
+                                                       preset.strongSkills + preset.goodSkills,
+                                                       skillsAdded));
     emit searchProfileChanged();
 
     if (titlesAdded == 0 && skillsAdded == 0) {

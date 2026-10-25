@@ -1,12 +1,9 @@
 #include "JobScout.h"
 
-#include <algorithm>
-
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
-#include <QSet>
 #include <QTextStream>
 
 #include "../../model/JobPostingRepository.h"
@@ -31,20 +28,13 @@
 
 namespace {
 
-// Two boards can carry the same job. This key is how Top Prospects tells
-// that two postings are the same job: the company and the title together,
-// lowercase, with everything except letters and numbers taken out. That way
-// a difference in spacing or punctuation between two boards does not make
-// the same job show twice.
-QString crossSourceIdentityOf(const JobPosting &jobPosting)
-{
-    QString identityText =
-        (jobPosting.companyName + jobPosting.positionTitle).toLower();
-    identityText.removeIf([](QChar character) {
-        return !character.isLetterOrNumber();
-    });
-    return identityText;
-}
+// During a sweep, discoveriesChanged is sent at most once in this many
+// milliseconds, however many companies answer. Each send makes the page
+// rebuild its rows, and hundreds of rebuilds would freeze it.
+constexpr int discoveriesChangedPauseMilliseconds = 1000;
+
+// Goes between the per-site lines in the progress, trouble and notice text.
+const QString sourceLineSeparator = QStringLiteral("   ·   ");
 
 } // namespace
 
@@ -55,6 +45,7 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
                    JobSearchProfile &searchProfile,
                    AiBrain &aiBrain,
                    const QString &diagnosticsFolderPath,
+                   const QString &databaseFilePath,
                    QObject *parent)
     : QObject(parent)
     , sweepLogFolderPath(diagnosticsFolderPath)
@@ -90,9 +81,63 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
 
     connect(&followedEmployerRoster, &FollowedEmployerRoster::followedEmployersChanged,
             this, &JobScout::discoveriesChanged);
+
+    // The background thread for saving and ranking. The worker is moved onto
+    // it, opens its own database connection there, and is deleted there when
+    // the thread stops.
+    qRegisterMetaType<DiscoveryRowRequest>();
+    qRegisterMetaType<DiscoveryRows>();
+    qRegisterMetaType<FindingsSaveOutcome>();
+
+    discoveryWorker = new DiscoveryWorker(databaseFilePath);
+    discoveryWorker->moveToThread(&discoveryThread);
+    connect(&discoveryThread, &QThread::finished, discoveryWorker, &QObject::deleteLater);
+    connect(discoveryWorker, &DiscoveryWorker::findingsSaved,
+            this, &JobScout::whenFindingsWereSaved);
+    connect(discoveryWorker, &DiscoveryWorker::jobsMissingFromBoards,
+            this, &JobScout::whenJobsAreMissingFromBoards);
+    connect(discoveryWorker, &DiscoveryWorker::rowsPrepared,
+            this, &JobScout::rowsReady);
+    discoveryThread.start();
+    QMetaObject::invokeMethod(discoveryWorker, [worker = discoveryWorker]() {
+        worker->openDatabase();
+    });
+
+    discoveriesChangedTimer.setSingleShot(true);
+    discoveriesChangedTimer.setInterval(discoveriesChangedPauseMilliseconds);
+    connect(&discoveriesChangedTimer, &QTimer::timeout, this, &JobScout::discoveriesChanged);
 }
 
-JobScout::~JobScout() = default;
+JobScout::~JobScout()
+{
+    // Stop the background thread after the work already sent to it, so found
+    // jobs waiting to be saved are saved. quit() is sent as one more piece of
+    // work for that reason; called straight from here it would drop them.
+    // The thread deletes the worker as it stops.
+    QMetaObject::invokeMethod(discoveryWorker, [thread = &discoveryThread]() {
+        thread->quit();
+    });
+    discoveryThread.wait();
+}
+
+int JobScout::requestRows(const DiscoveryRowRequest &rowRequest)
+{
+    const int requestNumber = ++lastRowRequestNumber;
+    const ScoringProfile scoringProfile = searchProfile.scoringProfile();
+    QMetaObject::invokeMethod(discoveryWorker,
+                              [worker = discoveryWorker, requestNumber, rowRequest,
+                               scoringProfile]() {
+        worker->prepareRows(requestNumber, rowRequest, scoringProfile);
+    });
+    return requestNumber;
+}
+
+void JobScout::sayDiscoveriesChangedSoon()
+{
+    if (!discoveriesChangedTimer.isActive()) {
+        discoveriesChangedTimer.start();
+    }
+}
 
 JobSourceProvider *JobScout::providerFor(const QString &sourceStorageName) const
 {
@@ -114,14 +159,14 @@ QString JobScout::sweepProgressText() const
     QStringList progressPieces = finishedSourceOutcomeLines;
 
     for (const QString &sourceStorageName : sourcesStillSweeping) {
-        bool descriptorFound = false;
-        const JobSourceDescriptor descriptor =
-            jobSourceDescriptorFor(sourceStorageName, descriptorFound);
-        progressPieces.append(QStringLiteral("%1: looking…")
-                                  .arg(descriptorFound ? descriptor.displayName
-                                                       : sourceStorageName));
+        const SourceSweepProgress progress = sourceSweepProgress.value(sourceStorageName);
+        const int jobsSavedSoFar = progress.saveTotals.jobsSaved;
+        progressPieces.append(jobsSavedSoFar > 0
+            ? QStringLiteral("%1: %2 saved so far…")
+                  .arg(progress.sourceDisplayName).arg(jobsSavedSoFar)
+            : QStringLiteral("%1: looking…").arg(progress.sourceDisplayName));
     }
-    return progressPieces.join(QStringLiteral("   ·   "));
+    return progressPieces.join(sourceLineSeparator);
 }
 
 QString JobScout::lastSweepSummaryText() const
@@ -154,6 +199,7 @@ void JobScout::startSweep()
     }
 
     finishedSourceOutcomeLines.clear();
+    sourceSweepProgress.clear();
     sourcesThatHadTroubleThisSweep.clear();
     sourceNoticesThisSweep.clear();
     totalJobsFoundThisSweep = 0;
@@ -195,167 +241,194 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
     bool descriptorFound = false;
     const JobSourceDescriptor descriptor =
         jobSourceDescriptorFor(sourceStorageName, descriptorFound);
-    const QString sourceDisplayName =
-        descriptorFound ? descriptor.displayName : sourceStorageName;
+    SourceSweepProgress &progress = sourceSweepProgress[sourceStorageName];
+    progress.sourceDisplayName = descriptorFound ? descriptor.displayName : sourceStorageName;
 
     JobScoutReply *scoutReply = sourceProvider->searchForJobs(searchProfile, this);
 
+    // A source that hears from many companies hands each company's jobs
+    // over as they arrive. They are saved right away, one company at a time.
+    connect(scoutReply, &JobScoutReply::someJobsFound, this,
+            [this, sourceStorageName](const QList<JobPosting> &someFoundJobPostings) {
+        saveFindingsInTheBackground(sourceStorageName, someFoundJobPostings);
+    });
+
     connect(scoutReply, &JobScoutReply::finished, this,
-            [this, scoutReply, sourceStorageName, sourceDisplayName](
-                const QList<JobPosting> &foundJobPostings) {
-        const int newJobCountBefore = totalNewJobsThisSweep;
-        recordFindingsFromSource(foundJobPostings);
-        markJobsGoneFromBoardsReadInFull(sourceStorageName,
-                                         scoutReply->employersReadInFull(),
-                                         foundJobPostings);
-        const int newJobsFromThisSource = totalNewJobsThisSweep - newJobCountBefore;
+            [this, scoutReply, sourceStorageName](const QList<JobPosting> &foundJobPostings) {
+        SourceSweepProgress &progress = sourceSweepProgress[sourceStorageName];
+        progress.replyHasFinished = true;
+        progress.jobsArrived = foundJobPostings.count();
 
-        // A site that answers with no jobs is not an error, but it is not a
-        // success either. The outcome line says so, so the user knows why
-        // that site's tab is empty.
-        const bool sourceCameBackEmpty = foundJobPostings.isEmpty();
-
-        // Jobs arrived but Job Crush could not save them. That is a problem
-        // in Job Crush, not with the site, and the outcome line says so.
-        const bool everyJobWasRefused = !foundJobPostings.isEmpty()
-            && jobPostingsRefusedThisSource == foundJobPostings.count();
-
-        QString sourceOutcomeText;
-        if (sourceCameBackEmpty) {
-            sourceOutcomeText = QStringLiteral("%1: answered, but sent no jobs back")
-                                    .arg(sourceDisplayName);
-        } else if (everyJobWasRefused) {
-            sourceOutcomeText =
-                QStringLiteral("%1: %2 jobs arrived but Job Crush could not store any "
-                               "of them — %3")
-                    .arg(sourceDisplayName)
-                    .arg(foundJobPostings.count())
-                    .arg(firstRefusalReasonThisSource);
-        } else if (jobPostingsRefusedThisSource > 0) {
-            sourceOutcomeText =
-                QStringLiteral("%1: %2 found, %3 new, %4 could not be stored — %5")
-                    .arg(sourceDisplayName)
-                    .arg(foundJobPostings.count())
-                    .arg(newJobsFromThisSource)
-                    .arg(jobPostingsRefusedThisSource)
-                    .arg(firstRefusalReasonThisSource);
-        } else {
-            sourceOutcomeText = QStringLiteral("%1: %2 found, %3 new")
-                                    .arg(sourceDisplayName)
-                                    .arg(foundJobPostings.count())
-                                    .arg(newJobsFromThisSource);
+        // Jobs already handed over one company at a time are already being
+        // saved. Everything else is saved now, in one go.
+        if (!scoutReply->deliveredJobsAsTheyArrived()) {
+            saveFindingsInTheBackground(sourceStorageName, foundJobPostings);
         }
 
-        finishSourceAndReportProgress(
-            sourceStorageName,
-            sourceOutcomeText,
-            sourceCameBackEmpty || jobPostingsRefusedThisSource > 0);
+        // Looking for jobs that are gone is queued after the saving, so it
+        // sees every job this sweep found.
+        const QStringList employersReadInFull = scoutReply->employersReadInFull();
+        if (!employersReadInFull.isEmpty()) {
+            ++progress.backgroundTasksPending;
+            QMetaObject::invokeMethod(discoveryWorker,
+                                      [worker = discoveryWorker, sourceStorageName,
+                                       employersReadInFull, foundJobPostings]() {
+                worker->findJobsMissingFromBoardsReadInFull(sourceStorageName,
+                                                            employersReadInFull,
+                                                            foundJobPostings);
+            });
+        }
 
         scoutReply->deleteLater();
+        finishSourceIfEverythingIsDone(sourceStorageName);
     });
 
     connect(scoutReply, &JobScoutReply::failed, this,
-            [this, scoutReply, sourceStorageName, sourceDisplayName](
-                const QString &humanReadableReason, bool sourceHadTrouble) {
+            [this, scoutReply, sourceStorageName](const QString &humanReadableReason,
+                                                  bool sourceHadTrouble) {
         // One site failing does not stop the sweep. Record what it said and
         // let the other sites finish.
-        //
-        // Not every failure is trouble. A site that asked Job Crush to wait an
-        // hour, while Job Crush waits, is working as it should. That is shown
-        // as a notice, not as an error.
-        if (!sourceHadTrouble) {
-            sourceNoticesThisSweep.append(
-                QStringLiteral("%1: %2").arg(sourceDisplayName, humanReadableReason));
-        }
-        finishSourceAndReportProgress(
-            sourceStorageName,
-            QStringLiteral("%1: %2").arg(sourceDisplayName, humanReadableReason),
-            sourceHadTrouble);
+        SourceSweepProgress &progress = sourceSweepProgress[sourceStorageName];
+        progress.replyHasFinished = true;
+        progress.replyFailed = true;
+        progress.failureReason = humanReadableReason;
+        progress.failureIsTrouble = sourceHadTrouble;
 
         scoutReply->deleteLater();
+        finishSourceIfEverythingIsDone(sourceStorageName);
     });
 }
 
-void JobScout::markJobsGoneFromBoardsReadInFull(const QString &sourceStorageName,
-                                                const QStringList &employersReadInFull,
-                                                const QList<JobPosting> &foundJobPostings)
+void JobScout::saveFindingsInTheBackground(const QString &sourceStorageName,
+                                           const QList<JobPosting> &foundJobPostings)
 {
-    if (employersReadInFull.isEmpty()) {
+    if (foundJobPostings.isEmpty()) {
         return;
     }
+    ++sourceSweepProgress[sourceStorageName].backgroundTasksPending;
+    QMetaObject::invokeMethod(discoveryWorker,
+                              [worker = discoveryWorker, sourceStorageName,
+                               foundJobPostings]() {
+        worker->saveFindings(sourceStorageName, foundJobPostings);
+    });
+}
 
+void JobScout::whenFindingsWereSaved(const QString &sourceStorageName,
+                                     const FindingsSaveOutcome &saveOutcome)
+{
+    SourceSweepProgress &progress = sourceSweepProgress[sourceStorageName];
+    --progress.backgroundTasksPending;
+    progress.saveTotals.jobsSaved += saveOutcome.jobsSaved;
+    progress.saveTotals.newJobs += saveOutcome.newJobs;
+    progress.saveTotals.jobsRefused += saveOutcome.jobsRefused;
+    if (progress.saveTotals.firstRefusalReason.isEmpty()) {
+        progress.saveTotals.firstRefusalReason = saveOutcome.firstRefusalReason;
+    }
+    totalJobsFoundThisSweep += saveOutcome.jobsSaved;
+    totalNewJobsThisSweep += saveOutcome.newJobs;
+
+    // The new jobs show up on the page while the sweep goes on.
+    if (saveOutcome.newJobs > 0) {
+        sayDiscoveriesChangedSoon();
+    }
+    emit sweepProgressChanged();
+    finishSourceIfEverythingIsDone(sourceStorageName);
+}
+
+void JobScout::whenJobsAreMissingFromBoards(const QString &sourceStorageName,
+                                            const QList<JobPosting> &missingJobPostings)
+{
+    --sourceSweepProgress[sourceStorageName].backgroundTasksPending;
+    sayDiscoveriesChangedSoon();
+    finishSourceIfEverythingIsDone(sourceStorageName);
+
+    // A job missing from one read of the board is not yet gone. Each one is
+    // asked about again, on its own page and in the company's list, and is
+    // marked gone only when both agree. This runs after the sweep's own
+    // numbers are reported, because it only changes the amber marks.
     const AtsBoardDetector boardDetector;
-    QSet<QString> jobsStillListed;
-    for (const JobPosting &foundPosting : foundJobPostings) {
-        const AtsBoardIdentity identity = boardDetector.identify(foundPosting.sourceUrl);
-        if (identity.namesOneJob()) {
-            jobsStillListed.insert(identity.asKey().toLower());
-        }
-    }
-
-    const QDateTime checkedTimestamp = QDateTime::currentDateTime();
-    const bool savingAsOneBatch = jobPostingRepository.beginManyChanges();
-    for (const JobPosting &knownPosting :
-         jobPostingRepository.loadJobPostingsFromSource(sourceStorageName)) {
-        const AtsBoardIdentity identity = boardDetector.identify(knownPosting.sourceUrl);
-        if (!identity.namesOneJob()) {
-            continue;
-        }
-        const QString employerKey =
-            QStringLiteral("%1/%2").arg(identity.boardName, identity.tenant).toLower();
-        if (!employersReadInFull.contains(employerKey)) {
-            continue; // that company did not answer this time, so nothing is known
-        }
-
-        const bool isStillListed = jobsStillListed.contains(identity.asKey().toLower());
-        const bool wasMarkedGone = knownPosting.postingGoneSinceTimestamp.isValid();
-        if (isStillListed && wasMarkedGone) {
-            // It is listed again. Employers do repost jobs.
-            jobPostingRepository.updatePostingGoneSince(knownPosting.jobPostingId,
-                                                        QDateTime());
-        } else if (!isStillListed && !wasMarkedGone) {
-            jobPostingRepository.updatePostingGoneSince(knownPosting.jobPostingId,
-                                                        checkedTimestamp);
-        }
-        // A failed update is logged by the repository. The mark is shown to
-        // the user as a hint, so one failed row does not stop the others.
-    }
-    if (savingAsOneBatch) {
-        jobPostingRepository.finishManyChanges(); // logs its own failure
+    for (const JobPosting &missingJobPosting : missingJobPostings) {
+        const AtsBoardIdentity identity = boardDetector.identify(missingJobPosting.sourceUrl);
+        const qint64 jobPostingId = missingJobPosting.jobPostingId;
+        ListingCheckReply *checkReply =
+            goneConfirmer.checkOneJob(identity, missingJobPosting.positionTitle, this);
+        connect(checkReply, &ListingCheckReply::answered, this,
+                [this, jobPostingId](ListingAnswer listingAnswer, const QString &whatHappened) {
+            if (listingAnswer != ListingAnswer::Gone) {
+                qInfo().noquote() << QStringLiteral(
+                    "JobScout::whenJobsAreMissingFromBoards: job posting %1 was missing "
+                    "from its company's board, but "
+                    "it is not marked gone — %2").arg(jobPostingId).arg(whatHappened);
+                return;
+            }
+            jobPostingRepository.updatePostingGoneSince(jobPostingId,
+                                                        QDateTime::currentDateTime());
+            sayDiscoveriesChangedSoon();
+        });
     }
 }
 
-void JobScout::recordFindingsFromSource(const QList<JobPosting> &foundJobPostings)
+void JobScout::finishSourceIfEverythingIsDone(const QString &sourceStorageName)
 {
-    jobPostingsRefusedThisSource = 0;
-    firstRefusalReasonThisSource.clear();
+    if (!sourcesStillSweeping.contains(sourceStorageName)) {
+        return; // already finished
+    }
+    const SourceSweepProgress progress = sourceSweepProgress.value(sourceStorageName);
+    if (!progress.replyHasFinished || progress.backgroundTasksPending > 0) {
+        return;
+    }
 
-    // One batch, so the disk is written once and not once per job.
-    const bool savingAsOneBatch = jobPostingRepository.beginManyChanges();
-    for (JobPosting foundJobPosting : foundJobPostings) {
-        bool wasAlreadyKnown = false;
-        if (!jobPostingRepository.insertDiscoveryIfNew(foundJobPosting,
-                                                       wasAlreadyKnown)) {
-            // One bad row must not stop the sweep, but it must not be lost
-            // quietly either. A site whose every row is refused looks exactly
-            // like a site that found nothing. That mistake once took days to
-            // find, so the refusals are counted and shown.
-            ++jobPostingsRefusedThisSource;
-            if (firstRefusalReasonThisSource.isEmpty()) {
-                firstRefusalReasonThisSource = jobPostingRepository.lastErrorText();
-            }
-            continue;
+    const QString &displayName = progress.sourceDisplayName;
+    const FindingsSaveOutcome &totals = progress.saveTotals;
+
+    if (progress.replyFailed) {
+        // Not every failure is trouble. A site that asked Job Crush to wait
+        // an hour, while Job Crush waits, is working as it should. That is
+        // shown as a notice, not as an error.
+        const QString outcomeText =
+            QStringLiteral("%1: %2").arg(displayName, progress.failureReason);
+        if (!progress.failureIsTrouble) {
+            sourceNoticesThisSweep.append(outcomeText);
         }
-        ++totalJobsFoundThisSweep;
-        if (!wasAlreadyKnown) {
-            ++totalNewJobsThisSweep;
-        }
+        finishSourceAndReportProgress(sourceStorageName, outcomeText, progress.failureIsTrouble);
+        return;
     }
-    if (savingAsOneBatch && !jobPostingRepository.finishManyChanges()) {
-        if (firstRefusalReasonThisSource.isEmpty()) {
-            firstRefusalReasonThisSource = jobPostingRepository.lastErrorText();
-        }
+
+    // A site that answers with no jobs is not an error, but it is not a
+    // success either. The outcome line says so, so the user knows why that
+    // site's tab is empty.
+    const bool sourceCameBackEmpty = progress.jobsArrived == 0;
+
+    // Jobs arrived but Job Crush could not save them. That is a problem in
+    // Job Crush, not with the site, and the outcome line says so.
+    const bool everyJobWasRefused = !sourceCameBackEmpty
+        && totals.jobsRefused == progress.jobsArrived;
+
+    QString outcomeText;
+    if (sourceCameBackEmpty) {
+        outcomeText = QStringLiteral("%1: answered, but sent no jobs back").arg(displayName);
+    } else if (everyJobWasRefused) {
+        outcomeText = QStringLiteral("%1: %2 jobs arrived but Job Crush could not store any "
+                                     "of them — %3")
+                          .arg(displayName)
+                          .arg(progress.jobsArrived)
+                          .arg(totals.firstRefusalReason);
+    } else if (totals.jobsRefused > 0) {
+        outcomeText = QStringLiteral("%1: %2 found, %3 new, %4 could not be stored — %5")
+                          .arg(displayName)
+                          .arg(progress.jobsArrived)
+                          .arg(totals.newJobs)
+                          .arg(totals.jobsRefused)
+                          .arg(totals.firstRefusalReason);
+    } else {
+        outcomeText = QStringLiteral("%1: %2 found, %3 new")
+                          .arg(displayName)
+                          .arg(progress.jobsArrived)
+                          .arg(totals.newJobs);
     }
+
+    finishSourceAndReportProgress(sourceStorageName, outcomeText,
+                                  sourceCameBackEmpty || totals.jobsRefused > 0);
 }
 
 void JobScout::finishSourceAndReportProgress(const QString &sourceStorageName,
@@ -380,79 +453,23 @@ void JobScout::finishSourceAndReportProgress(const QString &sourceStorageName,
         // Whatever went wrong is kept after the sweep ends. The summary does
         // not replace it.
         storedLastSweepTroubleText =
-            sourcesThatHadTroubleThisSweep.join(QStringLiteral("   ·   "));
+            sourcesThatHadTroubleThisSweep.join(sourceLineSeparator);
         storedLastSweepNoticeText =
-            sourceNoticesThisSweep.join(QStringLiteral("   ·   "));
+            sourceNoticesThisSweep.join(sourceLineSeparator);
 
         writeSweepLog();
 
+        // The sweep is over, so the page is refreshed now, not in a second.
+        discoveriesChangedTimer.stop();
         emit discoveriesChanged();
     }
 
     emit sweepProgressChanged();
 }
 
-QList<ScoredJobPosting> JobScout::scoredJobPostingsFromSource(
-    const QString &sourceStorageName, SearchAreaScope searchAreaScope) const
-{
-    const ProspectScorer prospectScorer(searchProfile);
-
-    QList<ScoredJobPosting> scoredJobPostings;
-    const QList<JobPosting> storedJobPostings =
-        jobPostingRepository.loadJobPostingsFromSource(sourceStorageName);
-
-    scoredJobPostings.reserve(storedJobPostings.count());
-    for (const JobPosting &storedJobPosting : storedJobPostings) {
-        const bool jobIsInsideSearchArea =
-            prospectScorer.jobPostingIsInsideSearchArea(storedJobPosting);
-        if (jobIsInsideSearchArea != (searchAreaScope == SearchAreaScope::InsideSearchArea)) {
-            continue;
-        }
-        // A site's own tab stays newest first. The score comes along so the
-        // row can show it, but only Top Prospects sorts by score.
-        scoredJobPostings.append(
-            { storedJobPosting, prospectScorer.scoreJobPosting(storedJobPosting) });
-    }
-    return scoredJobPostings;
-}
-
-QList<ScoredJobPosting> JobScout::handAddedJobPostings() const
-{
-    const ProspectScorer prospectScorer(searchProfile);
-
-    QList<ScoredJobPosting> scoredJobPostings;
-    const QList<JobPosting> storedJobPostings =
-        jobPostingRepository.loadHandAddedJobPostings();
-
-    scoredJobPostings.reserve(storedJobPostings.count());
-    for (const JobPosting &storedJobPosting : storedJobPostings) {
-        // No search-area test here. See the comment on the declaration.
-        scoredJobPostings.append(
-            { storedJobPosting, prospectScorer.scoreJobPosting(storedJobPosting) });
-    }
-    return scoredJobPostings;
-}
-
 qint64 JobScout::mostRecentlyHandAddedJobPostingId() const
 {
     return lastHandAddedJobPostingId;
-}
-
-int JobScout::jobPostingCountOutsideSearchArea() const
-{
-    if (!searchAreaIsNarrowed()) {
-        return 0; // nothing is being filtered, so nothing is being held back
-    }
-
-    const ProspectScorer prospectScorer(searchProfile);
-    int heldBackCount = 0;
-    for (const JobPosting &discoveredJobPosting :
-             jobPostingRepository.loadAllDiscoveredJobPostings()) {
-        if (!prospectScorer.jobPostingIsInsideSearchArea(discoveredJobPosting)) {
-            ++heldBackCount;
-        }
-    }
-    return heldBackCount;
 }
 
 bool JobScout::searchAreaIsNarrowed() const
@@ -463,54 +480,6 @@ bool JobScout::searchAreaIsNarrowed() const
 bool JobScout::searchProfileCanRank() const
 {
     return searchProfile.hasEnoughToRankBy();
-}
-
-QList<ScoredJobPosting> JobScout::rankedTopProspects(SearchAreaScope searchAreaScope) const
-{
-    const ProspectScorer prospectScorer(searchProfile);
-
-    // The best-scoring copy of each job, keyed by company and title, so a job
-    // carried by two sites shows once.
-    QHash<QString, ScoredJobPosting> bestScoredJobPostingByIdentity;
-
-    const QList<JobPosting> allDiscoveredJobPostings =
-        jobPostingRepository.loadAllDiscoveredJobPostings();
-
-    for (const JobPosting &discoveredJobPosting : allDiscoveredJobPostings) {
-        const bool jobIsInsideSearchArea =
-            prospectScorer.jobPostingIsInsideSearchArea(discoveredJobPosting);
-        if (jobIsInsideSearchArea != (searchAreaScope == SearchAreaScope::InsideSearchArea)) {
-            continue;
-        }
-        const ScoredJobPosting scoredJobPosting = {
-            discoveredJobPosting, prospectScorer.scoreJobPosting(discoveredJobPosting)
-        };
-        const QString identity = crossSourceIdentityOf(discoveredJobPosting);
-
-        const auto existingEntry = bestScoredJobPostingByIdentity.constFind(identity);
-        if (existingEntry == bestScoredJobPostingByIdentity.constEnd()
-                || existingEntry->matchResult.matchScoreOutOfOneHundred
-                       < scoredJobPosting.matchResult.matchScoreOutOfOneHundred) {
-            bestScoredJobPostingByIdentity.insert(identity, scoredJobPosting);
-        }
-    }
-
-    QList<ScoredJobPosting> rankedJobPostings = bestScoredJobPostingByIdentity.values();
-
-    std::sort(rankedJobPostings.begin(), rankedJobPostings.end(),
-              [](const ScoredJobPosting &leftJobPosting,
-                 const ScoredJobPosting &rightJobPosting) {
-        if (leftJobPosting.matchResult.matchScoreOutOfOneHundred
-                != rightJobPosting.matchResult.matchScoreOutOfOneHundred) {
-            return leftJobPosting.matchResult.matchScoreOutOfOneHundred
-                   > rightJobPosting.matchResult.matchScoreOutOfOneHundred;
-        }
-        // Equal scores: the newer posting goes first.
-        return leftJobPosting.jobPosting.postedTimestamp
-               > rightJobPosting.jobPosting.postedTimestamp;
-    });
-
-    return rankedJobPostings;
 }
 
 void JobScout::writeSweepLog() const
@@ -841,7 +810,7 @@ void JobScout::huntTheEmployerBoards(const JobLead &jobLead, bool brainWasAlread
         }
         whenTheHuntCameUpEmpty(jobLead, QStringLiteral(
             "Job Crush didn't find %1 on Greenhouse, Lever, Ashby or SmartRecruiters, "
-            "or on a Workday site it knows.").arg(
+            "or on a Workday or Taleo site it knows.").arg(
                 jobLead.companyName.isEmpty() ? QStringLiteral("that company")
                                               : jobLead.companyName),
             brainWasAlreadyAsked);
@@ -1073,7 +1042,7 @@ QString JobScout::storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
     lastHandAddedJobPostingId = jobPosting.jobPostingId;
 
     // Job Crush already had this job, from a sweep or an earlier paste. The
-    // user just added it by hand, so it goes on the Manual Add list now.
+    // user has now added it by hand, so it goes on the Manual Add list.
     // This must happen before discoveriesChanged below, or the list is
     // rebuilt without it.
     if (wasAlreadyKnown

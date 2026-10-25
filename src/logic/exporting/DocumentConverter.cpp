@@ -1,5 +1,6 @@
 #include "DocumentConverter.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -9,6 +10,10 @@
 
 namespace {
 
+// A heading line is at most this many characters. EXPERIENCE, EDUCATION and
+// a company name fit. A sentence typed in capitals does not.
+constexpr int longestLineThatCanBeAHeading = 40;
+
 // A line of nothing but rule characters. In the source document it drew a
 // line across the page; as markdown it would become a page break, which is
 // how a one-page resume turns into three. Dropped instead.
@@ -17,6 +22,8 @@ bool lineIsOnlyARule(const QString &line)
     if (line.length() < 2) {
         return false;
     }
+    // From start to end, only these: - _ = ~ * . middle dot, bullet,
+    // en dash, em dash, and spaces.
     static const QRegularExpression ruleCharacters(
         QStringLiteral("^[-_=~*.\u00B7\u2022\u2013\u2014[:space:]]+$"));
     return ruleCharacters.match(line).hasMatch();
@@ -29,6 +36,8 @@ bool lineStartsWithABullet(const QString &line)
     if (line.length() < 2) {
         return false;
     }
+    // A bullet is one of these characters followed by a space. The space
+    // matters: "-5 degrees" and "*NIX" are not bullets.
     static const QString bulletCharacters =
         QStringLiteral("-*•●▪·‣⁃–—");
     return bulletCharacters.contains(line.at(0)) && line.at(1).isSpace();
@@ -40,9 +49,11 @@ bool lineStartsWithABullet(const QString &line)
 // heading anyway.
 bool lineLooksLikeAHeading(const QString &line)
 {
-    if (line.length() > 40) {
+    if (line.length() > longestLineThatCanBeAHeading) {
         return false;
     }
+    // Every letter must be a capital, and there must be at least one letter.
+    // Digits and punctuation do not count either way.
     bool sawALetter = false;
     for (const QChar &character : line) {
         if (character.isLetter()) {
@@ -68,6 +79,13 @@ QString withLeadingMarkdownDefused(const QString &line)
 
 } // namespace
 
+// Each line of the plain text is trimmed and then tested in this order:
+//   1. empty, or only a rule      dropped
+//   2. starts with a bullet       "- " and the rest of the line
+//   3. short and all capitals     "## " and the line, a section heading
+//   4. anything else              the line, with a leading # or > escaped
+// Then every line is joined with a blank line between, so each one is its
+// own paragraph. The reason is written at the end of the function.
 QString DocumentConverter::markdownForPlainText(const QString &plainText)
 {
     QStringList markdownLines;
@@ -132,6 +150,9 @@ DocumentConverter::ConversionOutcome DocumentConverter::convertToFile(
 
     QDir destinationFolder(destinationFolderPath);
     if (!destinationFolder.exists() && !destinationFolder.mkpath(QStringLiteral("."))) {
+        qWarning().noquote() << QStringLiteral(
+            "DocumentConverter::convertToFile: could not create the folder \"%1\"")
+                .arg(destinationFolderPath);
         outcome.reasonText = QStringLiteral("Job Crush couldn't create the folder %1.")
                                  .arg(destinationFolderPath);
         outcome.whatToDoNextText =
@@ -171,6 +192,9 @@ DocumentConverter::ConversionOutcome DocumentConverter::convertToFile(
         } else {
             reasonText = QStringLiteral("Job Crush couldn't write %1 - %2")
                              .arg(fileName, plainTextFile.errorString());
+            qWarning().noquote() << QStringLiteral(
+                "DocumentConverter::convertToFile: could not open \"%1\" — %2")
+                    .arg(filePath, plainTextFile.errorString());
         }
     } else {
         const QString markdownText = textIsAlreadyMarkdown

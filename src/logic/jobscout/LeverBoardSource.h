@@ -19,8 +19,8 @@
 //
 // One thing Lever does not give: the company's real name. Greenhouse sends it;
 // Lever does not, anywhere in the posting. So the tenant is the best name
-// available, and it is usually right — "netflix", "figma". When it is a slug
-// the user can fix it on the card.
+// available, turned into words by companyNameFromTenant: "netflix" becomes
+// "Netflix". When that is wrong the user can fix it on the card.
 class LeverBoardSource : public EmployerBoardProvider {
 public:
     LeverBoardSource();

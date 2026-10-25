@@ -1,5 +1,6 @@
 #include "PacketExporter.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 
@@ -48,6 +49,9 @@ PacketExporter::ExportOutcome PacketExporter::exportPacket(
 
     QDir destinationFolder(destinationFolderPath);
     if (!destinationFolder.exists() && !destinationFolder.mkpath(QStringLiteral("."))) {
+        qWarning().noquote() << QStringLiteral(
+            "PacketExporter::exportPacket: could not create the folder \"%1\"")
+                .arg(destinationFolderPath);
         outcome.reasonText = QStringLiteral("Job Crush couldn't create the folder %1.")
                                  .arg(destinationFolderPath);
         outcome.whatToDoNextText =
@@ -56,11 +60,20 @@ PacketExporter::ExportOutcome PacketExporter::exportPacket(
         return outcome;
     }
 
+    // An unknown format, such as an old or hand-edited preference, falls
+    // back to Word. The user still gets a file they can send.
     const QString chosenFormat =
         ExportFormat::isKnownFormat(format) ? format : ExportFormat::WordDocument;
+    if (chosenFormat != format) {
+        qWarning().noquote() << QStringLiteral(
+            "PacketExporter::exportPacket: unknown packet format \"%1\" — writing Word"
+            " instead").arg(format);
+    }
     const QString fileName = QStringLiteral("%1.%2")
                                  .arg(suggestedFileName,
                                       ExportFormat::fileExtensionFor(chosenFormat));
+    // Unlike DocumentConverter, this overwrites a packet file of the same
+    // name.
     const QString filePath = destinationFolder.filePath(fileName);
 
     QString reasonText;

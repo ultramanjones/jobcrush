@@ -57,3 +57,7 @@ compile_commands.json
 
 # QtCreator project-local settings
 .qtcreator/
+
+# Leftover debug files
+body.json
+build_log.txt

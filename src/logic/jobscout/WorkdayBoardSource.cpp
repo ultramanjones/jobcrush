@@ -32,20 +32,29 @@ constexpr int mostPagesForAWholeSite = 50;
 // the exact title is often not first, but it is almost always near the top.
 constexpr int mostPagesForATitleSearch = 3;
 
+// Workday answers this for a site name it does not have, and for a job that
+// has been closed.
+constexpr int httpStatusNotFound = 404;
+
+// Workday's dates have no time of day. Noon is used so that moving the time
+// a few hours for a time zone does not land it on a different date.
+const QTime timeOfDayForADateOnlyPost(12, 0);
+
 // The JSON service lives under /wday/cxs/{tenant}/{site} on the site's host.
-QString serviceBaseFor(const QString &hostPrefix, const QString &cxsTenant,
-                       const QString &siteName)
+// It is the same on both kinds of Workday host.
+QString serviceBaseFor(const WorkdayBoardSource::WorkdaySite &workdaySite)
 {
-    return QStringLiteral("https://%1.myworkdayjobs.com/wday/cxs/%2/%3")
-        .arg(hostPrefix, cxsTenant, siteName);
+    return QStringLiteral("https://%1/wday/cxs/%2/%3")
+        .arg(workdaySite.siteHost, workdaySite.cxsTenant, workdaySite.siteName);
 }
 
-// The public page for one job, the one a person opens to apply.
-QString publicJobUrlFor(const QString &hostPrefix, const QString &siteName,
+// The public page for one job, the one a person opens to apply:
+// https://{site host}/{public site path}/{job path}
+QString publicJobUrlFor(const WorkdayBoardSource::WorkdaySite &workdaySite,
                         const QString &jobPath)
 {
-    return QStringLiteral("https://%1.myworkdayjobs.com/%2/%3")
-        .arg(hostPrefix, siteName, jobPath);
+    return QStringLiteral("https://%1/%2/%3")
+        .arg(workdaySite.siteHost, workdaySite.publicSitePath, jobPath);
 }
 
 // Workday adds the same request headers as every other board, plus a language,
@@ -59,6 +68,8 @@ QNetworkRequest workdayRequest(const QUrl &requestUrl)
 }
 
 // True when Workday sent its maintenance page instead of an answer. See trap 5.
+// Two signs: the request was redirected to community.workday.com, or the
+// page itself has the maintenance marker or wording in it.
 bool isWorkdayMaintenancePage(const QNetworkReply *networkReply, const QByteArray &responseBody)
 {
     const QString finalHost = networkReply->url().host().toLower();
@@ -85,6 +96,8 @@ QString jobPathWithoutLeadingSlash(const QString &externalPath)
     return jobPath;
 }
 
+// True when the words say the job is remote. "telecommut" is cut short on
+// purpose so it matches "telecommute" and "telecommuting".
 bool locationTextSaysRemote(const QString &locationText)
 {
     const QString lowered = locationText.toLower();
@@ -108,6 +121,11 @@ struct WorkdaySearchInProgress {
 
 void readNextPage(const std::shared_ptr<WorkdaySearchInProgress> &search);
 
+// Reads one page of search results, adds its jobs to the search, and then
+// either asks for the next page or finishes the reply.
+//
+// Order of checks: maintenance page, then 404 (no such site), then any other
+// network error, then JSON that cannot be read. Each one ends the search.
 void handleOnePage(const std::shared_ptr<WorkdaySearchInProgress> &search,
                    QNetworkReply *networkReply)
 {
@@ -122,7 +140,7 @@ void handleOnePage(const std::shared_ptr<WorkdaySearchInProgress> &search,
 
     // Workday answers 404 for a site name it does not have. That is an answer
     // about the link, not trouble with the connection.
-    if (httpStatusCode == 404) {
+    if (httpStatusCode == httpStatusNotFound) {
         search->scoutReply->markFailed(
             noSuchBoardMessage(workdayDisplayName, search->workdayTenant), false);
         return;
@@ -149,6 +167,8 @@ void handleOnePage(const std::shared_ptr<WorkdaySearchInProgress> &search,
         return;
     }
 
+    // The page is {"total":N,"jobPostings":[...]}. A row with no title or no
+    // path is skipped.
     const QJsonObject answer = responseDocument.object();
     const QJsonArray searchEntries = answer.value(QStringLiteral("jobPostings")).toArray();
     for (const QJsonValue &entryValue : searchEntries) {
@@ -163,18 +183,30 @@ void handleOnePage(const std::shared_ptr<WorkdaySearchInProgress> &search,
 
     // Stop when the page came back short, when every job has been read, or at
     // the cap. "total" is sent on every page checked so far, but a short page
-    // ends the search even if it is missing.
+    // ends the search even if it is missing. A missing total reads as -1, so
+    // "every job read" can never be true by accident.
+    //
+    // Only stopping at the cap leaves jobs unread. A search also counts as
+    // part of the board, because jobs that do not match it were never asked
+    // for. Either way the caller must not take a missing job for a closed one.
     const int totalJobs = answer.value(QStringLiteral("total")).toInt(-1);
     const int jobsSeenSoFar = search->pagesRead * workdayPageSize;
     const bool pageWasShort = searchEntries.count() < workdayPageSize;
     const bool everyJobRead = totalJobs >= 0 && jobsSeenSoFar >= totalJobs;
     if (pageWasShort || everyJobRead || search->pagesRead >= search->mostPagesToRead) {
+        const bool stoppedAtThePageLimit = !pageWasShort && !everyJobRead;
+        search->scoutReply->setReadOnlyPartOfTheBoard(stoppedAtThePageLimit
+                                                      || !search->searchText.isEmpty());
+        search->scoutReply->setStoppedAtThePageLimit(stoppedAtThePageLimit);
         search->scoutReply->markFinished(search->foundPostings);
         return;
     }
     readNextPage(search);
 }
 
+// Sends the POST for the next page. The body is the one the careers page
+// itself sends: no filters, a page of 20, the offset in jobs, and the search
+// words (empty for every job).
 void readNextPage(const std::shared_ptr<WorkdaySearchInProgress> &search)
 {
     QJsonObject requestBody;
@@ -208,33 +240,74 @@ QString WorkdayBoardSource::boardName() const
     return AtsBoardName::Workday;
 }
 
-bool WorkdayBoardSource::splitTenant(const QString &workdayTenant,
-                                     QString &hostPrefix, QString &cxsTenant,
-                                     QString &siteName)
+bool WorkdayBoardSource::readTenant(const QString &workdayTenant, WorkdaySite &workdaySite)
 {
-    // "ngc.wd1/Northrop_Grumman_External_Site"
-    static const QRegularExpression tenantPattern(
+    const QString trimmedTenant = workdayTenant.trimmed();
+
+    // "ngc.wd1/Northrop_Grumman_External_Site", for a site on
+    // ngc.wd1.myworkdayjobs.com.
+    //
+    // The pattern reads, start to end:
+    //   ([A-Za-z0-9-]+)    group 1, the account: letters, digits, dashes
+    //   \.                 a dot
+    //   (wd\d+)            group 2, the server: "wd" and a number
+    //   /                  a slash
+    //   ([A-Za-z0-9_.-]+)  group 3, the site: letters, digits, _ . -
+    // The host is rebuilt as {account}.{server}.myworkdayjobs.com.
+    static const QRegularExpression myWorkdayJobsPattern(
         QStringLiteral("^([A-Za-z0-9-]+)\\.(wd\\d+)/([A-Za-z0-9_.-]+)$"));
-    const QRegularExpressionMatch match = tenantPattern.match(workdayTenant.trimmed());
-    if (!match.hasMatch()) {
-        return false;
+    const QRegularExpressionMatch myWorkdayJobsMatch = myWorkdayJobsPattern.match(trimmedTenant);
+    if (myWorkdayJobsMatch.hasMatch()) {
+        workdaySite.cxsTenant = myWorkdayJobsMatch.captured(1);
+        workdaySite.siteName = myWorkdayJobsMatch.captured(3);
+        workdaySite.siteHost = QStringLiteral("%1.%2.myworkdayjobs.com")
+                                   .arg(workdaySite.cxsTenant, myWorkdayJobsMatch.captured(2));
+        workdaySite.publicSitePath = workdaySite.siteName;
+        return true;
     }
-    cxsTenant = match.captured(1);
-    hostPrefix = cxsTenant + QLatin1Char('.') + match.captured(2);
-    siteName = match.captured(3);
-    return true;
+
+    // "wd5.myworkdaysite/uw/UWHires", for a site on wd5.myworkdaysite.com,
+    // where the account and the site are in the path:
+    // wd5.myworkdaysite.com/recruiting/uw/UWHires. Checked live 2026-10-23.
+    //
+    // The pattern reads, start to end:
+    //   (wd\d+)            group 1, the server: "wd" and a number
+    //   \.myworkdaysite/   the literal text ".myworkdaysite/"
+    //   ([A-Za-z0-9-]+)    group 2, the account
+    //   /                  a slash
+    //   ([A-Za-z0-9_.-]+)  group 3, the site
+    // The public path a person opens is recruiting/{account}/{site}.
+    static const QRegularExpression myWorkdaySitePattern(
+        QStringLiteral("^(wd\\d+)\\.myworkdaysite/([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+)$"));
+    const QRegularExpressionMatch myWorkdaySiteMatch = myWorkdaySitePattern.match(trimmedTenant);
+    if (myWorkdaySiteMatch.hasMatch()) {
+        workdaySite.cxsTenant = myWorkdaySiteMatch.captured(2);
+        workdaySite.siteName = myWorkdaySiteMatch.captured(3);
+        workdaySite.siteHost = QStringLiteral("%1.myworkdaysite.com")
+                                   .arg(myWorkdaySiteMatch.captured(1));
+        workdaySite.publicSitePath = QStringLiteral("recruiting/%1/%2")
+                                         .arg(workdaySite.cxsTenant, workdaySite.siteName);
+        return true;
+    }
+    return false;
 }
 
 QString WorkdayBoardSource::companyNameFromSiteName(const QString &siteName)
 {
-    // Underscores and dashes become spaces, and a run of capitals followed by a
-    // capitalized word is split: "L3HarrisCareers" -> "L3Harris Careers".
-    QString spaced = siteName;
-    spaced.replace(QLatin1Char('_'), QLatin1Char(' '));
-    spaced.replace(QLatin1Char('-'), QLatin1Char(' '));
+    // Steps:
+    //   1. Underscores and dashes become spaces.
+    //   2. A space goes in where a lowercase letter is followed by a capital
+    //      and another lowercase letter: "L3HarrisCareers" becomes
+    //      "L3Harris Careers". The pattern ([a-z])([A-Z][a-z]) finds that
+    //      spot, and "\1 \2" puts the two halves back with a space between.
+    //   3. Words that name the careers site, not the company, are dropped.
+    //   4. If nothing is left, the site name comes back as it was.
+    QString spacedName = siteName;
+    spacedName.replace(QLatin1Char('_'), QLatin1Char(' '));
+    spacedName.replace(QLatin1Char('-'), QLatin1Char(' '));
     static const QRegularExpression lowerThenUpperPattern(
         QStringLiteral("([a-z])([A-Z][a-z])"));
-    spaced.replace(lowerThenUpperPattern, QStringLiteral("\\1 \\2"));
+    spacedName.replace(lowerThenUpperPattern, QStringLiteral("\\1 \\2"));
 
     // Words that name the careers site, not the company.
     static const QStringList siteWords = {
@@ -244,7 +317,7 @@ QString WorkdayBoardSource::companyNameFromSiteName(const QString &siteName)
         QStringLiteral("recruiting"), QStringLiteral("opportunities"),
     };
     QStringList keptWords;
-    for (const QString &word : spaced.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+    for (const QString &word : spacedName.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
         if (!siteWords.contains(word.toLower())) {
             keptWords.append(word);
         }
@@ -258,20 +331,24 @@ QString WorkdayBoardSource::companyNameFromSiteName(const QString &siteName)
 QDate WorkdayBoardSource::postedDateFromDisplayText(const QString &postedOnText,
                                                     const QDate &today)
 {
-    const QString lowered = postedOnText.trimmed().toLower();
-    if (lowered.endsWith(QStringLiteral("today"))) {
+    const QString loweredText = postedOnText.trimmed().toLower();
+    if (loweredText.endsWith(QStringLiteral("today"))) {
         return today;
     }
-    if (lowered.endsWith(QStringLiteral("yesterday"))) {
+    if (loweredText.endsWith(QStringLiteral("yesterday"))) {
         return today.addDays(-1);
     }
     // "posted 3 days ago", "posted 30+ days ago". The plus means "at least",
     // so 30 is used; a date that may be too recent beats no date at all.
+    //
+    // The pattern reads: one or more digits, kept as group 1 (\d+), an
+    // optional plus (\+?), spaces (\s+), "day" or "days" (days?), spaces,
+    // then "ago". The number of days is subtracted from today.
     static const QRegularExpression daysAgoPattern(
         QStringLiteral("(\\d+)\\+?\\s+days?\\s+ago"));
-    const QRegularExpressionMatch match = daysAgoPattern.match(lowered);
-    if (match.hasMatch()) {
-        return today.addDays(-match.captured(1).toInt());
+    const QRegularExpressionMatch daysAgoMatch = daysAgoPattern.match(loweredText);
+    if (daysAgoMatch.hasMatch()) {
+        return today.addDays(-daysAgoMatch.captured(1).toInt());
     }
     return QDate();
 }
@@ -280,19 +357,24 @@ JobPosting WorkdayBoardSource::postingFromSearchEntry(const QJsonObject &searchE
                                                       const QString &workdayTenant)
 {
     JobPosting posting;
-    QString hostPrefix;
-    QString cxsTenant;
-    QString siteName;
-    splitTenant(workdayTenant, hostPrefix, cxsTenant, siteName);
+    WorkdaySite workdaySite;
+    if (!readTenant(workdayTenant, workdaySite)) {
+        qWarning().noquote() << QStringLiteral(
+            "WorkdayBoardSource::postingFromSearchEntry: could not read tenant \"%1\" — "
+            "the link and company name will be empty")
+                .arg(workdayTenant);
+    }
 
+    // externalPath is "/job/{place}/{title}_{req id}". Without its leading
+    // slash it is both the job id and the end of the public link.
     const QString jobPath =
         jobPathWithoutLeadingSlash(searchEntry.value(QStringLiteral("externalPath")).toString());
 
     posting.positionTitle = searchEntry.value(QStringLiteral("title")).toString().trimmed();
     posting.externalSourceId = jobPath;
     posting.sourceUrl = jobPath.isEmpty() ? QString()
-                                          : publicJobUrlFor(hostPrefix, siteName, jobPath);
-    posting.companyName = companyNameFromSiteName(siteName);
+                                          : publicJobUrlFor(workdaySite, jobPath);
+    posting.companyName = companyNameFromSiteName(workdaySite.siteName);
 
     // "14 Locations" is what a search row says for a job in many places. It is
     // true but not a place, so it is kept as it is; the one-job answer lists
@@ -303,7 +385,7 @@ JobPosting WorkdayBoardSource::postingFromSearchEntry(const QJsonObject &searchE
     const QDate postedDate = postedDateFromDisplayText(
         searchEntry.value(QStringLiteral("postedOn")).toString(), QDate::currentDate());
     if (postedDate.isValid()) {
-        posting.postedTimestamp = QDateTime(postedDate, QTime(12, 0));
+        posting.postedTimestamp = QDateTime(postedDate, timeOfDayForADateOnlyPost);
     }
 
     posting.postingSource = AtsBoardName::Workday;
@@ -316,26 +398,30 @@ JobPosting WorkdayBoardSource::postingFromJobDetail(const QJsonObject &jobDetail
                                                     const QString &jobPath)
 {
     JobPosting posting;
-    QString hostPrefix;
-    QString cxsTenant;
-    QString siteName;
-    splitTenant(workdayTenant, hostPrefix, cxsTenant, siteName);
+    WorkdaySite workdaySite;
+    if (!readTenant(workdayTenant, workdaySite)) {
+        qWarning().noquote() << QStringLiteral(
+            "WorkdayBoardSource::postingFromJobDetail: could not read tenant \"%1\" — "
+            "the built link and company name will be empty")
+                .arg(workdayTenant);
+    }
 
     const QJsonObject jobInfo =
         jobDetailAnswer.value(QStringLiteral("jobPostingInfo")).toObject();
 
     posting.positionTitle = jobInfo.value(QStringLiteral("title")).toString().trimmed();
     posting.externalSourceId = jobPathWithoutLeadingSlash(jobPath);
-    posting.companyName = companyNameFromSiteName(siteName);
+    posting.companyName = companyNameFromSiteName(workdaySite.siteName);
 
     // The public link: Workday's own when it sends one, otherwise built from
     // the parts. Both open the same page.
     posting.sourceUrl = jobInfo.value(QStringLiteral("externalUrl")).toString().trimmed();
     if (posting.sourceUrl.isEmpty()) {
-        posting.sourceUrl = publicJobUrlFor(hostPrefix, siteName, posting.externalSourceId);
+        posting.sourceUrl = publicJobUrlFor(workdaySite, posting.externalSourceId);
     }
 
-    // The first place, then every other place, on one line.
+    // The first place, then every other place, on one line, split by "; ".
+    // A place already on the line is not added twice.
     QStringList everyPlace;
     const QString firstPlace = jobInfo.value(QStringLiteral("location")).toString().trimmed();
     if (!firstPlace.isEmpty()) {
@@ -361,12 +447,12 @@ JobPosting WorkdayBoardSource::postingFromJobDetail(const QJsonObject &jobDetail
     const QDate startDate = QDate::fromString(
         jobInfo.value(QStringLiteral("startDate")).toString(), Qt::ISODate);
     if (startDate.isValid()) {
-        posting.postedTimestamp = QDateTime(startDate, QTime(12, 0));
+        posting.postedTimestamp = QDateTime(startDate, timeOfDayForADateOnlyPost);
     } else {
         const QDate postedDate = postedDateFromDisplayText(
             jobInfo.value(QStringLiteral("postedOn")).toString(), QDate::currentDate());
         if (postedDate.isValid()) {
-            posting.postedTimestamp = QDateTime(postedDate, QTime(12, 0));
+            posting.postedTimestamp = QDateTime(postedDate, timeOfDayForADateOnlyPost);
         }
     }
 
@@ -375,6 +461,8 @@ JobPosting WorkdayBoardSource::postingFromJobDetail(const QJsonObject &jobDetail
     return posting;
 }
 
+// Reads the tenant, sets up the search state, and sends the first page.
+// handleOnePage and readNextPage take it from there.
 JobScoutReply *WorkdayBoardSource::searchSite(const QString &workdayTenant,
                                               const QString &searchText,
                                               int mostPagesToRead,
@@ -382,10 +470,8 @@ JobScoutReply *WorkdayBoardSource::searchSite(const QString &workdayTenant,
 {
     JobScoutReply *scoutReply = new JobScoutReply(replyParent);
 
-    QString hostPrefix;
-    QString cxsTenant;
-    QString siteName;
-    if (!splitTenant(workdayTenant, hostPrefix, cxsTenant, siteName)) {
+    WorkdaySite workdaySite;
+    if (!readTenant(workdayTenant, workdaySite)) {
         failThisReplyOnceTheCallerIsListening(scoutReply, QStringLiteral(
             "Job Crush needs a link to one of the company's Workday jobs before it can "
             "look there. Paste a job link from their careers site."), false);
@@ -396,7 +482,7 @@ JobScoutReply *WorkdayBoardSource::searchSite(const QString &workdayTenant,
     search->scoutReply = scoutReply;
     search->networkAccessManager = &networkAccessManager;
     search->workdayTenant = workdayTenant.trimmed();
-    search->serviceBase = serviceBaseFor(hostPrefix, cxsTenant, siteName);
+    search->serviceBase = serviceBaseFor(workdaySite);
     search->searchText = searchText.trimmed();
     search->mostPagesToRead = mostPagesToRead;
     readNextPage(search);
@@ -421,23 +507,21 @@ JobScoutReply *WorkdayBoardSource::fetchOneJob(const AtsBoardIdentity &boardIden
 {
     JobScoutReply *scoutReply = new JobScoutReply(replyParent);
 
-    QString hostPrefix;
-    QString cxsTenant;
-    QString siteName;
-    if (!boardIdentity.namesOneJob()
-            || !splitTenant(boardIdentity.tenant, hostPrefix, cxsTenant, siteName)) {
+    WorkdaySite workdaySite;
+    if (!boardIdentity.namesOneJob() || !readTenant(boardIdentity.tenant, workdaySite)) {
         failThisReplyOnceTheCallerIsListening(scoutReply, QStringLiteral(
             "That link doesn't name a single Workday job. Open the job on the "
             "employer's careers site and paste the link from there."), false);
         return scoutReply;
     }
 
+    // One job: GET {service base}/{job path}. The job path is the job id.
     const QString jobPath = jobPathWithoutLeadingSlash(boardIdentity.jobId);
-    const QUrl requestUrl(serviceBaseFor(hostPrefix, cxsTenant, siteName)
+    const QUrl requestUrl(serviceBaseFor(workdaySite)
                           + QLatin1Char('/') + jobPath);
 
     QNetworkReply *networkReply = networkAccessManager.get(workdayRequest(requestUrl));
-    networkReply->setParent(scoutReply);
+    networkReply->setParent(scoutReply); // dies with the scout reply
 
     const QString workdayTenant = boardIdentity.tenant;
     QObject::connect(networkReply, &QNetworkReply::finished, scoutReply,
@@ -453,7 +537,7 @@ JobScoutReply *WorkdayBoardSource::fetchOneJob(const AtsBoardIdentity &boardIden
         }
 
         // A job that is gone is an answer, not an error. Workday says 404.
-        if (httpStatusCode == 404) {
+        if (httpStatusCode == httpStatusNotFound) {
             scoutReply->markFinished({});
             return;
         }
@@ -478,6 +562,8 @@ JobScoutReply *WorkdayBoardSource::fetchOneJob(const AtsBoardIdentity &boardIden
             return;
         }
 
+        // A 200 answer with no title in it is not a job Job Crush can show,
+        // so it is reported as unreadable rather than as a closed job.
         const JobPosting posting = WorkdayBoardSource::postingFromJobDetail(
             responseDocument.object(), workdayTenant, jobPath);
         if (posting.positionTitle.isEmpty()) {

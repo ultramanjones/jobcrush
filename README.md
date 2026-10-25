@@ -104,15 +104,15 @@ Two other places worth a look:
 ## What runs today
 
 - **Brain Chat** — streaming responses over SSE, system prompt assembled from user-editable soul files, honest degraded mode with no key configured.
-- **Brain selector** — Anthropic, Google Gemini, OpenAI and OpenRouter with the user's own key, or Ollama on the user's own machine with no key. A checkbox picks the active brain, verified by a real zero-token call to the vendor. A tick means connected and active and nothing weaker.
-- **JobScout** — pluggable job-site clients: general boards (Remotive, Arbeitnow, Jobicy, USAJOBS) and employers' own hiring systems (Greenhouse, Lever, Ashby, SmartRecruiters, Workday). Per-site tabs, cross-source deduplication, and **Top Prospects** ranked by a local algorithm that costs no API calls and no AI tokens, showing its reasons on every row.
+- **Brain selector** — Anthropic, Google Gemini, OpenAI and OpenRouter with the user's own key, or Ollama on the user's own machine with no key. A checkbox picks the active brain, verified by a real zero-token call to the vendor. A tick means connected and active and nothing weaker. Each brain has three levels, Quick, Balanced and Best, with the vendor's model name shown small.
+- **JobScout** — pluggable job-site clients: general boards (Remotive, Arbeitnow, Jobicy, USAJOBS) and employers' own hiring systems (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Taleo). Per-site tabs, cross-source deduplication, and **Top Prospects** ranked by a local algorithm that costs no API calls and no AI tokens, showing its reasons on every row.
 - **Manual Add** — paste a link, or type a company and title. Job Crush hunts down the employer's own posting and keeps the employer's words.
-- **Job Pipelines** — the application board, from Crushed through Applied, Interview, Offer and Closed. It can check whether a posting is still listed.
+- **Job Pipelines** — the application board, from Crushed through Applied, Interview, Offer and Closed. It can check whether a posting is still listed. A job is marked gone only when two separate answers from the company's own board agree, and the user can overrule it.
 - **ProDocs** — drop in resumes, cover letters and transcripts (Word, PDF or text). Work history and education are read out of them.
 - **Staging and export** — an application packet per job, written out as Word, PDF or text before the job portal is ever opened.
 - **Stats** — the numbers on the search so far.
 - **Active Jobs folder** — one folder and one plain-text `JobQuest.txt` per job, so an outside AI can add and update jobs too.
-- **Data core** — SQLite behind repositories, with schema that grows by adding columns rather than discarding anyone's data.
+- **Data core** — SQLite behind repositories, with schema that grows by adding columns rather than discarding anyone's data. Saving and ranking thousands of found jobs runs on a background thread with its own connection, so the window never stops responding.
 
 What is coming next, what is deliberately parked, and why, is in
 [BACKLOG.md](BACKLOG.md).
@@ -161,10 +161,12 @@ desktop.
 
 The tests in `tests/` build the Logic classes on their own, with no window
 and no network. They cover the job scorer, the search profile, the date
-reader, the Workday and SmartRecruiters readers, the JobQuest.txt file, the
-shipped company list, and the Active Jobs folder. The Active Jobs folder test
-uses its own database in a temporary folder, so no test touches real data. CI
-runs them on Windows and Linux on every push.
+reader, the Workday, SmartRecruiters and Taleo readers, the JobQuest.txt file, the
+shipped company list, the Active Jobs folder, the background worker that saves
+and ranks found jobs, and the check that decides whether a job is gone (with a
+fake board in place of the network). Tests that need a database make their own
+in a temporary folder, so no test touches real data. CI runs them on Windows
+and Linux on every push.
 
 ```
 ctest --test-dir build --output-on-failure

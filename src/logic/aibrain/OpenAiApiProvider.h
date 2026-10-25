@@ -18,6 +18,7 @@ public:
     OpenAiApiProvider();
 
     QString providerDisplayName() const override;
+    QString modelNameFor(AiBrainLevel brainLevel) const override;
 
     AiBrainReply *streamConversation(const QString &soulText,
                                      const QList<AiBrainConversationMessage> &conversation,
@@ -30,6 +31,8 @@ public:
                                              QObject *replyParent) override;
 
 private:
+    // Builds the JSON request body for chat completions (system message
+    // first). Asking for a web search swaps in OpenAI's search model.
     QByteArray buildRequestBody(const QString &soulText,
                                 const QList<AiBrainConversationMessage> &conversation,
                                 const AiBrainRequestOptions &requestOptions) const;

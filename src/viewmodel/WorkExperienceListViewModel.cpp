@@ -1,5 +1,7 @@
 #include "WorkExperienceListViewModel.h"
 
+#include <QDebug>
+
 #include "../model/CareerHistoryRepository.h"
 #include "../logic/prodocs/ProDocsIntake.h"
 
@@ -66,13 +68,13 @@ int WorkExperienceListViewModel::rowCountForProperty() const
 
 int WorkExperienceListViewModel::unconfirmedCount() const
 {
-    int unconfirmed = 0;
+    int unconfirmedRowCount = 0;
     for (const WorkExperience &workExperience : loadedWorkExperiences) {
         if (!workExperience.isConfirmedByUser) {
-            ++unconfirmed;
+            ++unconfirmedRowCount;
         }
     }
-    return unconfirmed;
+    return unconfirmedRowCount;
 }
 
 bool WorkExperienceListViewModel::saveRow(int rowIndex)
@@ -81,6 +83,10 @@ bool WorkExperienceListViewModel::saveRow(int rowIndex)
         return false;
     }
     if (!repository.updateWorkExperience(loadedWorkExperiences.at(rowIndex))) {
+        qWarning().noquote() << QStringLiteral(
+            "WorkExperienceListViewModel::saveRow: could not save work experience %1 — %2")
+                .arg(loadedWorkExperiences.at(rowIndex).workExperienceId)
+                .arg(repository.lastErrorText());
         return false;
     }
     const QModelIndex changedIndex = index(rowIndex, 0);
@@ -170,9 +176,14 @@ void WorkExperienceListViewModel::addEmptyWorkExperience()
     // survives every re-read of their documents.
     workExperience.isConfirmedByUser = true;
     workExperience.wasEditedByUser = true;
-    if (repository.insertWorkExperience(workExperience)) {
-        reload();
+    if (!repository.insertWorkExperience(workExperience)) {
+        qWarning().noquote() << QStringLiteral(
+            "WorkExperienceListViewModel::addEmptyWorkExperience: could not add an empty "
+            "work experience — %1")
+                .arg(repository.lastErrorText());
+        return;
     }
+    reload();
 }
 
 void WorkExperienceListViewModel::removeWorkExperienceAt(int rowIndex)
@@ -180,8 +191,13 @@ void WorkExperienceListViewModel::removeWorkExperienceAt(int rowIndex)
     if (rowIndex < 0 || rowIndex >= loadedWorkExperiences.count()) {
         return;
     }
-    if (repository.removeWorkExperience(
-            loadedWorkExperiences.at(rowIndex).workExperienceId)) {
-        reload();
+    const qint64 workExperienceIdToRemove = loadedWorkExperiences.at(rowIndex).workExperienceId;
+    if (!repository.removeWorkExperience(workExperienceIdToRemove)) {
+        qWarning().noquote() << QStringLiteral(
+            "WorkExperienceListViewModel::removeWorkExperienceAt: could not remove work "
+            "experience %1 — %2")
+                .arg(workExperienceIdToRemove).arg(repository.lastErrorText());
+        return;
     }
+    reload();
 }

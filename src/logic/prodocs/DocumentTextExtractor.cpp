@@ -1,5 +1,6 @@
 #include "DocumentTextExtractor.h"
 
+#include <QDebug>
 #include <QFile>
 #include <QPdfDocument>
 #include <QPdfSelection>
@@ -12,8 +13,8 @@
 namespace {
 
 // Below this, a PDF is a picture of a page rather than a page of words.
-// Chosen low on purpose: a genuinely short resume should never be accused of
-// being a scan, but a scanned one yields almost nothing and must be caught.
+// Chosen low on purpose: a really short resume should never be taken for a
+// scan, but a scanned one yields almost nothing and must be caught.
 constexpr int fewestCharactersThatCountAsRealText = 40;
 
 // The same question asked of ONE page. A scanned page usually gives back
@@ -28,6 +29,9 @@ DocumentTextExtractor::extractFromPlainTextFile(const QString &filePath) const
 {
     QFile textFile(filePath);
     if (!textFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning().noquote() << QStringLiteral(
+            "DocumentTextExtractor::extractFromPlainTextFile: could not open \"%1\" — %2")
+                .arg(filePath, textFile.errorString());
         return { QString(), QStringLiteral("Job Crush couldn't open that file to read it.") };
     }
     QTextStream textStream(&textFile);
@@ -38,7 +42,11 @@ DocumentTextExtractor::ExtractionResult
 DocumentTextExtractor::extractFromPortableDocument(const QString &filePath) const
 {
     QPdfDocument portableDocument;
-    if (portableDocument.load(filePath) != QPdfDocument::Error::None) {
+    const QPdfDocument::Error loadError = portableDocument.load(filePath);
+    if (loadError != QPdfDocument::Error::None) {
+        qWarning().noquote() << QStringLiteral(
+            "DocumentTextExtractor::extractFromPortableDocument: could not load \"%1\""
+            " — QPdfDocument error %2").arg(filePath).arg(static_cast<int>(loadError));
         return { QString(),
                  QStringLiteral("That PDF wouldn't open — it may be password "
                                 "protected or damaged.") };
@@ -127,9 +135,9 @@ DocumentTextExtractor::extractFromWordDocument(const QString &filePath) const
 DocumentTextExtractor::ExtractionResult
 DocumentTextExtractor::extractTextFrom(const QString &filePath) const
 {
-    // One door in, one alphabet out. Every reader below hands its result
-    // through the normalizer, so nothing downstream ever meets a non-breaking
-    // space or somebody's favourite bullet glyph.
+    // Every file comes in through this one method, and every reader's text
+    // goes through the normalizer here. So nothing downstream ever meets a
+    // non-breaking space or an unusual bullet character.
     ExtractionResult normalizedResult = extractTextFromFileByKind(filePath);
     normalizedResult.extractedText =
         withEveryLookalikeCharacterNormalized(normalizedResult.extractedText);
@@ -162,8 +170,9 @@ DocumentTextExtractor::extractTextFromFileByKind(const QString &filePath) const
                                            "image to read.") };
     }
 
-    // .docx, .rtf and .odt are stored safely and read once their formats land.
-    // Never a bare "can't" — the user gets the one-step way to be read today.
+    // .rtf and .odt are accepted and stored, but there is no reader for them
+    // yet. Never a bare "can't" — the user gets the one step that gets the
+    // file read today.
     return { QString(),
              QStringLiteral("Saved, but Job Crush can't read .%1 files yet, so nothing "
                             "has been pulled out of this one. To have it read now: open "

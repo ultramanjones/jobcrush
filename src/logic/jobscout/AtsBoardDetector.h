@@ -25,6 +25,11 @@
 // No state, so it stays header-only.
 class AtsBoardDetector {
 public:
+    // How it works: the host says which hiring system it is. Each system has
+    // its own section below, with the link shapes it accepts written above
+    // it. Inside a section the link is cut into its path parts, and the
+    // company and the job id are picked out by position or by the word that
+    // comes before them. The first section whose host matches wins.
     AtsBoardIdentity identify(const QString &jobUrl) const
     {
         AtsBoardIdentity identity;
@@ -34,9 +39,11 @@ public:
             return identity;
         }
 
+        // "www.lever.co" and "lever.co" are the same host.
+        const QString wwwPrefix = QStringLiteral("www.");
         QString host = url.host().toLower();
-        if (host.startsWith(QStringLiteral("www."))) {
-            host.remove(0, 4);
+        if (host.startsWith(wwwPrefix)) {
+            host.remove(0, wwwPrefix.size());
         }
         const QStringList pathParts =
             url.path().split(QLatin1Char('/'), Qt::SkipEmptyParts);
@@ -58,7 +65,8 @@ public:
             // "job-boards".
             //
             // The old embed is the exception, and it says so: its path starts
-            // with "jobs", so the company has to come from the host.
+            // with "jobs" (or "embed"), so the company has to come from the
+            // host.
             const bool pathStartsWithTheCompany =
                 !pathParts.isEmpty()
                 && pathParts.at(0) != QStringLiteral("jobs")
@@ -78,6 +86,7 @@ public:
         // --- Lever --------------------------------------------------------
         // jobs.lever.co/acme/7f3a1b2c-...
         // jobs.eu.lever.co/acme/7f3a1b2c-...
+        // The first path part is the company and the second is the job id.
         if (host.endsWith(QStringLiteral("lever.co"))) {
             identity.boardName = AtsBoardName::Lever;
             if (!pathParts.isEmpty()) {
@@ -91,6 +100,10 @@ public:
 
         // --- Ashby --------------------------------------------------------
         // jobs.ashbyhq.com/acme/7f3a1b2c-...
+        // jobs.ashbyhq.com/acme?ashby_jid=7f3a1b2c-...  (id as a parameter)
+        //
+        // Same shape as Lever: company first, job id second. Some links
+        // carry the id only as the ashby_jid parameter.
         if (host.endsWith(QStringLiteral("ashbyhq.com"))) {
             identity.boardName = AtsBoardName::Ashby;
             if (!pathParts.isEmpty()) {
@@ -115,6 +128,10 @@ public:
             }
             if (pathParts.count() > 1) {
                 // The id is the leading digits of the slug: "744000012345-title".
+                // The pattern reads: from the start (^), six or more digits
+                // (\d{6,}), kept as group 1. Six is the floor so a title that
+                // starts with a short number, like "3d-artist", is not taken
+                // for an id. With no match, the whole part is used as the id.
                 static const QRegularExpression leadingDigitsPattern(
                     QStringLiteral("^(\\d{6,})"));
                 const QRegularExpressionMatch match =
@@ -127,6 +144,10 @@ public:
         // --- Workable -----------------------------------------------------
         // apply.workable.com/acme/j/ABC123DEF/
         // acme.workable.com/j/ABC123DEF
+        //
+        // On the shared hosts the company is the first path part. On a
+        // company's own subdomain it is the first part of the host. Either
+        // way the job id is the path part after "j".
         if (host.endsWith(QStringLiteral("workable.com"))) {
             identity.boardName = AtsBoardName::Workable;
             if (host == QStringLiteral("apply.workable.com")
@@ -143,6 +164,8 @@ public:
 
         // --- Recruitee ----------------------------------------------------
         // acme.recruitee.com/o/senior-engineer
+        //
+        // Company from the host, job from the path part after "o".
         if (host.endsWith(QStringLiteral("recruitee.com"))) {
             identity.boardName = AtsBoardName::Recruitee;
             identity.tenant = host.section(QLatin1Char('.'), 0, 0);
@@ -153,6 +176,9 @@ public:
         // --- Personio -----------------------------------------------------
         // acme.jobs.personio.de/job/123456
         // acme.jobs.personio.com/job/123456
+        //
+        // Personio has a host per country, so the test is "personio." anywhere
+        // in the host. Company from the host, job from the part after "job".
         if (host.contains(QStringLiteral("personio."))) {
             identity.boardName = AtsBoardName::Personio;
             identity.tenant = host.section(QLatin1Char('.'), 0, 0);
@@ -171,12 +197,23 @@ public:
         // "ngc.wd1/Northrop_Grumman_External_Site". The job id is the rest of
         // the path from "job" on, because that whole path is how Workday
         // finds one job.
+        //
+        // Steps:
+        //   1. Split the host on dots. "ngc.wd1.myworkdayjobs.com" is four
+        //      parts: account, server, "myworkdayjobs", "com". Fewer than four
+        //      means the account or the server is missing, so give up.
+        //   2. Skip a language part like "en-US" at the front of the path.
+        //   3. The next path part is the careers site. No site, give up.
+        //   4. If the part after the site is "job" and something follows it,
+        //      everything from "job" on is the job id.
         if (host.endsWith(QStringLiteral(".myworkdayjobs.com"))) {
+            constexpr int fewestHostPartsWithAccountAndServer = 4;
             const QStringList hostParts = host.split(QLatin1Char('.'));
-            if (hostParts.count() < 4) {
+            if (hostParts.count() < fewestHostPartsWithAccountAndServer) {
                 return identity;
             }
             int pathIndex = 0;
+            // Two lowercase letters, a dash, two letters: "en-US", "fr-fr".
             static const QRegularExpression languagePattern(
                 QStringLiteral("^[a-z]{2}-[A-Za-z]{2}$"));
             if (pathIndex < pathParts.count()
@@ -199,6 +236,72 @@ public:
             return identity;
         }
 
+        // --- Workday, the other host ------------------------------------
+        // wd5.myworkdaysite.com/en-US/recruiting/uw/UWHires/job/Seattle-WA/Title_REQ-0000136398
+        //
+        // Here the account (uw) and the careers site (UWHires) are in the
+        // path, after "recruiting". They are kept as
+        // "wd5.myworkdaysite/uw/UWHires", so WorkdayBoardSource can tell this
+        // host from the usual one.
+        //
+        // Steps:
+        //   1. The server name is the first part of the host: "wd5".
+        //   2. Skip a language part like "en-US" at the front of the path.
+        //   3. The next part must be "recruiting", with at least two parts
+        //      after it: the account, then the site. If not, give up.
+        //   4. If the part after the site is "job" and something follows it,
+        //      everything from "job" on is the job id.
+        if (host.endsWith(QStringLiteral(".myworkdaysite.com"))) {
+            const QString serverName = host.section(QLatin1Char('.'), 0, 0);
+            int pathIndex = 0;
+            // Same language pattern as above: "en-US".
+            static const QRegularExpression siteLanguagePattern(
+                QStringLiteral("^[a-z]{2}-[A-Za-z]{2}$"));
+            if (pathIndex < pathParts.count()
+                    && siteLanguagePattern.match(pathParts.at(pathIndex)).hasMatch()) {
+                ++pathIndex;
+            }
+            if (pathIndex + 2 >= pathParts.count()
+                    || pathParts.at(pathIndex).compare(QStringLiteral("recruiting"),
+                                                       Qt::CaseInsensitive) != 0) {
+                return identity;
+            }
+            identity.boardName = AtsBoardName::Workday;
+            identity.tenant = QStringLiteral("%1.myworkdaysite/%2/%3")
+                .arg(serverName, pathParts.at(pathIndex + 1), pathParts.at(pathIndex + 2));
+            pathIndex += 3;
+            if (pathIndex < pathParts.count()
+                    && pathParts.at(pathIndex).compare(QStringLiteral("job"),
+                                                       Qt::CaseInsensitive) == 0
+                    && pathIndex + 1 < pathParts.count()) {
+                identity.jobId = pathParts.mid(pathIndex).join(QLatin1Char('/'));
+            }
+            return identity;
+        }
+
+        // --- Taleo --------------------------------------------------------
+        // hdr.taleo.net/careersection/ex/jobdetail.ftl?job=193686&lang=en
+        // hdr.taleo.net/careersection/ex/jobsearch.ftl?lang=en   (the site, no job)
+        //
+        // The account is the first part of the host, and the careers section
+        // is the part after "careersection". They are kept as "hdr/ex". The
+        // job number is the "job" setting in the link.
+        //
+        // "careersection/rest/..." is Taleo's own data service, not a careers
+        // section a person opens, so a link with "rest" there is not taken.
+        if (host.endsWith(QStringLiteral(".taleo.net"))) {
+            const int sectionIndex = pathParts.indexOf(QStringLiteral("careersection"));
+            if (sectionIndex < 0 || sectionIndex + 1 >= pathParts.count()
+                    || pathParts.at(sectionIndex + 1) == QStringLiteral("rest")) {
+                return identity;
+            }
+            identity.boardName = AtsBoardName::Taleo;
+            identity.tenant = QStringLiteral("%1/%2").arg(host.section(QLatin1Char('.'), 0, 0),
+                                                          pathParts.at(sectionIndex + 1));
+            identity.jobId = query.queryItemValue(QStringLiteral("job"));
+            return identity;
+        }
+
         return identity;   // not a board Job Crush knows
     }
 
@@ -208,10 +311,13 @@ public:
     bool isWalledGarden(const QString &jobUrl) const
     {
         const QUrl url(jobUrl.trimmed());
+        const QString wwwPrefix = QStringLiteral("www.");
         QString host = url.host().toLower();
-        if (host.startsWith(QStringLiteral("www."))) {
-            host.remove(0, 4);
+        if (host.startsWith(wwwPrefix)) {
+            host.remove(0, wwwPrefix.size());
         }
+        // A host matches when it is the site itself or any subdomain of it:
+        // "linkedin.com" and "uk.linkedin.com" both count.
         static const QStringList walledHosts = {
             QStringLiteral("linkedin.com"), QStringLiteral("indeed.com"),
             QStringLiteral("glassdoor.com"), QStringLiteral("ziprecruiter.com"),

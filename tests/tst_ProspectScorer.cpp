@@ -9,6 +9,7 @@
 
 namespace {
 
+// A posting with only the fields a scoring test cares about.
 JobPosting postingWith(const QString &positionTitle,
                        const QString &descriptionText = QString(),
                        const QString &locationText = QString(),
@@ -53,7 +54,7 @@ private slots:
         const int partialScore =
             scorer.scoreJobPosting(postingWith(QStringLiteral("Qt Software Engineer")))
                 .matchScoreOutOfOneHundred;
-        QCOMPARE(directScore, 40);
+        QCOMPARE(directScore, 40); // all of the title points
         QVERIFY(partialScore > 0);
         QVERIFY(directScore > partialScore);
     }
@@ -97,10 +98,10 @@ private slots:
         const ProspectMatchResult result = scorer.scoreJobPosting(
             postingWith(QStringLiteral("Web Developer"),
                         QStringLiteral("We use JavaScript on the front and Java on the back.")));
-        QCOMPARE(result.matchScoreOutOfOneHundred, 35);
+        QCOMPARE(result.matchScoreOutOfOneHundred, 35); // all of the skill points
     }
 
-    void matchStrengthCutoffs()
+    void matchIsStrongFromSixtyAndFairFromThirty()
     {
         QCOMPARE(ProspectScorer::matchStrengthFor(60), ProspectMatchStrength::Strong);
         QCOMPARE(ProspectScorer::matchStrengthFor(59), ProspectMatchStrength::Fair);
@@ -117,7 +118,7 @@ private slots:
         const ProspectMatchResult result = scorer.scoreJobPosting(
             postingWith(QStringLiteral("Engineer"),
                         QStringLiteral("Strong C++, some QML.")));
-        QCOMPARE(result.matchScoreOutOfOneHundred, 35);
+        QCOMPARE(result.matchScoreOutOfOneHundred, 35); // 2 of 2 skills: all 35 points
         QVERIFY(result.matchReasons.join(QLatin1Char(' ')).contains(QStringLiteral("2 of your 2")));
     }
 
@@ -129,7 +130,7 @@ private slots:
 
         const ProspectMatchResult result = scorer.scoreJobPosting(
             postingWith(QStringLiteral("Engineer"), QStringLiteral("Qt Qt Qt Qt Qt Qt")));
-        QCOMPARE(result.matchScoreOutOfOneHundred, 17); // 35 * 1 / 2
+        QCOMPARE(result.matchScoreOutOfOneHundred, 17); // 1 of 2 skills: 35 * 1 / 2, rounded down
     }
 
     void aStateCodeMatchesOnlyAsAWholeWord()
@@ -176,7 +177,7 @@ private slots:
 
         const ProspectMatchResult onSite = scorer.scoreJobPosting(
             postingWith(QStringLiteral("Qt Developer"), {}, QStringLiteral("Austin, TX")));
-        QCOMPARE(onSite.matchScoreOutOfOneHundred, 20);
+        QCOMPARE(onSite.matchScoreOutOfOneHundred, 20); // 40 title points, halved
         QVERIFY(onSite.matchReasons.contains(QStringLiteral("Not listed as remote")));
     }
 
@@ -187,6 +188,8 @@ private slots:
         const ProspectScorer scorer(profile);
 
         JobPosting posting = postingWith(QStringLiteral("x"));
+        // The top of the range reaches the floor: all 5 pay points. A range
+        // that stays under the floor earns none.
         posting.salaryText = QStringLiteral("$110k - $130k");
         QCOMPARE(scorer.scoreJobPosting(posting).matchScoreOutOfOneHundred, 5);
 
@@ -204,12 +207,10 @@ private slots:
         JobPosting stale = postingWith(QStringLiteral("x"));
         stale.postedTimestamp = QDateTime::currentDateTime().addDays(-60);
 
+        // Posted today: all 5 freshness points. Sixty days old: none.
         QCOMPARE(scorer.scoreJobPosting(fresh).matchScoreOutOfOneHundred, 5);
         QCOMPARE(scorer.scoreJobPosting(stale).matchScoreOutOfOneHundred, 0);
     }
-
-private:
-    QTemporaryDir settingsFolder;
 
     // ClearanceDetector lives beside the scorer and is tested here with it.
     void clearanceIsFlaggedFromTitleOrDescription()
@@ -229,6 +230,9 @@ private:
         plainJob.fullDescriptionText = QStringLiteral("Build QML screens for robots.");
         QVERIFY(!ClearanceDetector::asksForClearance(plainJob));
     }
+
+private:
+    QTemporaryDir settingsFolder;
 };
 
 QTEST_GUILESS_MAIN(TestProspectScorer)

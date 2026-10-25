@@ -53,8 +53,8 @@ public:
     // site is waiting on. A fact about the situation, never about the user.
     Q_INVOKABLE QString reasonSourceCannotBeUsed(const QString &sourceStorageName) const;
 
-    // Opens the site's own front door, so the user can see who they are
-    // about to pull listings from.
+    // Opens the site's home page, so the user can see who they are about to
+    // pull listings from.
     Q_INVOKABLE void openSourceWebsite(const QString &sourceStorageName) const;
 
     // --- The free keys some sites need ---

@@ -4,8 +4,7 @@
 #include <QStringList>
 
 #include "../../model/JobPosting.h"
-
-class JobSearchProfile;
+#include "JobSearchProfile.h"
 
 // ProspectMatchResult
 //
@@ -16,6 +15,13 @@ class JobSearchProfile;
 struct ProspectMatchResult {
     int matchScoreOutOfOneHundred = 0;
     QStringList matchReasons;     // "Title matches Qt Developer", "4 of 6 skills"
+};
+
+// A posting and its score, kept together. One list of these is simpler than
+// two lists the caller must keep in the same order.
+struct ScoredJobPosting {
+    JobPosting jobPosting;
+    ProspectMatchResult matchResult;
 };
 
 // How strong a score is, for the page to color the score badge. The cutoffs
@@ -38,10 +44,12 @@ enum class ProspectMatchStrength {
 // a thousand jobs would eat AI usage for no gain.
 //
 // It is a calculation with no state of its own, so it is a plain class in
-// the Logic layer, not a QObject.
+// the Logic layer, not a QObject. It keeps its own copy of the profile, so it
+// is safe to use on a background thread.
 class ProspectScorer {
 public:
-    explicit ProspectScorer(const JobSearchProfile &searchProfile);
+    explicit ProspectScorer(const ScoringProfile &scoringProfile);
+    explicit ProspectScorer(const JobSearchProfile &jobSearchProfile);
 
     ProspectMatchResult scoreJobPosting(const JobPosting &jobPosting) const;
 
@@ -118,5 +126,5 @@ private:
     int scoreSalaryFit(const QString &salaryText, QStringList &matchReasons) const;
     int scoreFreshness(const JobPosting &jobPosting, QStringList &matchReasons) const;
 
-    const JobSearchProfile &searchProfile;
+    const ScoringProfile searchProfile;
 };

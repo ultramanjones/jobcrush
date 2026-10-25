@@ -3,6 +3,7 @@
 #include <QList>
 #include <QString>
 
+#include "AiBrainLevel.h"
 #include "AiCredential.h"
 
 class AiBrainReply;
@@ -11,8 +12,8 @@ class QObject;
 // AiBrainConversationMessage
 //
 // One turn of a conversation as providers see it: who spoke, and what they
-// said. Deliberately vendor-neutral — each provider translates this into its
-// own wire format (Anthropic JSON today; OpenAI/Ollama JSON later).
+// said. It belongs to no vendor on purpose. Each provider translates it into
+// its own vendor's JSON.
 struct AiBrainConversationMessage {
     enum class Author {
         Human,      // the user
@@ -40,12 +41,17 @@ struct AiBrainRequestOptions {
     // writes a whole document back, like laying out a resume, asks for more,
     // or the answer is cut off in the middle.
     int longestAnswerTokens = 0;
+
+    // Which of the provider's models to use: Quick, Balanced or Best. AiBrain
+    // fills this in from the user's choice for the provider.
+    AiBrainLevel brainLevel = AiBrainLevel::Balanced;
 };
 
 // AiBrainProvider
 //
-// The interface every concrete provider implements (Anthropic, OpenAI,
-// Ollama — interchangeable, per the plan). A provider is a thin HTTPS client
+// The interface every concrete provider implements: Anthropic, OpenRouter,
+// OpenAI, Gemini and Ollama. Any one can stand in for another. A provider is
+// a thin HTTP client
 // speaking one vendor's JSON API: small, ordinary networking code. It holds
 // no conversation state and no credentials of its own — everything it needs
 // arrives with the call.
@@ -55,6 +61,11 @@ public:
 
     // The vendor name for logs and the UI, e.g. "Anthropic".
     virtual QString providerDisplayName() const = 0;
+
+    // The vendor's model name for a level, for example "claude-sonnet-5-5"
+    // for Balanced. Shown small under the level picker, and sent with every
+    // request.
+    virtual QString modelNameFor(AiBrainLevel brainLevel) const = 0;
 
     // Starts a streaming request and returns immediately. The returned reply
     // (parented to replyParent) delivers fragments, then finished or failed.

@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QDate>
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QLibraryInfo>
@@ -76,6 +77,9 @@ void AiAppConnection::openDoor()
     if (localServer.listen(AiAppTools::ConnectionName)) {
         doorProblemText.clear();
     } else {
+        qWarning().noquote() << QStringLiteral(
+            "AiAppConnection::openDoor: could not listen on \"%1\" — %2")
+            .arg(AiAppTools::ConnectionName, localServer.errorString());
         doorProblemText = QStringLiteral(
             "AI apps cannot reach Job Crush: %1. If Job Crush is open twice, close "
             "one of them.").arg(localServer.errorString());
@@ -88,6 +92,8 @@ void AiAppConnection::closeDoor()
     doorProblemText.clear();
 }
 
+// Takes every waiting connection. Each one is read as data arrives, and
+// its buffer and socket are dropped when the bridge hangs up.
 void AiAppConnection::acceptNewConnection()
 {
     while (QLocalSocket *connection = localServer.nextPendingConnection()) {
@@ -102,14 +108,23 @@ void AiAppConnection::acceptNewConnection()
 
 void AiAppConnection::readFromConnection(QLocalSocket *connection)
 {
-    QByteArray &buffered = unfinishedLines[connection];
-    buffered += connection->readAll();
+    // Each connection keeps its own buffer of bytes that do not yet make a
+    // whole line. The steps:
+    //  1. Add whatever bytes arrived to the end of that buffer.
+    //  2. While the buffer holds a line break, cut off one complete line.
+    //  3. Read the line as one JSON-RPC message and write one answer line
+    //     back. A notification gets no answer.
+    //  4. Bytes after the last line break wait for the next readyRead.
+    //  5. If those waiting bytes grow past longestLineAccepted, the
+    //     connection is dropped.
+    QByteArray &unfinishedBytes = unfinishedLines[connection];
+    unfinishedBytes += connection->readAll();
 
-    int lineEnd = buffered.indexOf('\n');
-    while (lineEnd >= 0) {
-        const QByteArray line = buffered.left(lineEnd).trimmed();
-        buffered.remove(0, lineEnd + 1);
-        lineEnd = buffered.indexOf('\n');
+    int lineBreakIndex = unfinishedBytes.indexOf('\n');
+    while (lineBreakIndex >= 0) {
+        const QByteArray line = unfinishedBytes.left(lineBreakIndex).trimmed();
+        unfinishedBytes.remove(0, lineBreakIndex + 1);
+        lineBreakIndex = unfinishedBytes.indexOf('\n');
         if (line.isEmpty()) {
             continue;
         }
@@ -130,7 +145,11 @@ void AiAppConnection::readFromConnection(QLocalSocket *connection)
         }
     }
 
-    if (buffered.size() > longestLineAccepted) {
+    if (unfinishedBytes.size() > longestLineAccepted) {
+        qWarning().noquote() << QStringLiteral(
+            "AiAppConnection::readFromConnection: dropped an AI app connection — "
+            "%1 bytes arrived with no line break (the limit is %2)")
+            .arg(unfinishedBytes.size()).arg(longestLineAccepted);
         connection->disconnectFromServer();
     }
 }
@@ -171,11 +190,14 @@ QString AiAppConnection::claudeDesktopSettingsText()
     return QString::fromUtf8(QJsonDocument(settings).toJson(QJsonDocument::Indented)).trimmed();
 }
 
+// Answers the four MCP methods Job Crush knows: initialize, ping,
+// tools/list and tools/call. Anything else gets JSON-RPC's "method not
+// found" error.
 QJsonObject AiAppConnection::answerFor(const QJsonObject &message) const
 {
     const QString method = message.value(QStringLiteral("method")).toString();
     const QJsonValue requestId = message.value(QStringLiteral("id"));
-    const QJsonObject params = message.value(QStringLiteral("params")).toObject();
+    const QJsonObject parameters = message.value(QStringLiteral("params")).toObject();
 
     // A message with no id is a notification, and gets no answer.
     if (requestId.isUndefined()) {
@@ -185,7 +207,8 @@ QJsonObject AiAppConnection::answerFor(const QJsonObject &message) const
     if (method == QStringLiteral("initialize")) {
         return AiAppTools::resultMessage(
             requestId,
-            AiAppTools::initializeResult(params.value(QStringLiteral("protocolVersion")).toString()));
+            AiAppTools::initializeResult(
+                parameters.value(QStringLiteral("protocolVersion")).toString()));
     }
     if (method == QStringLiteral("ping")) {
         return AiAppTools::resultMessage(requestId, {});
@@ -196,8 +219,8 @@ QJsonObject AiAppConnection::answerFor(const QJsonObject &message) const
     }
     if (method == QStringLiteral("tools/call")) {
         const AiAppAnswer answer = requests.runAction(
-            params.value(QStringLiteral("name")).toString(),
-            params.value(QStringLiteral("arguments")).toObject(),
+            parameters.value(QStringLiteral("name")).toString(),
+            parameters.value(QStringLiteral("arguments")).toObject(),
             QDate::currentDate());
         return AiAppTools::resultMessage(requestId,
                                          AiAppTools::toolCallResult(answer.text, answer.isError));

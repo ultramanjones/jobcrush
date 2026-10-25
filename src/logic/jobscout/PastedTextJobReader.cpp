@@ -22,6 +22,8 @@ PastedTextJobReader::PastedTextJobReader(AiBrain &aiBrain)
 {
 }
 
+// The message sent to the brain: the task, the fixed JSON shape to answer
+// in, the rules, and then the pasted text, cut to mostCharactersSent.
 QString PastedTextJobReader::instructionsFor(const QString &pastedText)
 {
     return QStringLiteral(
@@ -81,12 +83,17 @@ bool PastedTextJobReader::readAnswer(const QString &replyText, JobPosting &posti
         postingRead.sourceUrl = url;
     }
 
+    // A posted date is kept only when it reads as a real date and is not in
+    // the future. It is stored at noon, so a time zone shift of a few hours
+    // cannot move it to the day before or after.
     const QDate postedDate = QDate::fromString(
         answer.value(QStringLiteral("posted")).toString().trimmed(), Qt::ISODate);
     if (postedDate.isValid() && postedDate <= QDate::currentDate()) {
         postingRead.postedTimestamp = QDateTime(postedDate, QTime(12, 0));
     }
 
+    // With neither a company nor a title there is nothing to fill a form
+    // with. One of the two is enough, because the user can type the other.
     if (postingRead.companyName.isEmpty() && postingRead.positionTitle.isEmpty()) {
         whyNot = QStringLiteral("Moonlight couldn't find a company or a job title in that "
                                 "text. Check it is the job's text, or type the two in "

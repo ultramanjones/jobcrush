@@ -5,6 +5,7 @@
 #include "JobSourceProvider.h"
 #include "LeverBoardSource.h"
 #include "SmartRecruitersBoardSource.h"
+#include "TaleoBoardSource.h"
 #include "WorkdayBoardSource.h"
 
 class FollowedEmployerRoster;
@@ -18,11 +19,14 @@ class FollowedEmployerRoster;
 // one line in the sweep report — but there is no site. It is however many
 // companies the user chose, each read from its own hiring system.
 //
-// This is the best source Job Crush has, and it costs nothing extra: the
-// board readers were already written for the resolver, which only ever asked
-// them for one job at a time. Asked for the whole board instead, the same code
-// answers "what is Acme hiring for right now?" — which, for anyone with a list
-// of places they want to work, is the question that matters.
+// It adds no new network code. The board readers were already written for
+// the resolver, which only ever asked them for one job at a time. Asked for
+// the whole board instead, the same code answers "what is Acme hiring for
+// right now?" — the question a person with a list of places they want to
+// work is asking.
+//
+// It holds one reader per board it can read. Each company on the roster is
+// sent to the reader for its board.
 class FollowedEmployerJobSource : public JobSourceProvider {
 public:
     explicit FollowedEmployerJobSource(const FollowedEmployerRoster &followedRoster);
@@ -40,4 +44,5 @@ private:
     AshbyBoardSource ashbyBoard;
     SmartRecruitersBoardSource smartRecruitersBoard;
     WorkdayBoardSource workdayBoard;
+    TaleoBoardSource taleoBoard;
 };

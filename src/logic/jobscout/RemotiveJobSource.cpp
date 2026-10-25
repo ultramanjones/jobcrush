@@ -1,5 +1,6 @@
 #include "RemotiveJobSource.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,16 +19,20 @@ namespace {
 const QString remotiveStorageName = QStringLiteral("remotive");
 const QString remotiveJobsEndpointUrl = QStringLiteral("https://remotive.com/api/remote-jobs");
 
-// One sweep's worth. Enough to be genuinely useful, small enough to stay
-// polite to a free API that asks nothing of us in return.
+// One sweep's worth. Enough to be useful. Small enough to stay polite to a
+// free API that asks nothing of us in return.
 constexpr int remotiveMaximumResultsPerSweep = 100;
+
+// How much of a bad response to quote back in a message.
+constexpr int remotiveDiagnosticOpeningByteCount = 180;
 
 // What a response actually was, when it turned out not to be job listings.
 // Enough to diagnose from — status, size, and the opening bytes — without
 // dumping a whole page into a message meant for a human to read.
 QString responseDiagnosticTail(int httpStatusCode, const QByteArray &responseBody)
 {
-    QString openingBytes = QString::fromUtf8(responseBody.left(180)).simplified();
+    QString openingBytes =
+        QString::fromUtf8(responseBody.left(remotiveDiagnosticOpeningByteCount)).simplified();
     if (openingBytes.isEmpty()) {
         openingBytes = QStringLiteral("(empty)");
     }
@@ -43,10 +48,21 @@ RemotiveJobSource::RemotiveJobSource() = default;
 
 JobSourceDescriptor RemotiveJobSource::descriptor() const
 {
-    bool found = false;
-    return jobSourceDescriptorFor(remotiveStorageName, found);
+    bool descriptorWasFound = false;
+    const JobSourceDescriptor descriptor =
+        jobSourceDescriptorFor(remotiveStorageName, descriptorWasFound);
+    if (!descriptorWasFound) {
+        qWarning().noquote() << QStringLiteral(
+            "RemotiveJobSource::descriptor: no catalog entry for \"%1\" — "
+            "the source catalog is missing it")
+                .arg(remotiveStorageName);
+    }
+    return descriptor;
 }
 
+// Steps: one GET with limit and search in the query. The answer is
+// {"jobs":[...]}, one object per job. Each job is copied into a JobPosting.
+// A job with no id (or id 0) or no link is skipped.
 JobScoutReply *RemotiveJobSource::searchForJobs(const JobSearchProfile &searchProfile,
                                                 QObject *replyParent)
 {
@@ -73,6 +89,7 @@ JobScoutReply *RemotiveJobSource::searchForJobs(const JobSearchProfile &searchPr
                                 QByteArrayLiteral("Mozilla/5.0 (compatible; JobCrush/0.1; "
                                 "+https://github.com/ultramanjones/jobcrush)"));
 
+    // Follow redirects, but never from https down to http.
     networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                                 QNetworkRequest::NoLessSafeRedirectPolicy);
 
@@ -88,6 +105,8 @@ JobScoutReply *RemotiveJobSource::searchForJobs(const JobSearchProfile &searchPr
             ->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray responseBody = networkReply->readAll();
 
+        // A status code means the site answered and said no. No status code
+        // means the request never got an answer at all.
         if (networkReply->error() != QNetworkReply::NoError) {
             scoutReply->markFailed(
                 httpStatusCode > 0

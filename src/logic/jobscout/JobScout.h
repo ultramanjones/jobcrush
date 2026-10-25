@@ -4,11 +4,15 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QThread>
+#include <QTimer>
 
 #include <memory>
 #include <vector>
 
 #include "../../model/JobPosting.h"
+#include "../pipelines/PostingGoneConfirmer.h"
+#include "DiscoveryWorker.h"
 #include "ProspectScorer.h"
 
 class AiBrain;
@@ -24,29 +28,6 @@ class JobSourceProvider;
 class JobSourceRoster;
 class PostedJobPageReader;
 
-// ScoredJobPosting
-//
-// A posting and its score against the search profile, kept together. One
-// list of these is simpler than two lists the caller must keep in the same
-// order.
-struct ScoredJobPosting {
-    JobPosting jobPosting;
-    ProspectMatchResult matchResult;
-};
-
-// SearchAreaScope
-//
-// Which side of the location filter a caller wants: the jobs where the user
-// said they will work, or the jobs held back because they are somewhere else.
-//
-// OutsideSearchArea exists so the held-back jobs can still be looked at, on
-// their own tab. Hiding jobs with no way to see them would be the app making
-// the decision for the user.
-enum class SearchAreaScope {
-    InsideSearchArea,
-    OutsideSearchArea
-};
-
 // JobScout
 //
 // Finds jobs. A Logic layer class. Everything above it asks JobScout for jobs
@@ -54,9 +35,8 @@ enum class SearchAreaScope {
 //
 // What it does:
 //  - runs a sweep across the sites the user ticked, one reply per site,
-//  - saves every job found through the repository, which knows which jobs
-//    it has seen before,
-//  - ranks the stored jobs against the search profile,
+//  - saves every job found, one company at a time, on a background thread,
+//  - prepares the ranked rows for each Discoveries tab, also on that thread,
 //  - reports progress with real numbers while it works,
 //  - finds the employer's own posting for a job the user adds by hand.
 //
@@ -65,9 +45,10 @@ enum class SearchAreaScope {
 class JobScout : public QObject {
     Q_OBJECT
 public:
-    // diagnosticsFolderPath is where the sweep log is written — the app's own
-    // data folder, handed in by the composition root so this class never has
-    // to know where that is.
+    // diagnosticsFolderPath is where the sweep log is written: the app's own
+    // data folder. databaseFilePath is the database file, which the
+    // background thread opens a second connection to. Both are handed in by
+    // the composition root, so this class never has to work them out.
     JobScout(JobPostingRepository &jobPostingRepository,
              PostingSourceRepository &postingSourceRepository,
              JobSourceRoster &jobSourceRoster,
@@ -75,6 +56,7 @@ public:
              JobSearchProfile &searchProfile,
              AiBrain &aiBrain,
              const QString &diagnosticsFolderPath,
+             const QString &databaseFilePath,
              QObject *parent = nullptr);
     ~JobScout() override;
 
@@ -142,7 +124,7 @@ public:
     // --- Every place a job can be applied to (BACKLOG item 13) ---
     //
     // Looks for the same job on the employer's own board (Greenhouse, Lever,
-    // Ashby, SmartRecruiters, Workday) and, when it is there, ADDS that as
+    // Ashby, SmartRecruiters, Workday, Taleo) and, when it is there, ADDS that as
     // another place to apply. The job itself is never replaced. Runs when a
     // job is crushed onto the board, and when the user asks on a card.
     // Quiet: finding nothing is a normal answer and changes nothing.
@@ -155,32 +137,18 @@ public:
     // something they can do next.
     QString leadStatusText() const;
 
-    // Everything one site has delivered, newest first, each with its score.
-    QList<ScoredJobPosting> scoredJobPostingsFromSource(
-        const QString &sourceStorageName,
-        SearchAreaScope searchAreaScope = SearchAreaScope::InsideSearchArea) const;
-
-    // Every discovery from every site, best match first, each job appearing
-    // once even when two sites carry it.
-    QList<ScoredJobPosting> rankedTopProspects(
-        SearchAreaScope searchAreaScope = SearchAreaScope::InsideSearchArea) const;
-
-    // Every job the user added by hand, newest added first.
+    // Asks for the rows of one Discoveries tab. They are loaded and scored on
+    // the background thread, and arrive in rowsReady with the number this
+    // returns. A newer request makes the older ones stale, and the caller
+    // should drop their answers.
     //
-    // There is no search-area argument, on purpose. The location filter keeps
-    // a sweep from filling the list with jobs in the wrong part of the
-    // country. A job the user added by hand is one they asked for, so the
-    // filter never hides it.
-    QList<ScoredJobPosting> handAddedJobPostings() const;
+    // The Manual Add rows ignore the location filter, on purpose. A job the
+    // user added by hand is one they asked for, so the filter never hides it.
+    int requestRows(const DiscoveryRowRequest &rowRequest);
 
     // The job the user added by hand most recently, so the page can go
     // straight to it. 0 when there is nothing to go to.
     qint64 mostRecentlyHandAddedJobPostingId() const;
-
-    // How many stored discoveries the location filter is holding back right
-    // now. The page always shows this number. Without it, a filter that hides
-    // most jobs would look like a sweep that is broken.
-    int jobPostingCountOutsideSearchArea() const;
 
     // True when the user has named any place at all — that is, when the
     // filter is doing anything.
@@ -195,8 +163,14 @@ signals:
     // sweepIsRunning() or sweepProgressText() changed.
     void sweepProgressChanged();
 
-    // Stored discoveries changed — the lists above are worth re-reading.
+    // Stored discoveries changed, so the rows are worth asking for again.
+    // During a sweep this is sent at most about once a second, however many
+    // companies answer, so the page is not rebuilt hundreds of times.
     void discoveriesChanged();
+
+    // The rows asked for with requestRows. The count of jobs the location
+    // filter holds back comes with every answer.
+    void rowsReady(int requestNumber, const DiscoveryRows &preparedRows);
 
     // leadIsBeingResolved() or leadStatusText() changed.
     void leadStatusChanged();
@@ -251,23 +225,47 @@ private:
     // Used to turn down a second request while the first is still out.
     void sayThisAboutTheLead(const QString &statusTextForTheUser);
 
-    // Marks the jobs that are gone from a company's board. Only for sources
-    // that read a company's whole board, like the companies the user follows.
-    // A job from one of those companies that the board no longer lists has
-    // been taken down. A job that comes back loses the mark. Nothing is
-    // deleted.
-    void markJobsGoneFromBoardsReadInFull(const QString &sourceStorageName,
-                                          const QStringList &employersReadInFull,
-                                          const QList<JobPosting> &foundJobPostings);
+    // What one site's part of the sweep has done so far. A site is finished
+    // when its reply has come back AND the background thread has saved
+    // everything it sent.
+    struct SourceSweepProgress {
+        QString sourceDisplayName;
+        bool replyHasFinished = false;
+        bool replyFailed = false;
+        QString failureReason;
+        bool failureIsTrouble = true;
+        int jobsArrived = 0;
+        int backgroundTasksPending = 0;
+        FindingsSaveOutcome saveTotals;
+    };
 
-    // Saves one site's finds, and counts how many were new.
-    void recordFindingsFromSource(const QList<JobPosting> &foundJobPostings);
+    // Hands one batch of found jobs to the background thread to save.
+    void saveFindingsInTheBackground(const QString &sourceStorageName,
+                                     const QList<JobPosting> &foundJobPostings);
+
+    // The background thread finished saving one batch.
+    void whenFindingsWereSaved(const QString &sourceStorageName,
+                               const FindingsSaveOutcome &saveOutcome);
+
+    // The background thread found saved jobs that a whole-board read did
+    // not find. Each one is checked again on the company's board, and marked
+    // gone only when that check agrees.
+    void whenJobsAreMissingFromBoards(const QString &sourceStorageName,
+                                      const QList<JobPosting> &missingJobPostings);
+
+    // Finishes a site's part of the sweep, once its reply is back and all its
+    // background work is done. Does nothing before then.
+    void finishSourceIfEverythingIsDone(const QString &sourceStorageName);
 
     void finishSourceAndReportProgress(const QString &sourceStorageName,
                                        const QString &sourceOutcomeText,
                                        bool sourceHadTrouble);
 
-    // Writes what every site said during the sweep that just ended to
+    // Sends discoveriesChanged soon, at most about once a second, however
+    // often this is called.
+    void sayDiscoveriesChangedSoon();
+
+    // Writes what every site said during the sweep that has ended to
     // lastSweep.log, replacing the last one.
     //
     // The status line on the page is gone once the next sweep starts. When a
@@ -313,15 +311,26 @@ private:
     // straight to it. 0 means there is nowhere to jump.
     qint64 lastHandAddedJobPostingId = 0;
 
+    // The background thread, and the worker that lives on it. The worker is
+    // used only through queued calls, never directly from this thread.
+    QThread discoveryThread;
+    DiscoveryWorker *discoveryWorker = nullptr;
+    int lastRowRequestNumber = 0;
+
+    // Checks a job that went missing, before Job Crush calls it gone.
+    PostingGoneConfirmer goneConfirmer;
+
+    // Holds discoveriesChanged back during a sweep. See sayDiscoveriesChangedSoon.
+    QTimer discoveriesChangedTimer;
+
     // Live sweep bookkeeping. Cleared when a sweep ends.
+    QHash<QString, SourceSweepProgress> sourceSweepProgress;
     QStringList sourcesStillSweeping;
     QStringList finishedSourceOutcomeLines;
     QStringList sourcesThatHadTroubleThisSweep;
     QStringList sourceNoticesThisSweep;
     QString storedLastSweepTroubleText;
     QString storedLastSweepNoticeText;
-    int jobPostingsRefusedThisSource = 0;
-    QString firstRefusalReasonThisSource;
     int totalJobsFoundThisSweep = 0;
     int totalNewJobsThisSweep = 0;
     QString storedLastSweepSummaryText;

@@ -43,6 +43,22 @@ public:
         }
     };
 
+    // Splits markdown into blocks, one line at a time.
+    //
+    // Each line is trimmed, then tested in this order. The first test that
+    // matches decides what the line is:
+    //   1. empty                 ends the paragraph being collected
+    //   2. starts with "\#" etc. text, with the backslash removed
+    //   3. "# Title" to "###### Title"   a heading
+    //   4. "---", "***" or "___"         a rule
+    //   5. "- [ ] text", "- [x] text"    a checkbox
+    //   6. "- text", "* text", "• text"  a bullet
+    //   7. anything else                 one more line of the current paragraph
+    //
+    // Lines of a paragraph are collected until a blank line or another kind
+    // of block, then joined with spaces into one Paragraph block. Order
+    // matters: the checkbox test comes before the bullet test, because every
+    // checkbox line would also pass as a bullet.
     QList<Block> blocksIn(const QString &markdownText) const
     {
         QList<Block> blocks;
@@ -73,6 +89,8 @@ public:
             // instruction means the writer wanted the character itself. A
             // resume line reading "#1 salesperson" is not a heading, and the
             // backslash that protects it must not survive into the document.
+            // At the start: a backslash, then one of # > * _ - +.
+            // captured(1) is that character, kept without the backslash.
             static const QRegularExpression escapedFirstCharacter(
                 QStringLiteral("^\\\\([#>*_\\-+])"));
             const QRegularExpressionMatch escapeMatch = escapedFirstCharacter.match(line);
@@ -81,6 +99,9 @@ public:
                 continue;
             }
 
+            // One to six "#", at least one space, then the heading text.
+            // captured(1) is the "#" marks (their count is the level), and
+            // captured(2) is the text.
             static const QRegularExpression headingPattern(QStringLiteral("^(#{1,6})\\s+(.*)$"));
             const QRegularExpressionMatch headingMatch = headingPattern.match(line);
             if (headingMatch.hasMatch()) {
@@ -93,6 +114,7 @@ public:
                 continue;
             }
 
+            // Three or more of the same mark ("-", "*" or "_") and nothing else.
             static const QRegularExpression rulePattern(QStringLiteral("^(?:-{3,}|\\*{3,}|_{3,})$"));
             if (rulePattern.match(line).hasMatch()) {
                 flushParagraph();
@@ -102,6 +124,9 @@ public:
                 continue;
             }
 
+            // A list mark ("-", "*" or "+"), spaces, a box "[ ]", "[x]" or
+            // "[X]", spaces, then the text. captured(1) is what is inside the
+            // box, and captured(2) is the text.
             static const QRegularExpression checkboxPattern(
                 QStringLiteral("^[-*+]\\s+\\[([ xX])\\]\\s+(.*)$"));
             const QRegularExpressionMatch checkboxMatch = checkboxPattern.match(line);
@@ -116,6 +141,7 @@ public:
                 continue;
             }
 
+            // A list mark ("-", "*", "+" or "•"), spaces, then the text.
             static const QRegularExpression bulletPattern(QStringLiteral("^[-*+•]\\s+(.*)$"));
             const QRegularExpressionMatch bulletMatch = bulletPattern.match(line);
             if (bulletMatch.hasMatch()) {
@@ -134,8 +160,24 @@ public:
         return blocks;
     }
 
-    // Splits one line into bold and italic runs. Handles **bold**, *italic*
-    // and _italic_. That is all the formatting this app writes.
+    // Splits one line into bold and italic runs. Handles **bold**, __bold__,
+    // *italic* and _italic_. That is all the formatting this app writes.
+    //
+    // How it works:
+    //   1. Find each marked stretch, left to right. The pattern has four
+    //      alternatives, one per mark. The two-character marks come first,
+    //      so "**word**" is read as bold and not as italic "*word*" inside
+    //      stray stars. ".+?" takes as few characters as it can, so the
+    //      stretch ends at the FIRST closing mark.
+    //   2. Text between the last match and this one becomes a plain run.
+    //   3. The match becomes a bold run (alternative 1 or 2) or an italic
+    //      run (alternative 3 or 4). The marks themselves are dropped.
+    //   4. Text after the last match becomes a final plain run.
+    //   5. A line with no text at all still gets one empty run.
+    //
+    // Two underscores on one line, as in "first_last" and "snake_case",
+    // turn the text between them italic and the underscores disappear. That
+    // can happen to an email address or a file name in a resume.
     QList<TextRun> runsIn(const QString &lineText) const
     {
         QList<TextRun> runs;

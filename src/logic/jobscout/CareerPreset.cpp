@@ -8,6 +8,8 @@
 
 namespace {
 
+// The strings in a JSON array, trimmed, with empty ones dropped. Anything
+// that is not an array gives an empty list.
 QStringList textListFrom(const QJsonValue &value)
 {
     QStringList texts;

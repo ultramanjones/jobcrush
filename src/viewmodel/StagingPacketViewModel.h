@@ -21,9 +21,9 @@ class StagingWorkbench;
 // AI is doing right now, and the two end actions - export it, and mark it
 // sent.
 //
-// Formatting only, like every viewmodel here. It makes no decisions. What runs
-// automatically, what a packet contains, and what goes in an export are all
-// decided below it in StagingWorkbench and PacketExporter.
+// Formatting, like every viewmodel here. What the AI tasks do, what a packet
+// contains, and what goes in an export are all decided below it, in
+// StagingWorkbench and PacketExporter.
 class StagingPacketViewModel : public QAbstractListModel {
     Q_OBJECT
 
@@ -127,7 +127,8 @@ public:
 
     QVariantList applyRoutes() const;
 
-    // Opens one apply route in the browser. http and https only.
+    // Opens one apply route, or a link in AI-written text, in the browser or
+    // the mail program. http, https and mailto only.
     Q_INVOKABLE void openApplyRoute(const QString &routeUrl) const;
 
     // --- The status line shown to the user -------------------------------
@@ -146,11 +147,14 @@ signals:
 
 private:
     void reload();
+
+    // True while the job showing is still on the board and not in Closed.
+    bool selectedJobIsStillOpen() const;
     void say(const QString &text, const QString &nextStepText, bool isAProblem);
     void runTask(AiBrainTaskKind taskKind, const QString &extraInstructionText);
 
-    // The default export folder: Documents/Job Crush Packets. Under Documents
-    // rather than the app data folder, because the file belongs to the user.
+    // Where an export is written: the job's own folder in Active Jobs when it
+    // has one, and otherwise the export folder set in Settings.
     QString folderExportsGoTo() const;
 
     // "Acme Robotics - Firmware Engineer", with characters the filesystem

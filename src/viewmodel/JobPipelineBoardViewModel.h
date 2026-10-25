@@ -15,15 +15,14 @@ class PostingStillListedChecker;
 // that move them.
 //
 // Deliberately NOT a QAbstractListModel. Every other list in Job Crush is one,
-// because every other list is one list. A board is five, and the honest way to
-// serve five is to hand each column its own cards rather than give one model a
-// filter role and make the view sort itself out. Columns are small — a job
-// search with two hundred live applications is not a UI problem, it is a
-// different life — so rebuilding a column's list is cheap and always correct.
+// because every other list is one list. A board is five lists. So each column
+// is handed its own cards, instead of one model with a filter role that the
+// view would have to sort out. Columns are small, even in a long job search,
+// so rebuilding a column's list on every change is cheap and always correct.
 //
-// boardRevision is the same trick the credential roster uses: QML bindings
-// that call cardsInStage() read the revision too, so they re-evaluate the
-// moment anything underneath moves.
+// boardRevision works the same way as the credential roster's counter. QML
+// bindings that call cardsInStage() also read the revision, so they
+// re-evaluate the moment anything underneath changes.
 class JobPipelineBoardViewModel : public QObject {
     Q_OBJECT
 
@@ -63,8 +62,7 @@ public:
     Q_INVOKABLE QString displayLabelForStage(const QString &stageName) const;
 
     // What a column is FOR, in one plain line. Shown under the heading while
-    // the column is empty, because an empty column that says nothing is a
-    // question mark, and Job Crush answers questions rather than posing them.
+    // the column is empty, so the user knows what belongs there.
     Q_INVOKABLE QString explanationForStage(const QString &stageName) const;
 
     // The line shown when the mouse rests on a column's heading: exactly when
@@ -73,9 +71,12 @@ public:
 
     // The cards in one column, oldest crush first. Each is a plain object the
     // QML delegate reads by name: jobApplicationId, positionTitle,
-    // companyName, locationText, salaryText, sourceUrl, isRemoteRole,
-    // stageName, notesText, targetedText, appliedText, appliedDateEditText,
-    // appliedDateIsEditable, postingSeemsGone, postingGoneText, jobFolderPath.
+    // companyName, locationText, salaryText, sourceName, sourceUrl,
+    // isRemoteRole, stageName, notesText, targetedText, appliedText,
+    // appliedDateEditText, appliedDateIsEditable, postingSeemsGone,
+    // postingGoneText, userSaysStillOpen, userSaysStillOpenText,
+    // postingRoutes (a list of { boardDisplayName, postingUrl }), and
+    // jobFolderPath.
     Q_INVOKABLE QVariantList cardsInStage(const QString &stageName) const;
 
     Q_INVOKABLE int countInStage(const QString &stageName) const;
@@ -121,6 +122,10 @@ public:
     // Opens a web search for this job by company and title, for a posting
     // that has gone from the employer's board. It may be listed somewhere else.
     Q_INVOKABLE void searchTheWebForJob(qint64 jobApplicationId) const;
+
+    // The user checked the job themselves and it is still open. The amber
+    // "gone" mark comes off, and later checks leave this job alone.
+    Q_INVOKABLE void userSaysJobIsStillOpen(qint64 jobApplicationId);
 
 signals:
     void boardChanged();

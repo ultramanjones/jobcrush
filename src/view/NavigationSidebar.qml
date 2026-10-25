@@ -3,10 +3,13 @@ import JobCrush
 
 // NavigationSidebar
 //
-// The left-hand rail — Job Crush's only navigation (top menus are played
-// out). Fixed destinations; entries whose phases haven't landed yet render
-// dimmed with their phase number, so the roadmap is visible in the app
-// itself. Pure view: emits the chosen page name upward, holds no logic.
+// The left-hand rail. It is Job Crush's only navigation. There are no top
+// menus. The list of pages is fixed. A page that is not built yet shows
+// dimmed, with its phase number on the right, so the roadmap shows in the
+// app itself. Today every page is built, so none are dimmed.
+//
+// Pure view: it emits the chosen page name up to Main and holds no logic.
+// The page names here must match the names Main.qml checks.
 Rectangle {
     id: sidebar
 
@@ -19,8 +22,9 @@ Rectangle {
     width: 220
     color: JobCrushTheme.sidebarBackgroundColor
 
-    // Destination list: name is the internal page id; phaseTag marks
-    // not-yet-built pages ("" = live now).
+    // The pages, top to bottom. pageName is the name Main uses to pick the
+    // page. displayLabel is what the user reads. phaseTag marks a page that
+    // is not built yet; an empty phaseTag means the page is live.
     readonly property var navigationEntries: [
         { pageName: "pipelines",   displayLabel: "Job Pipelines", phaseTag: "" },
         { pageName: "discoveries", displayLabel: "Discoveries", phaseTag: "" },
@@ -63,8 +67,8 @@ Rectangle {
                 height: 44
                 color: isCurrent ? JobCrushTheme.sidebarSelectedRowColor : "transparent"
 
-                // Current-page indicator: a thin accent bar, not a highlight
-                // shout.
+                // The current page gets a thin accent bar on its left edge,
+                // not a loud highlight.
                 Rectangle {
                     width: 3
                     height: parent.height

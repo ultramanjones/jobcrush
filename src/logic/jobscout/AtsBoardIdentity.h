@@ -21,12 +21,19 @@ inline const QString Personio       = QStringLiteral("personio");
 // example "ngc.wd1/Northrop_Grumman_External_Site". See WorkdayBoardSource.
 inline const QString Workday        = QStringLiteral("workday");
 
+// Taleo keeps two parts in the tenant: "{account}/{careers section}", for
+// example "hdr/ex". See TaleoBoardSource.
+inline const QString Taleo          = QStringLiteral("taleo");
+
 // Not a hiring system. This is the name a posting carries when Job Crush read
 // it straight off the employer's own web page instead of a board. It lives
 // here because it sits in the same field as the board names and shows up in
 // the same sentences ("Found it on …").
 inline const QString EmployerWebsite = QStringLiteral("employer-website");
 
+// The name a person reads for a stored board name: "greenhouse" becomes
+// "Greenhouse". Empty for a name that is not on this list, which callers use
+// to tell a board Job Crush knows from one it does not.
 inline QString displayNameFor(const QString &boardName)
 {
     if (boardName == Greenhouse)      return QStringLiteral("Greenhouse");
@@ -37,6 +44,7 @@ inline QString displayNameFor(const QString &boardName)
     if (boardName == Recruitee)       return QStringLiteral("Recruitee");
     if (boardName == Personio)        return QStringLiteral("Personio");
     if (boardName == Workday)         return QStringLiteral("Workday");
+    if (boardName == Taleo)           return QStringLiteral("Taleo");
     if (boardName == EmployerWebsite) return QStringLiteral("the employer's website");
     return QString();
 }
@@ -61,7 +69,7 @@ struct AtsBoardIdentity {
 
     bool isKnown() const { return !boardName.isEmpty() && !tenant.isEmpty(); }
 
-    // True when this names one specific job rather than just an employer.
+    // True when this names one specific job, not only an employer.
     bool namesOneJob() const { return isKnown() && !jobId.isEmpty(); }
 
     // "greenhouse/acme/4055" — for logging and for a dedupe key.

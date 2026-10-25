@@ -1,6 +1,7 @@
 #include "ProDocsIntake.h"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QSettings>
 #include <QDir>
 #include <QFile>
@@ -23,6 +24,8 @@ namespace {
 //      word, so two schools on one line became one school with a strange
 //      name. Explicit "|" field separators are no longer second-guessed, and
 //      a run of spaces is now read as the column gap it is.
+//   3, 4  later reader fixes. What changed in each was not written down
+//      here. Add a line for every new version.
 constexpr int currentInsightsReaderVersion = 4;
 
 // Where the last-used reader version is remembered. QSettings alongside the
@@ -43,7 +46,11 @@ ProDocsIntake::ProDocsIntake(ProfessionalDocumentRepository &documentRepository,
     , documentStorageFolderPath(
           QDir(applicationDataFolderPath).filePath(QStringLiteral("prodocs")))
 {
-    QDir().mkpath(documentStorageFolderPath);
+    if (!QDir().mkpath(documentStorageFolderPath)) {
+        qWarning().noquote() << QStringLiteral(
+            "ProDocsIntake::ProDocsIntake: could not create the document folder \"%1\"")
+                .arg(documentStorageFolderPath);
+    }
 }
 
 QString ProDocsIntake::copyIntoDocumentStorage(const QString &sourceFilePath) const
@@ -68,6 +75,9 @@ QString ProDocsIntake::copyIntoDocumentStorage(const QString &sourceFilePath) co
 
     const QString destinationFilePath = storageFolder.filePath(candidateFileName);
     if (!QFile::copy(sourceFilePath, destinationFilePath)) {
+        qWarning().noquote() << QStringLiteral(
+            "ProDocsIntake::copyIntoDocumentStorage: could not copy \"%1\" to \"%2\"")
+                .arg(sourceFilePath, destinationFilePath);
         return QString();
     }
     return destinationFilePath;
@@ -81,6 +91,9 @@ QString ProDocsIntake::acceptDroppedFiles(const QStringList &droppedFilePaths)
 
     for (const QString &droppedFilePath : droppedFilePaths) {
         if (!QFileInfo::exists(droppedFilePath)) {
+            qWarning().noquote() << QStringLiteral(
+                "ProDocsIntake::acceptDroppedFiles: skipped \"%1\" — the file does not exist")
+                    .arg(droppedFilePath);
             continue;
         }
 
@@ -126,7 +139,12 @@ QString ProDocsIntake::acceptDroppedFiles(const QStringList &droppedFilePaths)
         const int entriesRead = recordInsightsFromDocument(
             professionalDocument.professionalDocumentId, extraction.extractedText,
             professionalDocument.documentKind);
-        repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
+        if (!repository.markDocumentAsRead(professionalDocument.professionalDocumentId)) {
+            qWarning().noquote() << QStringLiteral(
+                "ProDocsIntake::acceptDroppedFiles: could not mark document %1 as read — %2")
+                    .arg(professionalDocument.professionalDocumentId)
+                    .arg(repository.lastErrorText());
+        }
         if (entriesRead > 0) {
             emit careerHistoryChanged();
         }
@@ -204,6 +222,12 @@ int ProDocsIntake::recordInsightsFromDocument(qint64 professionalDocumentId,
         }
         if (careerHistoryRepository.insertWorkExperience(workExperience)) {
             ++storedEntryCount;
+        } else {
+            qWarning().noquote() << QStringLiteral(
+                "ProDocsIntake::recordInsightsFromDocument: could not store a job from"
+                " document %1 — %2")
+                    .arg(professionalDocumentId)
+                    .arg(careerHistoryRepository.lastErrorText());
         }
     }
     for (EducationRecord educationRecord : parsedInsights.educationRecords) {
@@ -214,6 +238,12 @@ int ProDocsIntake::recordInsightsFromDocument(qint64 professionalDocumentId,
         }
         if (careerHistoryRepository.insertEducationRecord(educationRecord)) {
             ++storedEntryCount;
+        } else {
+            qWarning().noquote() << QStringLiteral(
+                "ProDocsIntake::recordInsightsFromDocument: could not store a school from"
+                " document %1 — %2")
+                    .arg(professionalDocumentId)
+                    .arg(careerHistoryRepository.lastErrorText());
         }
     }
     return storedEntryCount;
@@ -231,7 +261,13 @@ int ProDocsIntake::readAnyDocumentsNotReadYet()
         entriesFound += recordInsightsFromDocument(
             professionalDocument.professionalDocumentId, professionalDocument.extractedText,
             professionalDocument.documentKind);
-        repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
+        if (!repository.markDocumentAsRead(professionalDocument.professionalDocumentId)) {
+            qWarning().noquote() << QStringLiteral(
+                "ProDocsIntake::readAnyDocumentsNotReadYet: could not mark document %1 as"
+                " read — %2")
+                    .arg(professionalDocument.professionalDocumentId)
+                    .arg(repository.lastErrorText());
+        }
     }
 
     if (entriesFound > 0) {
@@ -258,9 +294,19 @@ int ProDocsIntake::rereadEverythingIfTheReaderImproved()
     // Out with the old reader's work — and nothing else. Entries somebody
     // typed into carry wasEditedByUser and are left exactly where they are.
     if (!careerHistoryRepository.removeEntriesTheReaderProducedAndNobodyTouched()) {
+        qWarning().noquote() << QStringLiteral(
+            "ProDocsIntake::rereadEverythingIfTheReaderImproved: could not clear the old"
+            " reader's entries for reader version %1 — %2")
+                .arg(currentInsightsReaderVersion)
+                .arg(careerHistoryRepository.lastErrorText());
         return 0;
     }
     if (!repository.markEveryDocumentUnread()) {
+        qWarning().noquote() << QStringLiteral(
+            "ProDocsIntake::rereadEverythingIfTheReaderImproved: could not mark the"
+            " documents unread for reader version %1 — %2")
+                .arg(currentInsightsReaderVersion)
+                .arg(repository.lastErrorText());
         return 0;
     }
 
@@ -287,7 +333,12 @@ QString ProDocsIntake::rereadEveryDocument()
         entriesFound += recordInsightsFromDocument(
             professionalDocument.professionalDocumentId, professionalDocument.extractedText,
             professionalDocument.documentKind);
-        repository.markDocumentAsRead(professionalDocument.professionalDocumentId);
+        if (!repository.markDocumentAsRead(professionalDocument.professionalDocumentId)) {
+            qWarning().noquote() << QStringLiteral(
+                "ProDocsIntake::rereadEveryDocument: could not mark document %1 as read — %2")
+                    .arg(professionalDocument.professionalDocumentId)
+                    .arg(repository.lastErrorText());
+        }
     }
 
     emit careerHistoryChanged();
@@ -315,7 +366,13 @@ int ProDocsIntake::replaceReadingOfDocument(qint64 professionalDocumentId,
                                             const QList<WorkExperience> &workExperiences,
                                             const QList<EducationRecord> &educationRecords)
 {
-    careerHistoryRepository.removeUntouchedEntriesFromDocument(professionalDocumentId);
+    if (!careerHistoryRepository.removeUntouchedEntriesFromDocument(professionalDocumentId)) {
+        qWarning().noquote() << QStringLiteral(
+            "ProDocsIntake::replaceReadingOfDocument: could not remove the old entries of"
+            " document %1 — %2")
+                .arg(professionalDocumentId)
+                .arg(careerHistoryRepository.lastErrorText());
+    }
 
     int entriesAdded = 0;
     for (WorkExperience workExperience : workExperiences) {
@@ -325,6 +382,12 @@ int ProDocsIntake::replaceReadingOfDocument(qint64 professionalDocumentId,
         }
         if (careerHistoryRepository.insertWorkExperience(workExperience)) {
             ++entriesAdded;
+        } else {
+            qWarning().noquote() << QStringLiteral(
+                "ProDocsIntake::replaceReadingOfDocument: could not store a job from"
+                " document %1 — %2")
+                    .arg(professionalDocumentId)
+                    .arg(careerHistoryRepository.lastErrorText());
         }
     }
     for (EducationRecord educationRecord : educationRecords) {
@@ -334,6 +397,12 @@ int ProDocsIntake::replaceReadingOfDocument(qint64 professionalDocumentId,
         }
         if (careerHistoryRepository.insertEducationRecord(educationRecord)) {
             ++entriesAdded;
+        } else {
+            qWarning().noquote() << QStringLiteral(
+                "ProDocsIntake::replaceReadingOfDocument: could not store a school from"
+                " document %1 — %2")
+                    .arg(professionalDocumentId)
+                    .arg(careerHistoryRepository.lastErrorText());
         }
     }
     emit careerHistoryChanged();

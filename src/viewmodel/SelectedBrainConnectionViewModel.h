@@ -2,15 +2,16 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 class AiBrain;
 
 // SelectedBrainConnectionViewModel
 //
-// Serves one small, important truth to the view: WHICH brain the user picked,
-// and whether that brain is genuinely connected and active right now. Both
-// the Settings page (checkboxes and the banner) and the Brain Chat header
-// read from this one place, so the two screens can never disagree.
+// Serves two facts to the view: WHICH brain the user picked, and whether that
+// brain is connected and answering right now. The Settings page (checkboxes
+// and the banner) and the Brain Chat header both read from this one place,
+// so the two screens can never disagree.
 //
 // Named for the data it serves — the selected brain's connection — not for
 // the screen that shows it. Translation and organization only: the selection
@@ -18,7 +19,7 @@ class AiBrain;
 class SelectedBrainConnectionViewModel : public QObject {
     Q_OBJECT
 
-    // The loud line at the top of Settings, already shouting:
+    // The line at the top of Settings, already in capitals:
     // "OPENROUTER IS SELECTED AND ACTIVE" / "NO BRAIN SELECTED AND ACTIVE".
     Q_PROPERTY(QString bannerText READ bannerText NOTIFY connectionChanged)
 
@@ -28,7 +29,7 @@ class SelectedBrainConnectionViewModel : public QObject {
                    NOTIFY connectionChanged)
 
     // True while a verification request is in flight. The view pulses the
-    // banner text on this — never a spinner, by law.
+    // banner text on this. It never shows a spinner.
     Q_PROPERTY(bool connectionIsBeingChecked READ connectionIsBeingChecked
                    NOTIFY connectionChanged)
 
@@ -46,10 +47,10 @@ class SelectedBrainConnectionViewModel : public QObject {
 
     // --- "That brain would not connect" ----------------------------------
     //
-    // A tick that quietly undoes itself is the app shrugging at the user. So
-    // when a check the user started comes back refused, these four carry the
-    // explanation to the screen: what happened, in whose words, and what to
-    // do about it. Showing is true only until the user says they have read it.
+    // A tick that undoes itself with no word would leave the user guessing.
+    // So when a check the user started is refused, these four carry the
+    // explanation to the screen: which brain, what happened, and what to do
+    // about it. Showing stays true until the user says they have read it.
     Q_PROPERTY(bool connectionRefusalIsShowing READ connectionRefusalIsShowing
                    NOTIFY connectionRefusalChanged)
     Q_PROPERTY(QString connectionRefusalTitle READ connectionRefusalTitle
@@ -59,8 +60,31 @@ class SelectedBrainConnectionViewModel : public QObject {
     Q_PROPERTY(QString connectionRefusalNextStep READ connectionRefusalNextStep
                    NOTIFY connectionRefusalChanged)
 
+    // --- How much brain: Quick, Balanced or Best, per provider ----------
+
+    // The three level names, in order, for the picker.
+    Q_PROPERTY(QStringList brainLevelNames READ brainLevelNames CONSTANT)
+
+    // Bumped when any provider's level changes, so the per-provider
+    // invokables below are read again.
+    Q_PROPERTY(int brainLevelRevision READ brainLevelRevision NOTIFY brainLevelsChanged)
+
 public:
     SelectedBrainConnectionViewModel(AiBrain &aiBrain, QObject *parent = nullptr);
+
+    QStringList brainLevelNames() const;
+    int brainLevelRevision() const;
+
+    // The level picked for a provider, by name: "Quick", "Balanced", "Best".
+    Q_INVOKABLE QString brainLevelFor(const QString &providerKindName) const;
+    Q_INVOKABLE void setBrainLevelFor(const QString &providerKindName,
+                                      const QString &brainLevelName);
+
+    // The vendor's model name behind a level, shown small for anyone who
+    // wants to know, and one sentence about what the level is for.
+    Q_INVOKABLE QString modelNameFor(const QString &providerKindName,
+                                     const QString &brainLevelName) const;
+    Q_INVOKABLE QString brainLevelExplanation(const QString &brainLevelName) const;
 
     QString bannerText() const;
     bool brainIsConnectedAndActive() const;
@@ -74,8 +98,8 @@ public:
     QString connectionRefusalReason() const;
     QString connectionRefusalNextStep() const;
 
-    // The user has read it. Nothing else is undone — the brain stays
-    // unselected because it genuinely did not answer.
+    // The user has read it. Nothing else changes. The brain stays unselected,
+    // because it did not answer.
     Q_INVOKABLE void dismissConnectionRefusal();
 
     // --- Per-provider, for the Settings checkboxes -----------------------
@@ -101,17 +125,19 @@ public:
     // legitimate choice and not an error.
     Q_INVOKABLE void setProviderSelected(const QString &providerKindName, bool shouldBeSelected);
 
-    // A key moment has arrived (a screen that shows this state just opened).
-    // A cached result answers instantly; only a real change costs a request.
+    // Called when a screen that shows this state opens. A recent result
+    // answers at once. Only a real change sends a request to the vendor.
     Q_INVOKABLE void checkConnectionNow();
 
 signals:
     void connectionChanged();
     void connectionRefusalChanged();
+    void brainLevelsChanged();
 
 private:
     AiBrain &brain;
     int connectionChangeCounter = 0;
+    int brainLevelChangeCounter = 0;
 
     bool refusalIsShowing = false;
     QString refusalVendorName;

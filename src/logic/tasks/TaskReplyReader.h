@@ -13,7 +13,7 @@
 // number came back as "FIT: 72%" instead of "FIT: 72". Nothing here makes up
 // a value it did not find.
 //
-// No state, so it stays header-only.
+// No state. It only reads the text it is given.
 class TaskReplyReader {
 public:
     TaskOutcome read(AiBrainTaskKind taskKind, const QString &replyText) const;

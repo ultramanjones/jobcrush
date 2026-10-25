@@ -16,9 +16,10 @@ const QString retiredSingleLocationKey =
 const QString remoteRolesOnlyKey    = QStringLiteral("jobSearchProfile/remoteRolesOnly");
 const QString minimumSalaryKey      = QStringLiteral("jobSearchProfile/minimumAcceptableSalary");
 
-// The user types "Qt Developer, C++ Engineer" in one box. Splitting here — in
-// exactly one place — keeps the storage format and the typing format from
-// drifting apart.
+// Every list the profile stores goes through here: each term is trimmed,
+// empty ones are dropped, and repeats are dropped, ignoring case ("qt" and
+// "Qt" are one term). The first spelling the user typed is the one kept.
+// Doing it in one place keeps every stored list in the same shape.
 QStringList tidiedTermList(const QStringList &rawTerms)
 {
     QStringList tidiedTerms;
@@ -173,10 +174,22 @@ void JobSearchProfile::setMinimumAcceptableSalary(int yearlySalary)
     emit searchProfileChanged();
 }
 
+ScoringProfile JobSearchProfile::scoringProfile() const
+{
+    ScoringProfile profileCopy;
+    profileCopy.targetJobTitles = storedTargetJobTitles;
+    profileCopy.skillKeywords = storedSkillKeywords;
+    profileCopy.preferredWorkLocations = storedPreferredWorkLocations;
+    profileCopy.remoteRolesOnly = storedRemoteRolesOnly;
+    profileCopy.minimumAcceptableSalary = storedMinimumAcceptableSalary;
+    return profileCopy;
+}
+
 bool JobSearchProfile::hasEnoughToRankBy() const
 {
-    // One title or one skill is enough to say something meaningful. With
-    // neither, any ranking would be theatre.
+    // One title or one skill is enough to rank by. With neither, the title
+    // and skill points, which are most of the score, are zero for every job,
+    // and the order says almost nothing about fit.
     return !storedTargetJobTitles.isEmpty() || !storedSkillKeywords.isEmpty();
 }
 

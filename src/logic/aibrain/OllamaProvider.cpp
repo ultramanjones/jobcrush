@@ -1,5 +1,8 @@
 #include "OllamaProvider.h"
 
+#include <algorithm>
+
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -12,10 +15,14 @@
 
 namespace {
 
+// Ollama listens on this computer only. The chat endpoint speaks OpenAI's
+// shape; the model list is Ollama's own.
 const QString ollamaChatEndpointUrl =
     QStringLiteral("http://localhost:11434/v1/chat/completions");
 const QString ollamaModelListEndpointUrl = QStringLiteral("http://localhost:11434/api/tags");
 
+// What the user is told, as a reason and a next step, when Ollama cannot
+// answer.
 const QString ollamaIsNotRunningText = QStringLiteral(
     "Job Crush could not reach Ollama on this computer.");
 const QString startOllamaText = QStringLiteral(
@@ -28,20 +35,56 @@ const QString downloadAModelText = QStringLiteral(
     "Open a terminal and run: ollama pull llama3.2  It downloads once (about 2 "
     "GB). Then tick the box again.");
 
-// The first model in Ollama's list, or empty when it has none.
-QString firstModelNameIn(const QByteArray &modelListJson)
+// The names of the models in Ollama's list, smallest download first. Empty
+// when it has none. The size on disk is how the brain levels are told apart
+// on a user's own computer: a bigger model is slower and usually smarter.
+QStringList modelNamesSmallestFirstIn(const QByteArray &modelListJson)
 {
     const QJsonArray models = QJsonDocument::fromJson(modelListJson).object()
         .value(QStringLiteral("models")).toArray();
-    if (models.isEmpty()) {
-        return QString();
+    QList<QJsonObject> modelObjects;
+    for (const QJsonValue &modelValue : models) {
+        modelObjects.append(modelValue.toObject());
     }
-    return models.first().toObject().value(QStringLiteral("name")).toString();
+    std::sort(modelObjects.begin(), modelObjects.end(),
+              [](const QJsonObject &leftModel, const QJsonObject &rightModel) {
+        return leftModel.value(QStringLiteral("size")).toDouble()
+               < rightModel.value(QStringLiteral("size")).toDouble();
+    });
+    QStringList modelNames;
+    for (const QJsonObject &modelObject : modelObjects) {
+        modelNames.append(modelObject.value(QStringLiteral("name")).toString());
+    }
+    return modelNames;
 }
 
 } // namespace
 
 OllamaProvider::OllamaProvider() = default;
+
+QString OllamaProvider::modelNameFor(AiBrainLevel brainLevel) const
+{
+    // Before Ollama's list has been read, there are no names to give. The
+    // Settings page shows a plain description instead.
+    if (knownModelNamesSmallestFirst.isEmpty()) {
+        switch (brainLevel) {
+        case AiBrainLevel::Quick:    return QStringLiteral("your smallest downloaded model");
+        case AiBrainLevel::Balanced: return QStringLiteral("a middle-sized downloaded model");
+        case AiBrainLevel::Best:     return QStringLiteral("your largest downloaded model");
+        }
+    }
+    switch (brainLevel) {
+    case AiBrainLevel::Quick:
+        return knownModelNamesSmallestFirst.first();
+    case AiBrainLevel::Balanced:
+        // The middle of the list. With an even count it takes the smaller of
+        // the two middle models: 4 models gives index 1, 5 models gives 2.
+        return knownModelNamesSmallestFirst.at((knownModelNamesSmallestFirst.count() - 1) / 2);
+    case AiBrainLevel::Best:
+        return knownModelNamesSmallestFirst.last();
+    }
+    return knownModelNamesSmallestFirst.first();
+}
 
 QString OllamaProvider::providerDisplayName() const
 {
@@ -80,13 +123,16 @@ AiBrainReply *OllamaProvider::streamConversation(
     QObject *replyParent,
     const AiBrainRequestOptions &requestOptions)
 {
-    Q_UNUSED(credential);       // Ollama has no key
-    Q_UNUSED(requestOptions);   // a local model cannot search the web
+    // Ollama has no key. A local model cannot search the web, so
+    // letTheBrainSearchTheWeb is ignored here, and so is longestAnswerTokens.
+    Q_UNUSED(credential);
 
     AiBrainReply *brainReply = new AiBrainReply(replyParent);
+    const AiBrainLevel brainLevel = requestOptions.brainLevel;
 
-    if (!knownModelName.isEmpty()) {
-        sendConversation(brainReply, buildRequestBody(knownModelName, soulText, conversation));
+    if (!knownModelNamesSmallestFirst.isEmpty()) {
+        sendConversation(brainReply, buildRequestBody(modelNameFor(brainLevel), soulText,
+                                                      conversation));
         return brainReply;
     }
 
@@ -95,17 +141,21 @@ AiBrainReply *OllamaProvider::streamConversation(
         networkAccessManager.get(QNetworkRequest(QUrl(ollamaModelListEndpointUrl)));
     listReply->setParent(brainReply);
     QObject::connect(listReply, &QNetworkReply::finished, brainReply,
-                     [this, listReply, brainReply, soulText, conversation]() {
+                     [this, listReply, brainReply, soulText, conversation, brainLevel]() {
         if (listReply->error() != QNetworkReply::NoError) {
+            qWarning().noquote() << QStringLiteral(
+                "OllamaProvider::streamConversation: could not read the model list at %1 — %2")
+                .arg(ollamaModelListEndpointUrl, listReply->errorString());
             brainReply->markFailed(ollamaIsNotRunningText, startOllamaText);
             return;
         }
-        knownModelName = firstModelNameIn(listReply->readAll());
-        if (knownModelName.isEmpty()) {
+        knownModelNamesSmallestFirst = modelNamesSmallestFirstIn(listReply->readAll());
+        if (knownModelNamesSmallestFirst.isEmpty()) {
             brainReply->markFailed(noModelText, downloadAModelText);
             return;
         }
-        sendConversation(brainReply, buildRequestBody(knownModelName, soulText, conversation));
+        sendConversation(brainReply, buildRequestBody(modelNameFor(brainLevel), soulText,
+                                                      conversation));
     });
     return brainReply;
 }
@@ -123,8 +173,11 @@ void OllamaProvider::sendConversation(AiBrainReply *brainReply, const QByteArray
 AiBrainReply *OllamaProvider::verifyCredentialConnection(const AiCredential &credential,
                                                          QObject *replyParent)
 {
-    Q_UNUSED(credential);
+    Q_UNUSED(credential); // Ollama has no key
     AiBrainReply *brainReply = new AiBrainReply(replyParent);
+
+    // Reading the list both checks that Ollama is running and remembers the
+    // model names for the next chat.
 
     QNetworkReply *listReply =
         networkAccessManager.get(QNetworkRequest(QUrl(ollamaModelListEndpointUrl)));
@@ -135,8 +188,8 @@ AiBrainReply *OllamaProvider::verifyCredentialConnection(const AiCredential &cre
             brainReply->markFailed(ollamaIsNotRunningText, startOllamaText);
             return;
         }
-        knownModelName = firstModelNameIn(listReply->readAll());
-        if (knownModelName.isEmpty()) {
+        knownModelNamesSmallestFirst = modelNamesSmallestFirstIn(listReply->readAll());
+        if (knownModelNamesSmallestFirst.isEmpty()) {
             brainReply->markFailed(noModelText, downloadAModelText);
             return;
         }

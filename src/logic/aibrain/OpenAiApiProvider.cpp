@@ -19,9 +19,18 @@ const QString openAiChatEndpointUrl =
 // nothing, and buys no answer.
 const QString openAiModelListEndpointUrl = QStringLiteral("https://api.openai.com/v1/models");
 
-// A small, low-cost model, fine for chat, cover letters and reading postings.
-// Becomes a Settings choice with item 6 (brain levels).
-const QString openAiDefaultModelName = QStringLiteral("gpt-5-mini");
+// The model for each brain level. Checked 2026-10-23: gpt-5-mini, the old
+// default, shuts down 2026-12-11, and OpenAI names gpt-5.6-terra as its
+// replacement.
+QString openAiModelNameFor(AiBrainLevel brainLevel)
+{
+    switch (brainLevel) {
+    case AiBrainLevel::Quick:    return QStringLiteral("gpt-5.6-luna");
+    case AiBrainLevel::Balanced: return QStringLiteral("gpt-5.6-terra");
+    case AiBrainLevel::Best:     return QStringLiteral("gpt-5.6-sol");
+    }
+    return QStringLiteral("gpt-5.6-terra");
+}
 
 // OpenAI's chat completions API only searches the web with this model, and
 // only when web_search_options is in the request. Checked in OpenAI's web
@@ -36,6 +45,11 @@ constexpr int openAiMaxCompletionTokens = 4096;
 } // namespace
 
 OpenAiApiProvider::OpenAiApiProvider() = default;
+
+QString OpenAiApiProvider::modelNameFor(AiBrainLevel brainLevel) const
+{
+    return openAiModelNameFor(brainLevel);
+}
 
 QString OpenAiApiProvider::providerDisplayName() const
 {
@@ -64,8 +78,9 @@ QByteArray OpenAiApiProvider::buildRequestBody(
 
     QJsonObject requestBodyObject;
     requestBodyObject.insert(QStringLiteral("model"),
-                             requestOptions.letTheBrainSearchTheWeb ? openAiWebSearchModelName
-                                                                    : openAiDefaultModelName);
+                             requestOptions.letTheBrainSearchTheWeb
+                                 ? openAiWebSearchModelName
+                                 : openAiModelNameFor(requestOptions.brainLevel));
     // The newer models refuse "max_tokens" and want this name instead.
     requestBodyObject.insert(QStringLiteral("max_completion_tokens"),
                              qMax(openAiMaxCompletionTokens, requestOptions.longestAnswerTokens));

@@ -16,6 +16,18 @@
 // stays header-only.
 namespace ClearanceDetector {
 
+// True when the title or the description asks for a clearance.
+//
+// The pattern ignores case. It matches any one of these, as whole words:
+//  - "security clearance"
+//  - "clearance required" or "clearance is required"
+//  - "active clearance", "secret clearance", "top secret"
+//  - "ts/sci" or "ts sci"
+//  - "obtain", "maintain" or "hold", then an optional "a" or "an", then an
+//    optional "dod", "us" or "u.s.", then an optional "security", then
+//    "clearance". So "hold a DoD security clearance" and "obtain clearance"
+//    both match.
+//  - "polygraph"
 inline bool asksForClearance(const JobPosting &jobPosting)
 {
     static const QRegularExpression clearancePattern(

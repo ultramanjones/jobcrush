@@ -54,13 +54,18 @@ signals:
     void openChanged();
 
 private:
+    // Starts or stops listening. A failure to start is kept in problemText.
     void openDoor();
     void closeDoor();
+
     void acceptNewConnection();
+
+    // Reads whole lines from one bridge and writes back one answer per line.
     void readFromConnection(QLocalSocket *connection);
 
     AiAppRequests &requests;
     QLocalServer localServer;
+    // Bytes from each bridge that do not yet make a whole line.
     QHash<QLocalSocket *, QByteArray> unfinishedLines;
     bool doorShouldBeOpen = true;
     QString doorProblemText;

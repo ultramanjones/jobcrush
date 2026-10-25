@@ -6,12 +6,13 @@
 
 // JobSourceRoster
 //
-// Which job sites the user has ticked. A Logic layer class owning its own
-// persistence (QSettings), exactly like AiCredentialRoster — the pattern is
-// deliberate: two rosters, one shape, one thing to learn.
+// Which job sites the user has ticked, and the free keys some sites need. A
+// Logic layer class that keeps its own settings in QSettings, the same way
+// AiCredentialRoster does. The two rosters have the same shape on purpose,
+// so a reader learns it once.
 //
-// The tick does double duty by the user's design: an unticked site is never
-// swept AND gets no tab on the Discoveries page. One box, one meaning.
+// The tick does two jobs, by the user's design: an unticked site is never
+// swept, and it gets no tab on the Discoveries page.
 class JobSourceRoster : public QObject {
     Q_OBJECT
 public:

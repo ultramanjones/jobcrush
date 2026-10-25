@@ -7,10 +7,26 @@
 
 namespace {
 
-// How many times a word has to appear before it means anything. Resumes say
-// "experience" and "education" as headings; a cover letter might mention
-// either once in passing, and one mention should not tip the scales.
+// How many times a body word has to appear before it scores. Set to 1, so
+// one mention is enough. One passing mention cannot decide the kind on its
+// own, though: a body word scores pointsForABodyWord, and the bar below
+// (lowestScoreToTrustTheGuess) needs two different body words, or a
+// filename word.
 constexpr int occurrencesThatCount = 1;
+
+// A word in the filename. The user named the file, which is close to
+// telling us outright.
+constexpr int pointsForAFileNameWord = 10;
+
+// A phrase found in the document's text.
+constexpr int pointsForABodyWord = 2;
+
+// Below this, the guess is "other". Two body words agreeing is thin
+// evidence, but it is enough.
+constexpr int lowestScoreToTrustTheGuess = 4;
+
+// Counts how many times loweredTerm appears in loweredText, without
+// overlaps. Each search starts right after the end of the last match.
 
 int countOccurrences(const QString &loweredText, const QString &loweredTerm)
 {
@@ -70,6 +86,13 @@ QList<KindSignals> allKindSignals()
 
 } // namespace
 
+// Scores every kind and keeps the highest:
+//   1. An image is a photo. Nothing else is checked.
+//   2. For each kind, add points for each of its words found in the
+//      filename, and fewer points for each of its phrases found in the text.
+//   3. The kind with the most points wins. On a tie, the kind listed first
+//      in allKindSignals wins, because only a higher score replaces it.
+//   4. If even the winner is below the bar, the answer is "other".
 QString DroppedFileClassifier::classifyDocument(const QString &filePath,
                                                 const QString &documentText) const
 {
@@ -88,12 +111,12 @@ QString DroppedFileClassifier::classifyDocument(const QString &filePath,
 
         for (const QString &fileNameWord : kindSignals.fileNameWords) {
             if (loweredFileName.contains(fileNameWord)) {
-                score += 10; // the user named it; that is close to a declaration
+                score += pointsForAFileNameWord;
             }
         }
         for (const QString &bodyWord : kindSignals.bodyWords) {
             if (countOccurrences(loweredBodyText, bodyWord) >= occurrencesThatCount) {
-                score += 2;
+                score += pointsForABodyWord;
             }
         }
 
@@ -103,8 +126,8 @@ QString DroppedFileClassifier::classifyDocument(const QString &filePath,
         }
     }
 
-    // Two body words agreeing is thin evidence. Below that, admit to not
-    // knowing rather than filing it somewhere confident and wrong — "other"
-    // is honest, and the user can put it right in one click.
-    return bestScore >= 4 ? bestKind : DocumentKind::Other;
+    // Below the bar, admit to not knowing rather than filing it somewhere
+    // confident and wrong — "other" is honest, and the user can put it right
+    // in one click.
+    return bestScore >= lowestScoreToTrustTheGuess ? bestKind : DocumentKind::Other;
 }

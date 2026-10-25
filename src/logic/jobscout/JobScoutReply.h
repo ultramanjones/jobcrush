@@ -32,6 +32,19 @@ public:
         emit finished(foundJobPostings);
     }
 
+    // Called by a source that hears from many companies, each time one
+    // company answers. JobScout saves those jobs right away, one company at
+    // a time, so the user sees them arrive instead of waiting for the end.
+    // A source that calls this still calls markFinished with everything at
+    // the end, and JobScout does not save those jobs a second time.
+    // Not for consumers.
+    void deliverSomeJobs(const QList<JobPosting> &someFoundJobPostings)
+    {
+        jobsWereDeliveredAsTheyArrived = true;
+        emit someJobsFound(someFoundJobPostings);
+    }
+    bool deliveredJobsAsTheyArrived() const { return jobsWereDeliveredAsTheyArrived; }
+
     // Called by the source on any failure. Not for consumers.
     // The reason is written for human eyes and reaches the user as-is.
     //
@@ -60,16 +73,26 @@ public:
     QStringList employersReadInFull() const { return employersReadInFullKeys; }
 
     // True when a board reader stopped before the end of a company's board,
-    // or only searched it. Then a job missing from the answer may simply not
-    // have been read, so it must never be taken for gone.
+    // or only searched it. Then a job missing from the answer may not have
+    // been read, so it must never be taken for gone.
     void setReadOnlyPartOfTheBoard(bool readOnlyPart) { onlyPartOfTheBoardWasRead = readOnlyPart; }
     bool readOnlyPartOfTheBoard() const { return onlyPartOfTheBoardWasRead; }
+
+    // True when a board reader stopped at its page limit while the board or
+    // the search still had more jobs to give. Then even a search's answer is
+    // not complete, and a job missing from it is not known to be gone.
+    void setStoppedAtThePageLimit(bool stopped) { stoppedAtPageLimit = stopped; }
+    bool stoppedAtThePageLimit() const { return stoppedAtPageLimit; }
 
 signals:
     // The sweep of this one source succeeded. The postings are raw finds:
     // not yet deduplicated against what Job Crush already has, and not yet
     // scored — JobScout does both.
     void finished(const QList<JobPosting> &foundJobPostings);
+
+    // Some of the jobs, from one company, while the source is still working.
+    // See deliverSomeJobs.
+    void someJobsFound(const QList<JobPosting> &someFoundJobPostings);
 
     // Network trouble, a rejected request, or a response Job Crush could not
     // make sense of. One dead source never stops the others.
@@ -81,4 +104,6 @@ private:
     bool replyHasFinished = false;
     QStringList employersReadInFullKeys;
     bool onlyPartOfTheBoardWasRead = false;
+    bool stoppedAtPageLimit = false;
+    bool jobsWereDeliveredAsTheyArrived = false;
 };

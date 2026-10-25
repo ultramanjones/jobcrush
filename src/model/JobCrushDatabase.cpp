@@ -1,20 +1,28 @@
 #include "JobCrushDatabase.h"
 
+#include <QDebug>
 #include <QFileInfo>
 #include <QDir>
 #include <QSqlError>
 #include <QSqlQuery>
 
 namespace {
-// A named connection keeps us honest if a second connection ever appears
-// (for example, a background thread for JobScout imports).
+// Each connection has a name. The background thread that saves and ranks
+// jobs opens a second one under its own name.
 const QString primaryConnectionName = QStringLiteral("jobCrushPrimaryConnection");
 } // namespace
 
 JobCrushDatabase::~JobCrushDatabase()
 {
+    const QString connectionName = databaseConnection.connectionName();
     if (databaseConnection.isOpen()) {
         databaseConnection.close();
+    }
+    // Let go of the connection's name too, so the same name can be opened
+    // again later. Qt wants every copy of the handle gone first.
+    databaseConnection = QSqlDatabase();
+    if (!connectionName.isEmpty()) {
+        QSqlDatabase::removeDatabase(connectionName);
     }
 }
 
@@ -45,7 +53,58 @@ bool JobCrushDatabase::openAtFilePath(const QString &databaseFilePath)
         return false;
     }
 
+    // WAL mode lets the screen's thread read while the background thread
+    // writes. Without it, a read waits until a write is done, and the window
+    // stops responding while it waits. SQLite keeps this setting in the file.
+    // If it cannot be turned on, Job Crush still works, only slower to
+    // answer during a sweep, so this is logged and not treated as fatal.
+    QSqlQuery walModeQuery(databaseConnection);
+    if (!walModeQuery.exec(QStringLiteral("PRAGMA journal_mode = WAL"))) {
+        qWarning().noquote() << QStringLiteral(
+            "JobCrushDatabase::openAtFilePath: could not turn on WAL mode for %1 — %2")
+                .arg(databaseFilePath, walModeQuery.lastError().text());
+    }
+
     return createSchemaIfMissing();
+}
+
+bool JobCrushDatabase::openExtraConnection(const QString &databaseFilePath,
+                                           const QString &connectionName)
+{
+    databaseConnection = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+    databaseConnection.setDatabaseName(databaseFilePath);
+
+    if (!databaseConnection.open()) {
+        lastErrorDescription = databaseConnection.lastError().text();
+        return false;
+    }
+
+    QSqlQuery enableForeignKeysQuery(databaseConnection);
+    if (!enableForeignKeysQuery.exec(QStringLiteral("PRAGMA foreign_keys = ON"))) {
+        lastErrorDescription = enableForeignKeysQuery.lastError().text();
+        return false;
+    }
+    useNormalSyncMode();
+    return true;
+}
+
+void JobCrushDatabase::useNormalSyncMode()
+{
+    // Used only on the background connection, which saves found jobs. In
+    // WAL mode, NORMAL makes the disk safe at each checkpoint instead of at
+    // every commit, so a sweep that saves one company at a time does not wait
+    // on the disk hundreds of times. The database cannot be damaged this way.
+    // If the power fails, the last few saved finds may be lost, and the next
+    // sweep finds those jobs again.
+    //
+    // The main connection keeps SQLite's default, FULL, because it saves what
+    // the user does by hand: notes, dates, cards. Those must never be lost.
+    QSqlQuery syncModeQuery(databaseConnection);
+    if (!syncModeQuery.exec(QStringLiteral("PRAGMA synchronous = NORMAL"))) {
+        qWarning().noquote() << QStringLiteral(
+            "JobCrushDatabase::useNormalSyncMode: could not set it on connection %1 — %2")
+                .arg(databaseConnection.connectionName(), syncModeQuery.lastError().text());
+    }
 }
 
 QSqlDatabase &JobCrushDatabase::connection()
@@ -65,8 +124,8 @@ bool JobCrushDatabase::isOpen() const
 
 bool JobCrushDatabase::createSchemaIfMissing()
 {
-    // Each statement is idempotent (IF NOT EXISTS), so calling this on every
-    // startup is safe and cheap.
+    // Each statement says IF NOT EXISTS, so it does nothing when the table is
+    // already there. Running this on every startup is safe and cheap.
     const QStringList schemaStatements = {
         // Schema version bookkeeping, for future migrations.
         QStringLiteral(
@@ -141,7 +200,9 @@ bool JobCrushDatabase::createSchemaIfMissing()
             ")"),
 
         // One piece of one application packet (see StagedDocument.h).
-        // Deleting a campaign also deletes its packet.
+        // There is no foreign key here, so deleting a campaign does not
+        // delete its packet. StagedDocumentRepository::removePacketForApplication
+        // does that, when it is called.
         QStringLiteral(
             "CREATE TABLE IF NOT EXISTS stagedDocument ("
             "  stagedDocumentId    INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -236,7 +297,7 @@ bool JobCrushDatabase::createSchemaIfMissing()
         return false;
     }
 
-    // --- Schema growth: the column the task layer added -------------------
+    // --- Schema growth: the fit score on each campaign --------------------
     //
     // Defaults to -1, not 0. Unscored and scored-zero are different, and every
     // row that existed before scoring existed is unscored.
@@ -306,18 +367,26 @@ bool JobCrushDatabase::createSchemaIfMissing()
         return false;
     }
 
+    // When the user said the job is still open after checking it. Empty means
+    // they never did.
+    if (!addColumnIfMissing(QStringLiteral("jobPosting"),
+                            QStringLiteral("userSaysStillOpenTimestamp"),
+                            QStringLiteral("TEXT NOT NULL DEFAULT ''"))) {
+        return false;
+    }
+
     // The same job must never land twice. A board's own id, paired with the
     // board name, is the only identity Job Crush trusts — titles and company
     // names are written by humans and vary between boards.
     //
     // Partial index: rows with no external id (hand-entered postings) are
     // exempt, because they have no board identity to collide on.
-    QSqlQuery uniqueDiscoveryIndexQuery(databaseConnection);
-    if (!uniqueDiscoveryIndexQuery.exec(QStringLiteral(
+    QSqlQuery uniquePostingIndexQuery(databaseConnection);
+    if (!uniquePostingIndexQuery.exec(QStringLiteral(
             "CREATE UNIQUE INDEX IF NOT EXISTS uniquePostingPerBoard "
             "ON jobPosting (postingSource, externalSourceId) "
             "WHERE externalSourceId <> ''"))) {
-        lastErrorDescription = uniqueDiscoveryIndexQuery.lastError().text();
+        lastErrorDescription = uniquePostingIndexQuery.lastError().text();
         return false;
     }
 
@@ -331,12 +400,25 @@ bool JobCrushDatabase::createSchemaIfMissing()
         return false;
     }
 
-    // Record version 1 exactly once.
+    // Record version 1 exactly once. A failure here is logged and not
+    // treated as fatal: nothing reads the version yet.
     QSqlQuery versionQuery(databaseConnection);
-    versionQuery.exec(QStringLiteral("SELECT COUNT(*) FROM schemaVersion"));
+    if (!versionQuery.exec(QStringLiteral("SELECT COUNT(*) FROM schemaVersion"))) {
+        qWarning().noquote() << QStringLiteral(
+            "JobCrushDatabase::createSchemaIfMissing: could not count the rows in "
+            "schemaVersion for %1 — %2")
+                .arg(databaseConnection.databaseName(), versionQuery.lastError().text());
+    }
     if (versionQuery.next() && versionQuery.value(0).toInt() == 0) {
         QSqlQuery insertVersionQuery(databaseConnection);
-        insertVersionQuery.exec(QStringLiteral("INSERT INTO schemaVersion (versionNumber) VALUES (1)"));
+        if (!insertVersionQuery.exec(
+                QStringLiteral("INSERT INTO schemaVersion (versionNumber) VALUES (1)"))) {
+            qWarning().noquote() << QStringLiteral(
+                "JobCrushDatabase::createSchemaIfMissing: could not record schema "
+                "version 1 for %1 — %2")
+                    .arg(databaseConnection.databaseName(),
+                         insertVersionQuery.lastError().text());
+        }
     }
 
     return true;
@@ -347,7 +429,7 @@ bool JobCrushDatabase::addColumnIfMissing(const QString &tableName,
                                           const QString &columnDefinition)
 {
     // PRAGMA table_info is SQLite's own answer to "what columns does this
-    // table have?" — cheaper and more honest than parsing CREATE statements.
+    // table have?" It is simpler and safer than reading CREATE statements.
     QSqlQuery existingColumnsQuery(databaseConnection);
     if (!existingColumnsQuery.exec(
             QStringLiteral("PRAGMA table_info(%1)").arg(tableName))) {
@@ -377,6 +459,11 @@ bool JobCrushDatabase::tableHasColumn(const QString &tableName,
     QSqlQuery existingColumnsQuery(databaseConnection);
     if (!existingColumnsQuery.exec(
             QStringLiteral("PRAGMA table_info(%1)").arg(tableName))) {
+        // Answers "no", which makes the caller skip the rename. Logged so
+        // a skipped rename is not a mystery.
+        qWarning().noquote() << QStringLiteral(
+            "JobCrushDatabase::tableHasColumn: could not read the columns of table "
+            "%1 — %2").arg(tableName, existingColumnsQuery.lastError().text());
         return false;
     }
     while (existingColumnsQuery.next()) {

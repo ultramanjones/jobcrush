@@ -22,6 +22,8 @@ public:
         QString evidenceText;  // the words in the posting that asked for it
     };
 
+    // Every item the posting asks for, each listed once, with the sentence
+    // that asked for it. Empty when the posting is empty.
     QList<Requirement> requirementsIn(const QString &postingText) const
     {
         QList<Requirement> requirementsFound;
@@ -35,6 +37,11 @@ public:
         };
 
         // In the order a person would gather them, not alphabetically.
+        //
+        // How to read the patterns: \b is the edge of a word, so "cv" does
+        // not match inside "cvs". \s+ is one or more spaces. s? is an
+        // optional plural. (?:a|b) is either a or b. A | between two whole
+        // patterns means either one counts. Case is ignored.
         static const Candidate candidates[] = {
             { "\\bcover\\s+letters?\\b",                      "A cover letter" },
             { "\\bresum(?:e|é)s?\\b|\\bcurriculum\\s+vitae\\b|\\bcv\\b", "A resume" },
@@ -99,7 +106,9 @@ public:
 
 private:
     // The sentence the match was found in, so the checklist can show where it
-    // got each item.
+    // got each item. Walks back from the match to the last full stop or line
+    // break, and forward to the next one. The text between them is the
+    // sentence.
     static QString sentenceAround(const QString &text, int positionInText)
     {
         if (positionInText < 0) {

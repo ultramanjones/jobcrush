@@ -27,7 +27,8 @@ inline const QStringList &wordsThatNameASchool()
     return schoolWords;
 }
 
-// True if the text contains a school name.
+// True if the text contains a school word anywhere, even inside a longer
+// word. "univ" therefore matches "University" too.
 inline bool namesASchool(const QString &text)
 {
     const QString loweredText = text.toLower();
@@ -39,11 +40,14 @@ inline bool namesASchool(const QString &text)
     return false;
 }
 
-// True if this single word is a school word. Strips surrounding punctuation
-// first, since transcripts add plenty.
+// True if this single word is a school word, or a school word with an "s"
+// on the end ("Colleges"). Strips surrounding punctuation first, since
+// transcripts add plenty. Unlike namesASchool, the whole word must match.
 inline bool thisWordNamesASchool(const QString &word)
 {
     QString bareWord = word.toLower();
+    // Anything that is not a lowercase letter, at the start or at the end.
+    // "(University," becomes "university".
     static const QRegularExpression edgePunctuationPattern(
         QStringLiteral("^[^a-z]+|[^a-z]+$"));
     bareWord.remove(edgePunctuationPattern);

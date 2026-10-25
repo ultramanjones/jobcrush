@@ -85,13 +85,13 @@ public:
 
     // Writes this document out as Word, PDF or plain text, into the folder
     // Job Crush writes to. Reports what happened through
-    // lastProDocsOutcomeText, including the full path when it worked, because
-    // a file the user cannot find was not delivered.
+    // lastProDocsOutcomeText. When it worked, that includes the full path, so
+    // the user can find the file.
     Q_INVOKABLE void saveCopyOfDocumentAt(int rowIndex, const QString &format);
 
     // The sentence shown next to the buttons, before anything is pressed. The
-    // page design does not survive a conversion and the user hears that from
-    // us first, not from the file.
+    // page design does not survive a conversion, and the user is told that
+    // before they convert, not after they open the file.
     Q_INVOKABLE QString warningAboutConversion() const;
 
     // --- "Moonlight, clean this up!" ---

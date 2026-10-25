@@ -22,10 +22,19 @@ const QString openRouterEndpointUrl =
 const QString openRouterKeyInfoEndpointUrl =
     QStringLiteral("https://openrouter.ai/api/v1/key");
 
-// "openrouter/auto" lets OpenRouter pick a capable model — true
-// set-it-and-forget-it until the per-provider model picker lands, at which
-// point this constant becomes a Settings choice like the others.
-const QString openRouterDefaultModelName = QStringLiteral("openrouter/auto");
+// The model for each brain level. These are OpenRouter's "latest" names,
+// which always point to the newest Claude model of that size, so this list
+// does not go stale the way a pinned version would. Checked 2026-10-23 on
+// openrouter.ai.
+QString openRouterModelNameFor(AiBrainLevel brainLevel)
+{
+    switch (brainLevel) {
+    case AiBrainLevel::Quick:    return QStringLiteral("~anthropic/claude-haiku-latest");
+    case AiBrainLevel::Balanced: return QStringLiteral("~anthropic/claude-sonnet-latest");
+    case AiBrainLevel::Best:     return QStringLiteral("~anthropic/claude-opus-latest");
+    }
+    return QStringLiteral("~anthropic/claude-sonnet-latest");
+}
 
 // Generous but bounded — chat answers and cover-letter drafts, not novels.
 constexpr int openRouterMaxResponseTokens = 2048;
@@ -33,6 +42,11 @@ constexpr int openRouterMaxResponseTokens = 2048;
 } // namespace
 
 OpenRouterApiProvider::OpenRouterApiProvider() = default;
+
+QString OpenRouterApiProvider::modelNameFor(AiBrainLevel brainLevel) const
+{
+    return openRouterModelNameFor(brainLevel);
+}
 
 QString OpenRouterApiProvider::providerDisplayName() const
 {
@@ -67,7 +81,8 @@ QByteArray OpenRouterApiProvider::buildRequestBody(
     }
 
     QJsonObject requestBodyObject;
-    requestBodyObject.insert(QStringLiteral("model"), openRouterDefaultModelName);
+    requestBodyObject.insert(QStringLiteral("model"),
+                             openRouterModelNameFor(requestOptions.brainLevel));
     requestBodyObject.insert(QStringLiteral("max_tokens"),
                              qMax(openRouterMaxResponseTokens, requestOptions.longestAnswerTokens));
     requestBodyObject.insert(QStringLiteral("stream"), true);
@@ -101,7 +116,8 @@ AiBrainReply *OpenRouterApiProvider::streamConversation(
                              QStringLiteral("application/json"));
     networkRequest.setRawHeader(QByteArrayLiteral("Authorization"),
                                 QByteArrayLiteral("Bearer ") + credential.secretKey.toUtf8());
-    // App attribution (optional, for OpenRouter's public app rankings).
+    // These two headers name the app to OpenRouter, for its public list of
+    // apps. They are optional, and the request works without them.
     networkRequest.setRawHeader(QByteArrayLiteral("HTTP-Referer"),
                                 QByteArrayLiteral("https://github.com/ultramanjones/jobcrush"));
     networkRequest.setRawHeader(QByteArrayLiteral("X-OpenRouter-Title"),
@@ -124,8 +140,8 @@ AiBrainReply *OpenRouterApiProvider::verifyCredentialConnection(
     const AiCredential &credential, QObject *replyParent)
 {
     // OpenRouter publishes a key-info endpoint: it costs nothing, returns the
-    // key's own limits, and rejects a bad key outright. Perfect for asking
-    // "is this brain actually connected?" without spending a token.
+    // key's own limits, and rejects a bad key outright. So it answers "is this
+    // brain connected?" without spending a token.
     AiBrainReply *brainReply = new AiBrainReply(replyParent);
 
     QNetworkRequest networkRequest{QUrl(openRouterKeyInfoEndpointUrl)};

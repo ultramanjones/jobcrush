@@ -5,13 +5,23 @@
 
 namespace {
 
+// The fewest letters a month word may have. Two letters such as "ma" or "ju"
+// could be more than one month.
+constexpr int shortestMonthWordLength = 3;
+
+constexpr int monthsInAYear = 12;
+
+// A year typed with two digits, such as 26, is below this, and means 2026.
+constexpr int twoDigitYearLimit = 100;
+constexpr int firstYearOfThisCentury = 2000;
+
 // Finds the month number for a typed month word. English month names always
 // work, short or long ("oct", "october"). The locale's own names work too, so
 // a German user can type "Okt". Returns 0 when the word is not a month.
 int monthNumberForWord(const QString &typedWord, const QLocale &locale)
 {
     const QString word = typedWord.toLower();
-    if (word.length() < 3) {
+    if (word.length() < shortestMonthWordLength) {
         return 0;
     }
 
@@ -29,7 +39,9 @@ int monthNumberForWord(const QString &typedWord, const QLocale &locale)
         }
     }
 
-    for (int monthNumber = 1; monthNumber <= 12; ++monthNumber) {
+    // The locale's own month names, long and short. Some languages end the
+    // short name with a dot ("okt."), so the dot is taken off before comparing.
+    for (int monthNumber = 1; monthNumber <= monthsInAYear; ++monthNumber) {
         const QString longName = locale.monthName(monthNumber, QLocale::LongFormat).toLower();
         const QString shortName = locale.monthName(monthNumber, QLocale::ShortFormat)
                                       .toLower().remove(QLatin1Char('.'));
@@ -50,6 +62,8 @@ bool localeWritesDayFirst(const QLocale &locale)
     if (locale.language() == QLocale::C) {
         return false;
     }
+    // The short date format is a pattern such as "M/d/yy" or "dd.MM.yy". If
+    // the first "d" comes before the first "M", the day is written first.
     const QString shortFormat = locale.dateFormat(QLocale::ShortFormat);
     const qsizetype dayPosition = shortFormat.indexOf(QLatin1Char('d'));
     const qsizetype monthPosition = shortFormat.indexOf(QLatin1Char('M'));
@@ -63,8 +77,8 @@ bool buildDate(int year, int month, int day, bool yearWasTyped,
 {
     if (!yearWasTyped) {
         year = today.year();
-    } else if (year < 100) {
-        year += 2000; // "10/8/26"
+    } else if (year < twoDigitYearLimit) {
+        year += firstYearOfThisCentury; // "10/8/26"
     }
 
     QDate builtDate(year, month, day);
@@ -92,6 +106,11 @@ bool readTypedDate(const QString &typedText,
 {
     // Lower case, commas gone, "Oct." read as "Oct", and runs of spaces
     // squeezed to one, so "Oct 8,  2026" and "oct 8 2026" are the same text.
+    // The dot pattern finds a letter followed by a dot and keeps only the
+    // letter. A dot between two numbers, as in "8.10.2026", is left alone.
+    //
+    // After that, the text is tried against each pattern below in turn. The
+    // first one that fits decides the date. If none fits, it is not a date.
     QString text = typedText.trimmed().toLower();
     text.remove(QLatin1Char(','));
     text.replace(QRegularExpression(QStringLiteral("([a-z])\\.")), QStringLiteral("\\1"));
@@ -109,7 +128,7 @@ bool readTypedDate(const QString &typedText,
         return true;
     }
 
-    // "3 days ago"
+    // "3 days ago". One to three digits, then "day" or "days", then "ago".
     static const QRegularExpression daysAgoPattern(
         QStringLiteral("^(\\d{1,3}) days? ago$"));
     QRegularExpressionMatch match = daysAgoPattern.match(text);
@@ -118,7 +137,9 @@ bool readTypedDate(const QString &typedText,
         return true;
     }
 
-    // "2026-10-08". Year first is never ambiguous.
+    // "2026-10-08". Year first is never ambiguous. Four digits for the year,
+    // then one or two for the month, then one or two for the day, split by
+    // dashes.
     static const QRegularExpression yearFirstPattern(
         QStringLiteral("^(\\d{4})-(\\d{1,2})-(\\d{1,2})$"));
     match = yearFirstPattern.match(text);
@@ -129,6 +150,10 @@ bool readTypedDate(const QString &typedText,
 
     // "10/8/2026", "10/8", "10-8-26". Which number is the day depends on the
     // locale, because that is how the person typing it was taught to write it.
+    //
+    // The pattern: one or two digits, a slash, dot or dash, one or two more
+    // digits. Then, if there is one, another slash, dot or dash and a year of
+    // two or four digits. Capture 3, the year, is empty when it was left off.
     static const QRegularExpression numbersOnlyPattern(
         QStringLiteral("^(\\d{1,2})[/.-](\\d{1,2})(?:[/.-](\\d{2}|\\d{4}))?$"));
     match = numbersOnlyPattern.match(text);
@@ -143,7 +168,10 @@ bool readTypedDate(const QString &typedText,
         return buildDate(year, firstNumber, secondNumber, yearWasTyped, today, dateRead);
     }
 
-    // "8 oct 2026", "8 october"
+    // "8 oct 2026", "8 october". The pattern: one or two digits for the day,
+    // with "st", "nd", "rd" or "th" after it if typed. A space, then capture 2,
+    // a word with no digits or spaces in it, which must be a month. Then, if
+    // there is one, a space and a four-digit year.
     static const QRegularExpression dayThenMonthPattern(
         QStringLiteral("^(\\d{1,2})(?:st|nd|rd|th)? ([^\\d\\s]+)(?: (\\d{4}))?$"));
     match = dayThenMonthPattern.match(text);
@@ -157,7 +185,8 @@ bool readTypedDate(const QString &typedText,
                          match.captured(1).toInt(), yearWasTyped, today, dateRead);
     }
 
-    // "oct 8 2026", "october 8th"
+    // "oct 8 2026", "october 8th". The same pieces as above, with the month
+    // word first and the day second.
     static const QRegularExpression monthThenDayPattern(
         QStringLiteral("^([^\\d\\s]+) (\\d{1,2})(?:st|nd|rd|th)?(?: (\\d{4}))?$"));
     match = monthThenDayPattern.match(text);

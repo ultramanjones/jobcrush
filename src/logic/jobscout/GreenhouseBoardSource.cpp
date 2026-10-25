@@ -18,6 +18,10 @@ namespace {
 const QString greenhouseApiBase = QStringLiteral("https://boards-api.greenhouse.io/v1/boards/");
 const QString greenhouseDisplayName = QStringLiteral("Greenhouse");
 
+// Greenhouse answers this for a board token it does not have, and for a job
+// that has been closed.
+constexpr int httpStatusNotFound = 404;
+
 // One job out of Greenhouse's JSON.
 //
 // Greenhouse gives the location as free text and does not say whether a job is
@@ -53,6 +57,9 @@ JobPosting postingFromGreenhouseJob(const QJsonObject &jobObject, const QString 
     posting.fullDescriptionText =
         plainTextFromHtmlFragment(descriptionHtml);
 
+    // The posted time is first_published when Greenhouse sends a good one.
+    // updated_at is only the fallback: it moves every time the employer
+    // edits the posting, so an old job can look new.
     const QString updatedText = jobObject.value(QStringLiteral("updated_at")).toString();
     if (!updatedText.isEmpty()) {
         posting.postedTimestamp = QDateTime::fromString(updatedText, Qt::ISODate);
@@ -97,11 +104,13 @@ JobScoutReply *GreenhouseBoardSource::fetchEveryJobForEmployer(const QString &te
         return scoutReply;
     }
 
+    // content=true asks for each job's description in the same answer.
+    // Without it the list has titles and links only.
     const QUrl requestUrl(greenhouseApiBase + QUrl::toPercentEncoding(trimmedTenant)
                           + QStringLiteral("/jobs?content=true"));
 
     QNetworkReply *networkReply = networkAccessManager.get(employerBoardRequest(requestUrl));
-    networkReply->setParent(scoutReply);
+    networkReply->setParent(scoutReply); // dies with the scout reply
 
     QObject::connect(networkReply, &QNetworkReply::finished, scoutReply,
                      [scoutReply, networkReply, trimmedTenant]() {
@@ -109,7 +118,8 @@ JobScoutReply *GreenhouseBoardSource::fetchEveryJobForEmployer(const QString &te
             networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray responseBody = networkReply->readAll();
 
-        if (httpStatusCode == 404) {
+        // On a whole-board read, 404 means the board token is wrong.
+        if (httpStatusCode == httpStatusNotFound) {
             scoutReply->markFailed(noSuchBoardMessage(greenhouseDisplayName, trimmedTenant), false);
             return;
         }
@@ -134,9 +144,9 @@ JobScoutReply *GreenhouseBoardSource::fetchEveryJobForEmployer(const QString &te
         for (const QJsonValue &jobValue : jobArray) {
             const JobPosting posting = postingFromGreenhouseJob(jobValue.toObject(), trimmedTenant);
 
-            // No id means Job Crush cannot tell this job from the next one
-            // without an id, so on the following sweep they all look like the
-            // same job and every one after the first is quietly dropped.
+            // No title means nothing to show. An id of "0" means the id was
+            // missing. Every job without an id would then look like the same
+            // job, and on the next sweep all but the first would be dropped.
             if (posting.positionTitle.isEmpty()
                     || posting.externalSourceId.isEmpty()
                     || posting.externalSourceId == QStringLiteral("0")) {
@@ -168,7 +178,7 @@ JobScoutReply *GreenhouseBoardSource::fetchOneJob(const AtsBoardIdentity &boardI
                           + QUrl::toPercentEncoding(boardIdentity.jobId));
 
     QNetworkReply *networkReply = networkAccessManager.get(employerBoardRequest(requestUrl));
-    networkReply->setParent(scoutReply);
+    networkReply->setParent(scoutReply); // dies with the scout reply
 
     const QString tenant = boardIdentity.tenant;
     QObject::connect(networkReply, &QNetworkReply::finished, scoutReply,
@@ -179,7 +189,7 @@ JobScoutReply *GreenhouseBoardSource::fetchOneJob(const AtsBoardIdentity &boardI
 
         // A job that is gone is not an error. It is the answer, and it is one
         // the user needs: a closed job should stop looking open on the board.
-        if (httpStatusCode == 404) {
+        if (httpStatusCode == httpStatusNotFound) {
             scoutReply->markFinished({});
             return;
         }
@@ -198,6 +208,8 @@ JobScoutReply *GreenhouseBoardSource::fetchOneJob(const AtsBoardIdentity &boardI
             return;
         }
 
+        // The one-job answer is a single job object, the same shape as one
+        // entry in the board's list. An object with no title is not a job.
         const JobPosting posting = postingFromGreenhouseJob(responseDocument.object(), tenant);
         if (posting.positionTitle.isEmpty()) {
             scoutReply->markFinished({});

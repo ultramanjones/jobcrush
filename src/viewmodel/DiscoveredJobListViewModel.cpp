@@ -15,6 +15,9 @@
 
 namespace {
 
+// A typed date is stored at this time of day. See addJobFromFilledForm.
+const QTime timeOfDayForTypedDates(12, 0);
+
 // The reserved tab names. Neither can ever match a real source's storage
 // name, because every real one is a plain word with no hyphen.
 const QString manualAddTabName = QStringLiteral("jobcrush-manual-add");
@@ -86,7 +89,9 @@ DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
     , jobPipelines(jobPipelines)
 {
     connect(&discoveryJobScout, &JobScout::discoveriesChanged,
-            this, &DiscoveredJobListViewModel::rebuildRowsFromJobScout);
+            this, &DiscoveredJobListViewModel::requestRowsForTheActiveTab);
+    connect(&discoveryJobScout, &JobScout::rowsReady,
+            this, &DiscoveredJobListViewModel::whenRowsAreReady);
     connect(&discoveryJobScout, &JobScout::sweepProgressChanged,
             this, &DiscoveredJobListViewModel::sweepProgressChanged);
     connect(&discoveryJobScout, &JobScout::pastedTextFormChanged,
@@ -99,10 +104,10 @@ DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
     connect(&jobPipelines, &JobPipelines::boardChanged,
             this, &DiscoveredJobListViewModel::refreshIsOnTheBoardForEveryRow);
 
-    rebuildRowsFromJobScout();
+    requestRowsForTheActiveTab();
 }
 
-void DiscoveredJobListViewModel::rebuildRowsFromJobScout()
+void DiscoveredJobListViewModel::requestRowsForTheActiveTab()
 {
     // The "Outside your area" tab exists only while the user has named a
     // place. If they clear the last place in Settings while that tab is
@@ -114,27 +119,34 @@ void DiscoveredJobListViewModel::rebuildRowsFromJobScout()
         emit activeTabSourceNameChanged();
     }
 
-    // A full reset is simple and fast enough here. The rows are rebuilt only
-    // when a sweep finishes, the tab changes, a job is added, or the profile
-    // is edited.
-    beginResetModel();
+    DiscoveryRowRequest rowRequest;
     if (storedActiveTabSourceName == manualAddTabName) {
-        // No search-area filter. The user asked for these jobs by name.
-        displayedJobPostings = discoveryJobScout.handAddedJobPostings();
+        rowRequest.rowKind = DiscoveryRowRequest::RowKind::HandAdded;
     } else if (storedActiveTabSourceName == outsideSearchAreaTabName) {
-        // Every held-back job from every site, ranked like Top Prospects, so
-        // the best of them is still at the top.
-        displayedJobPostings =
-            discoveryJobScout.rankedTopProspects(SearchAreaScope::OutsideSearchArea);
+        rowRequest.rowKind = DiscoveryRowRequest::RowKind::OutsideSearchArea;
     } else if (storedActiveTabSourceName.isEmpty()) {
-        displayedJobPostings =
-            discoveryJobScout.rankedTopProspects(SearchAreaScope::InsideSearchArea);
+        rowRequest.rowKind = DiscoveryRowRequest::RowKind::TopProspects;
     } else {
-        displayedJobPostings = discoveryJobScout.scoredJobPostingsFromSource(
-            storedActiveTabSourceName, SearchAreaScope::InsideSearchArea);
+        rowRequest.rowKind = DiscoveryRowRequest::RowKind::OneSource;
+        rowRequest.sourceStorageName = storedActiveTabSourceName;
     }
+    newestRowRequestNumber = discoveryJobScout.requestRows(rowRequest);
+}
+
+void DiscoveredJobListViewModel::whenRowsAreReady(int requestNumber,
+                                                  const DiscoveryRows &preparedRows)
+{
+    if (requestNumber != newestRowRequestNumber) {
+        return;
+    }
+
+    // A full reset is simple, and fast enough with the scoring already done.
+    beginResetModel();
+    displayedJobPostings = preparedRows.scoredJobPostings;
     endResetModel();
 
+    waitingForRows = false;
+    storedJobCountOutsideSearchArea = preparedRows.jobCountOutsideSearchArea;
     emit discoveredJobsChanged();
 }
 
@@ -235,7 +247,16 @@ void DiscoveredJobListViewModel::setActiveTabSourceName(const QString &sourceSto
     }
     storedActiveTabSourceName = sourceStorageName;
     emit activeTabSourceNameChanged();
-    rebuildRowsFromJobScout();
+
+    // The old tab's rows go at once, so they never show under the new tab's
+    // name while the new rows are being prepared.
+    beginResetModel();
+    displayedJobPostings.clear();
+    endResetModel();
+    waitingForRows = true;
+    emit discoveredJobsChanged();
+
+    requestRowsForTheActiveTab();
 }
 
 QString DiscoveredJobListViewModel::manualAddTabSourceName() const
@@ -270,7 +291,12 @@ bool DiscoveredJobListViewModel::canRankProspects() const
 
 int DiscoveredJobListViewModel::jobCountOutsideSearchArea() const
 {
-    return discoveryJobScout.jobPostingCountOutsideSearchArea();
+    return storedJobCountOutsideSearchArea;
+}
+
+bool DiscoveredJobListViewModel::rowsAreLoading() const
+{
+    return waitingForRows;
 }
 
 bool DiscoveredJobListViewModel::searchAreaIsNarrowed() const
@@ -386,7 +412,12 @@ void DiscoveredJobListViewModel::openJobPostingInBrowser(int rowIndex) const
                 .arg(jobPosting.sourceUrl).arg(jobPosting.jobPostingId);
         return;
     }
-    QDesktopServices::openUrl(postingUrl);
+    if (!QDesktopServices::openUrl(postingUrl)) {
+        qWarning().noquote() << QStringLiteral(
+            "DiscoveredJobListViewModel::openJobPostingInBrowser: could not open \"%1\" "
+            "for job posting %2 — the system browser refused it")
+                .arg(jobPosting.sourceUrl).arg(jobPosting.jobPostingId);
+    }
 }
 
 QString DiscoveredJobListViewModel::crushJobPostingAt(int rowIndex)
@@ -461,11 +492,11 @@ void DiscoveredJobListViewModel::addJobFromFilledForm(const QString &companyName
     jobPostingFromForm.isRemoteRole = isRemoteRole;
 
     // A typed date is stored at noon, so a time zone change cannot move it
-    // to the day before or after.
+    // to the day before or after. A date that cannot be read is left empty.
     QDate postedDate;
     jobPostingFromForm.postedTimestamp =
         TypedDateReader::readTypedDate(postedText, QDate::currentDate(), QLocale(), postedDate)
-            ? QDateTime(postedDate, QTime(12, 0))
+            ? QDateTime(postedDate, timeOfDayForTypedDates)
             : QDateTime();
     discoveryJobScout.addJobFromFilledForm(jobPostingFromForm);
 }

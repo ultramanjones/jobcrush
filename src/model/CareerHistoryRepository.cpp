@@ -1,5 +1,6 @@
 #include "CareerHistoryRepository.h"
 
+#include <QDebug>
 #include <QHash>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -16,6 +17,7 @@ QString textOrEmpty(const QString &possiblyNullText)
     return possiblyNullText.isNull() ? QString::fromLatin1("") : possiblyNullText;
 }
 
+// The one place that turns a query row into a WorkExperience.
 WorkExperience workExperienceFromQueryRow(const QSqlQuery &row)
 {
     WorkExperience workExperience;
@@ -34,6 +36,7 @@ WorkExperience workExperienceFromQueryRow(const QSqlQuery &row)
     return workExperience;
 }
 
+// The one place that turns a query row into an EducationRecord.
 EducationRecord educationRecordFromQueryRow(const QSqlQuery &row)
 {
     EducationRecord educationRecord;
@@ -131,10 +134,14 @@ QList<WorkExperience> CareerHistoryRepository::loadAllWorkExperiences()
 {
     QList<WorkExperience> allWorkExperiences;
     QSqlQuery selectQuery(jobCrushDatabase.connection());
-    // Newest first by the end date TEXT: "Present" sorts above any year, which
-    // is exactly where a current job belongs.
-    selectQuery.exec(QStringLiteral(
-        "SELECT * FROM workExperience ORDER BY endDateText DESC, workExperienceId DESC"));
+    // Newest first by the end date TEXT. A letter sorts above a digit, so
+    // "Present" comes before any year. That is where a current job belongs.
+    if (!selectQuery.exec(QStringLiteral(
+            "SELECT * FROM workExperience ORDER BY endDateText DESC, workExperienceId DESC"))) {
+        qWarning().noquote() << QStringLiteral(
+            "CareerHistoryRepository::loadAllWorkExperiences: query failed for every "
+            "work experience — %1").arg(selectQuery.lastError().text());
+    }
     while (selectQuery.next()) {
         allWorkExperiences.append(workExperienceFromQueryRow(selectQuery));
     }
@@ -147,10 +154,10 @@ bool CareerHistoryRepository::insertEducationRecord(EducationRecord &educationRe
     insertQuery.prepare(QStringLiteral(
         "INSERT INTO educationRecord "
         "  (schoolName, credentialText, fieldOfStudyText, startDateText, endDateText,"
-        "   sourceDocumentId, sourceLineText, isConfirmedByUser) "
+        "   sourceDocumentId, sourceLineText, isConfirmedByUser, wasEditedByUser) "
         "VALUES "
         "  (:schoolName, :credentialText, :fieldOfStudyText, :startDateText, :endDateText,"
-        "   :sourceDocumentId, :sourceLineText, :isConfirmedByUser)"));
+        "   :sourceDocumentId, :sourceLineText, :isConfirmedByUser, :wasEditedByUser)"));
     insertQuery.bindValue(QStringLiteral(":schoolName"), textOrEmpty(educationRecord.schoolName));
     insertQuery.bindValue(QStringLiteral(":credentialText"), textOrEmpty(educationRecord.credentialText));
     insertQuery.bindValue(QStringLiteral(":fieldOfStudyText"), textOrEmpty(educationRecord.fieldOfStudyText));
@@ -211,8 +218,12 @@ QList<EducationRecord> CareerHistoryRepository::loadAllEducationRecords()
 {
     QList<EducationRecord> allEducationRecords;
     QSqlQuery selectQuery(jobCrushDatabase.connection());
-    selectQuery.exec(QStringLiteral(
-        "SELECT * FROM educationRecord ORDER BY endDateText DESC, educationRecordId DESC"));
+    if (!selectQuery.exec(QStringLiteral(
+            "SELECT * FROM educationRecord ORDER BY endDateText DESC, educationRecordId DESC"))) {
+        qWarning().noquote() << QStringLiteral(
+            "CareerHistoryRepository::loadAllEducationRecords: query failed for every "
+            "education record — %1").arg(selectQuery.lastError().text());
+    }
     while (selectQuery.next()) {
         allEducationRecords.append(educationRecordFromQueryRow(selectQuery));
     }
@@ -331,10 +342,10 @@ bool CareerHistoryRepository::educationRecordAlreadyRecorded(
 bool CareerHistoryRepository::removeEntriesTheReaderProducedAndNobodyTouched()
 {
     // Everything that came OUT OF A DOCUMENT and that no person has typed
-    // into since. A better reader is entitled to redo its own work; it is
-    // never entitled to redo somebody else's.
+    // into since. A better reader may redo its own work. It may never redo
+    // a person's.
     //
-    // Note what is NOT protected here: merely CONFIRMED entries. Ticking a
+    // CONFIRMED entries are NOT protected here. Ticking a
     // box says "your reading is right", and when the reading turns out to
     // have been wrong the tick was agreement with a mistake — keeping it
     // would preserve the mistake and hide the fix.
@@ -370,10 +381,21 @@ bool CareerHistoryRepository::removeUntouchedEntriesFromDocument(qint64 professi
 
 int CareerHistoryRepository::removeDuplicateEntries()
 {
-    // Written as a read, a decision and a delete rather than as one clever
+    // Written as a read, a decision and a delete rather than as one large
     // SQL statement. The rule — "keep the row the user confirmed, otherwise
-    // the oldest" — has to be readable by whoever inherits it, and a nested
-    // GROUP BY with a correlated subquery is not that.
+    // the first one loaded" — has to be readable by whoever inherits it, and
+    // a nested GROUP BY with a correlated subquery is not.
+    //
+    // How it works, for each table:
+    //  1. Load every row. The load sorts by end date, then by id with the
+    //     highest id first. So among true duplicates, the NEWEST row is
+    //     loaded first.
+    //  2. Build an identity string from the fields that make two rows "the
+    //     same", trimmed and lowercased, joined by line breaks.
+    //  3. The first row seen with an identity is the survivor. A later row
+    //     with the same identity takes its place only when the later row is
+    //     confirmed and the survivor is not. Every row that loses is queued.
+    //  4. Delete every queued row. Stop and return -1 on the first failure.
     int rowsRemoved = 0;
 
     // --- Jobs ------------------------------------------------------------
@@ -428,6 +450,8 @@ int CareerHistoryRepository::removeDuplicateEntries()
         QList<qint64> identifiersToRemove;
 
         for (const EducationRecord &educationRecord : loadAllEducationRecords()) {
+            // Same school, same credential, same field, same end date. The
+            // start date is not part of it.
             const QString identity = educationRecord.schoolName.trimmed().toLower()
                 + QStringLiteral("\n") + educationRecord.credentialText.trimmed().toLower()
                 + QStringLiteral("\n") + educationRecord.fieldOfStudyText.trimmed().toLower()

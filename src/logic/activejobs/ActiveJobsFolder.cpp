@@ -26,17 +26,28 @@ const QString folderPathSettingKey = QStringLiteral("activeJobs/folderPath");
 // is a file read wrong.
 constexpr int quietMillisecondsBeforeReading = 1000;
 
+// The longest name a new job folder gets. A long folder name makes every path
+// inside it long, and many Windows programs refuse a path over 260 characters.
+constexpr int longestFolderNameLength = 80;
+
+// The board stores an applied date at noon. JobPipelines::setAppliedDate says
+// why. The same hour is used here so the two always agree.
+constexpr int appliedHourOfDay = 12;
+
 // A name Windows accepts for a folder. The characters it refuses are taken
 // out, and so are trailing dots and spaces, which it quietly drops.
 QString folderNameWindowsAccepts(const QString &wantedName)
 {
+    // The characters Windows refuses in a name: < > : " / \ | ? * and the
+    // control characters 0 to 31. Each one becomes a space.
     static const QRegularExpression refusedCharacters(
         QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1F]"));
     QString cleanName = wantedName;
     cleanName.replace(refusedCharacters, QStringLiteral(" "));
+    // Runs of spaces become one space, and the ends are trimmed.
     cleanName = cleanName.simplified();
-    if (cleanName.size() > 80) {
-        cleanName = cleanName.left(80).trimmed();
+    if (cleanName.size() > longestFolderNameLength) {
+        cleanName = cleanName.left(longestFolderNameLength).trimmed();
     }
     while (cleanName.endsWith(QLatin1Char('.')) || cleanName.endsWith(QLatin1Char(' '))) {
         cleanName.chop(1);
@@ -47,6 +58,8 @@ QString folderNameWindowsAccepts(const QString &wantedName)
     return cleanName;
 }
 
+// The whole file as text. fileWasRead is false when it could not be opened.
+// The caller says what went wrong, because only it knows which folder this is.
 QString readWholeFile(const QString &filePath, bool &fileWasRead)
 {
     QFile file(filePath);
@@ -91,6 +104,7 @@ QDate appliedDayOf(const QDateTime &appliedTimestamp)
     return appliedTimestamp.isValid() ? appliedTimestamp.date() : QDate();
 }
 
+// True when a folder holds a job: a JobQuest.txt, or the older HOW TO APPLY.txt.
 bool isJobFolder(const QDir &folder)
 {
     return folder.exists(JobQuestFile::FileName)
@@ -103,8 +117,14 @@ bool copyFolder(const QString &sourceFolderPath, const QString &targetFolderPath
 {
     QDir sourceFolder(sourceFolderPath);
     if (!QDir().mkpath(targetFolderPath)) {
+        qWarning().noquote() << QStringLiteral(
+            "ActiveJobsFolder copyFolder: could not make folder \"%1\" — mkpath failed")
+                .arg(targetFolderPath);
         return false;
     }
+    // Walks every file and folder below the source, at any depth. Each one
+    // goes to the same place below the target. A folder is made before the
+    // files in it, because the walk reaches a folder before its contents.
     QDirIterator everyEntry(sourceFolderPath,
                             QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden,
                             QDirIterator::Subdirectories);
@@ -114,9 +134,15 @@ bool copyFolder(const QString &sourceFolderPath, const QString &targetFolderPath
         const QString targetPath = QDir(targetFolderPath).filePath(relativePath);
         if (everyEntry.fileInfo().isDir()) {
             if (!QDir().mkpath(targetPath)) {
+                qWarning().noquote() << QStringLiteral(
+                    "ActiveJobsFolder copyFolder: could not make folder \"%1\" — mkpath "
+                    "failed").arg(targetPath);
                 return false;
             }
         } else if (!QFile::copy(sourcePath, targetPath)) {
+            qWarning().noquote() << QStringLiteral(
+                "ActiveJobsFolder copyFolder: could not copy \"%1\" to \"%2\" — QFile::copy "
+                "failed").arg(sourcePath, targetPath);
             return false;
         }
     }
@@ -336,7 +362,9 @@ void ActiveJobsFolder::lookAtEveryJobFolder()
     watchEveryJobFolder();
 
     // The folders with a problem, counted once each however many problems
-    // they have.
+    // they have. Each sentence starts with "folder name: ", so the name is the
+    // text before the first ": ". Windows does not allow a colon in a folder
+    // name, so the name itself never holds one.
     QStringList foldersWithAProblem;
     for (const QString &problemSentence : std::as_const(problemSentences)) {
         const QString folderName = problemSentence.section(QStringLiteral(": "), 0, 0);
@@ -385,7 +413,11 @@ void ActiveJobsFolder::followChangedFile(ActiveJobFolder &link, const JobQuest &
     // put back on the board: taking it off was a choice.
     if (!cardFound) {
         link.fileChangedTimestamp = fileChangedTimestamp;
-        linkRepository.updateActiveJobFolder(link);
+        if (!linkRepository.updateActiveJobFolder(link)) {
+            qWarning().noquote() << QStringLiteral(
+                "ActiveJobsFolder::followChangedFile: could not save the folder link for "
+                "\"%1\" — %2").arg(folderName, linkRepository.lastErrorText());
+        }
         return;
     }
 
@@ -406,7 +438,7 @@ void ActiveJobsFolder::followChangedFile(ActiveJobFolder &link, const JobQuest &
             && fileAppliedDate != appliedDayOf(link.syncedAppliedTimestamp)) {
         QString reasonText;
         if (board.setAppliedDate(jobApplicationId, fileAppliedDate, reasonText)) {
-            link.syncedAppliedTimestamp = QDateTime(fileAppliedDate, QTime(12, 0));
+            link.syncedAppliedTimestamp = QDateTime(fileAppliedDate, QTime(appliedHourOfDay, 0));
         } else {
             reportProblem(folderName, QStringLiteral("Applied on: %1").arg(reasonText));
         }
@@ -447,15 +479,17 @@ void ActiveJobsFolder::followChangedFile(ActiveJobFolder &link, const JobQuest &
         if (postingRepository.updateJobPostingDetails(correctedPosting)) {
             board.loadFromDatabase();
         } else {
-            qWarning() << "Job Crush could not save the corrected job from" << folderName
-                       << postingRepository.lastErrorText();
+            qWarning().noquote() << QStringLiteral(
+                "ActiveJobsFolder::followChangedFile: could not save the corrected job "
+                "from \"%1\" — %2").arg(folderName, postingRepository.lastErrorText());
         }
     }
 
     link.fileChangedTimestamp = fileChangedTimestamp;
     if (!linkRepository.updateActiveJobFolder(link)) {
-        qWarning() << "Job Crush could not remember the job folder" << folderName
-                   << linkRepository.lastErrorText();
+        qWarning().noquote() << QStringLiteral(
+            "ActiveJobsFolder::followChangedFile: could not save the folder link for "
+            "\"%1\" — %2").arg(folderName, linkRepository.lastErrorText());
     }
 }
 
@@ -518,8 +552,9 @@ bool ActiveJobsFolder::putNewFolderOnTheBoard(const QString &folderName,
         // Left empty so the next write puts the card's lines into the file.
         newLink.syncedStageText.clear();
         if (!linkRepository.insertActiveJobFolder(newLink)) {
-            qWarning() << "Job Crush could not remember the job folder" << folderName
-                       << linkRepository.lastErrorText();
+            qWarning().noquote() << QStringLiteral(
+                "ActiveJobsFolder::putNewFolderOnTheBoard: could not save the folder link "
+                "for \"%1\" — %2").arg(folderName, linkRepository.lastErrorText());
             return false;
         }
         links.append(newLink);
@@ -554,8 +589,9 @@ bool ActiveJobsFolder::putNewFolderOnTheBoard(const QString &folderName,
     if (stage != PipelineStage::Saved && !appliedDate.isValid()) {
         appliedDate = fileChangedTimestamp.date();
     }
-    const QDateTime appliedTimestamp =
-        appliedDate.isValid() ? QDateTime(appliedDate, QTime(12, 0)) : QDateTime();
+    const QDateTime appliedTimestamp = appliedDate.isValid()
+        ? QDateTime(appliedDate, QTime(appliedHourOfDay, 0))
+        : QDateTime();
 
     QString reasonText;
     const qint64 jobApplicationId = board.putOnBoardFromJobFolder(
@@ -585,8 +621,9 @@ bool ActiveJobsFolder::putNewFolderOnTheBoard(const QString &folderName,
     }
 
     if (!linkRepository.insertActiveJobFolder(newLink)) {
-        qWarning() << "Job Crush could not remember the job folder" << folderName
-                   << linkRepository.lastErrorText();
+        qWarning().noquote() << QStringLiteral(
+            "ActiveJobsFolder::putNewFolderOnTheBoard: could not save the folder link for "
+            "\"%1\" — %2").arg(folderName, linkRepository.lastErrorText());
         return false;
     }
     links.append(newLink);
@@ -653,9 +690,15 @@ void ActiveJobsFolder::writeBoardChangesToFolders()
         link->syncedStageText = boardStageText;
         link->syncedAppliedTimestamp = targetedJob.campaign.appliedTimestamp;
         link->syncedNotesText = targetedJob.campaign.notesText;
+        // An empty time never matches the file's time, so the next look reads
+        // the file again and picks up the lines the outside AI wrote.
         link->fileChangedTimestamp =
             fileChangedSinceLastLook ? QDateTime() : fileChangedTimestamp;
-        linkRepository.updateActiveJobFolder(*link);
+        if (!linkRepository.updateActiveJobFolder(*link)) {
+            qWarning().noquote() << QStringLiteral(
+                "ActiveJobsFolder::writeBoardChangesToFolders: could not save the folder "
+                "link for \"%1\" — %2").arg(link->folderName, linkRepository.lastErrorText());
+        }
     }
 
     if (madeAnyFolder) {
@@ -669,7 +712,9 @@ void ActiveJobsFolder::makeJobFolderForCard(const TargetedJob &targetedJob)
         targetedJob.posting.companyName + QStringLiteral(" - ")
         + targetedJob.posting.positionTitle);
     if (!QDir(folderPath()).mkpath(folderName)) {
-        qWarning() << "Job Crush could not make the job folder" << folderName;
+        qWarning().noquote() << QStringLiteral(
+            "ActiveJobsFolder::makeJobFolderForCard: could not make the job folder \"%1\" "
+            "— mkpath failed in \"%2\"").arg(folderName, folderPath());
         return;
     }
 
@@ -699,8 +744,9 @@ void ActiveJobsFolder::makeJobFolderForCard(const TargetedJob &targetedJob)
     newLink.syncedAppliedTimestamp = targetedJob.campaign.appliedTimestamp;
     newLink.syncedNotesText = targetedJob.campaign.notesText;
     if (!linkRepository.insertActiveJobFolder(newLink)) {
-        qWarning() << "Job Crush could not remember the job folder" << folderName
-                   << linkRepository.lastErrorText();
+        qWarning().noquote() << QStringLiteral(
+            "ActiveJobsFolder::makeJobFolderForCard: could not save the folder link for "
+            "\"%1\" — %2").arg(folderName, linkRepository.lastErrorText());
         return;
     }
     links.append(newLink);
@@ -719,7 +765,9 @@ bool ActiveJobsFolder::writeQuestFile(const QString &folderName, const QString &
     if (!questFile.open(QIODevice::WriteOnly)
             || questFile.write(fileText.toUtf8()) < 0
             || !questFile.commit()) {
-        qWarning() << "Job Crush could not write" << questFilePath << questFile.errorString();
+        qWarning().noquote() << QStringLiteral(
+            "ActiveJobsFolder::writeQuestFile: could not write \"%1\" — %2")
+                .arg(questFilePath, questFile.errorString());
         return false;
     }
     fileChangedTimestamp = lastChangedTimeOf(questFilePath);
@@ -728,6 +776,12 @@ bool ActiveJobsFolder::writeQuestFile(const QString &folderName, const QString &
 
 void ActiveJobsFolder::watchEveryJobFolder()
 {
+    // The watch list is rebuilt from scratch each time. Folders come and go,
+    // and a stale path on the list would never report anything.
+    //
+    // Three kinds of path are watched: the Active Jobs folder itself, so a new
+    // job folder is seen; each job folder, so a new JobQuest.txt is seen; and
+    // each JobQuest.txt, so an edit to it is seen.
     const QStringList watchedNow = diskWatcher.directories() + diskWatcher.files();
     if (!watchedNow.isEmpty()) {
         diskWatcher.removePaths(watchedNow);
@@ -785,7 +839,12 @@ bool ActiveJobsFolder::importJobFolders(const QString &chosenFolderPath, QString
         return false;
     }
 
-    QDir().mkpath(activeJobsPath);
+    if (!QDir().mkpath(activeJobsPath)) {
+        // Each copy below then fails and is named in reasonText.
+        qWarning().noquote() << QStringLiteral(
+            "ActiveJobsFolder::importJobFolders: could not make the Active Jobs folder "
+            "\"%1\" — mkpath failed").arg(activeJobsPath);
+    }
     int jobsCopied = 0;
     int jobsAlreadyThere = 0;
     QStringList jobsThatFailed;
@@ -818,6 +877,8 @@ bool ActiveJobsFolder::importJobFolders(const QString &chosenFolderPath, QString
             continue;
         }
         if (isOlder) {
+            // The time is not needed: the look below reads the new file anyway.
+            // writeQuestFile logs a failed write itself.
             QDateTime ignoredTimestamp;
             writeQuestFile(folderName, JobQuestFile::questTextFor(olderQuest),
                            ignoredTimestamp);
@@ -853,6 +914,8 @@ QString ActiveJobsFolder::uniqueFolderNameFor(const QString &wantedName) const
     if (!activeJobsFolder.exists(cleanName)) {
         return cleanName;
     }
+    // The name is taken. Try "Name (2)", "Name (3)" and so on until one is
+    // free. The folder holds a finite number of names, so this always ends.
     for (int copyNumber = 2;; ++copyNumber) {
         const QString numberedName = QStringLiteral("%1 (%2)").arg(cleanName).arg(copyNumber);
         if (!activeJobsFolder.exists(numberedName)) {

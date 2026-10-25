@@ -135,7 +135,7 @@ Window {
         visible: applicationWindow.currentPageName === "stats"
         jobSearchStatsViewModel: applicationWindow.jobSearchStatsViewModel
 
-        // Recount when the page is opened rather than on a timer. The numbers
+        // Recount when the page is opened, not on a timer. The numbers
         // cannot change while somebody is looking at another screen, and a
         // dashboard that recomputes itself every few seconds is a dashboard
         // burning battery to tell you nothing new.
@@ -161,22 +161,18 @@ Window {
         // A DropArea filling the window accepts EVERY drag, including the
         // app's own. Dragging a card between columns on the Job Pipelines
         // board raised this basket over the whole window, dimmed the board the
-        // user was aiming at, and swallowed the drop — so cards simply refused
-        // to move, with no error and nothing in a log.
+        // user was aiming at, and swallowed the drop — so cards refused to
+        // move, with no error and nothing in a log.
         //
         // Refusing the drag in onEntered is NOT enough: containsDrag still
         // goes true and the basket still flashes up. Keys are the mechanism
-        // that actually works. "text/uri-list" is the MIME type a file drag
-        // from the desktop carries, and Job Crush's own board cards carry
+        // that works. "text/uri-list" is the MIME type a file drag from the
+        // desktop carries, and Job Crush's own board cards carry
         // "jobCrushBoardCard" — so neither can ever be mistaken for the other.
         keys: ["text/uri-list"]
-        //
-        // A DropArea filling the window accepts EVERY drag, including the
-        // app's own. Dragging a card between columns on the Job Pipelines
-        // board raised the ProDocs basket over the whole window, dimmed the
-        // board the user was aiming at, and swallowed the drop — so cards
-        // simply refused to move, with no error and nothing in a log.
-        //
+
+        // Hands every dropped file to ProDocs as a plain string URL. The
+        // viewmodel decides what to keep and says what it did.
         onDropped: function(dropEvent) {
             if (!dropEvent.hasUrls) {
                 return
@@ -248,7 +244,7 @@ Window {
     // What ProDocs last did, in the app's own words — a file dropped, or a
     // copy saved out — including the parts that are bad news. It waits to be
     // dismissed rather than fading: "that PDF is a scan and has no text in it"
-    // is precisely the sentence a timer must not be allowed to take away, and
+    // is a sentence a timer must not be allowed to take away, and
     // a path to a file the user is about to go and open is another.
     Rectangle {
         id: dropOutcomeNotice

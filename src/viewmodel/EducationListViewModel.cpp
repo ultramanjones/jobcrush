@@ -1,5 +1,7 @@
 #include "EducationListViewModel.h"
 
+#include <QDebug>
+
 #include "../model/CareerHistoryRepository.h"
 #include "../logic/prodocs/ProDocsIntake.h"
 
@@ -66,13 +68,13 @@ int EducationListViewModel::rowCountForProperty() const
 
 int EducationListViewModel::unconfirmedCount() const
 {
-    int unconfirmed = 0;
+    int unconfirmedRowCount = 0;
     for (const EducationRecord &educationRecord : loadedEducationRecords) {
         if (!educationRecord.isConfirmedByUser) {
-            ++unconfirmed;
+            ++unconfirmedRowCount;
         }
     }
-    return unconfirmed;
+    return unconfirmedRowCount;
 }
 
 bool EducationListViewModel::saveRow(int rowIndex)
@@ -81,6 +83,10 @@ bool EducationListViewModel::saveRow(int rowIndex)
         return false;
     }
     if (!repository.updateEducationRecord(loadedEducationRecords.at(rowIndex))) {
+        qWarning().noquote() << QStringLiteral(
+            "EducationListViewModel::saveRow: could not save education record %1 — %2")
+                .arg(loadedEducationRecords.at(rowIndex).educationRecordId)
+                .arg(repository.lastErrorText());
         return false;
     }
     const QModelIndex changedIndex = index(rowIndex, 0);
@@ -168,9 +174,14 @@ void EducationListViewModel::addEmptyEducationRecord()
     EducationRecord educationRecord;
     educationRecord.isConfirmedByUser = true;
     educationRecord.wasEditedByUser = true; // typed by hand, so it is theirs
-    if (repository.insertEducationRecord(educationRecord)) {
-        reload();
+    if (!repository.insertEducationRecord(educationRecord)) {
+        qWarning().noquote() << QStringLiteral(
+            "EducationListViewModel::addEmptyEducationRecord: could not add an empty "
+            "education record — %1")
+                .arg(repository.lastErrorText());
+        return;
     }
+    reload();
 }
 
 void EducationListViewModel::removeEducationRecordAt(int rowIndex)
@@ -178,8 +189,14 @@ void EducationListViewModel::removeEducationRecordAt(int rowIndex)
     if (rowIndex < 0 || rowIndex >= loadedEducationRecords.count()) {
         return;
     }
-    if (repository.removeEducationRecord(
-            loadedEducationRecords.at(rowIndex).educationRecordId)) {
-        reload();
+    const qint64 educationRecordIdToRemove =
+        loadedEducationRecords.at(rowIndex).educationRecordId;
+    if (!repository.removeEducationRecord(educationRecordIdToRemove)) {
+        qWarning().noquote() << QStringLiteral(
+            "EducationListViewModel::removeEducationRecordAt: could not remove education "
+            "record %1 — %2")
+                .arg(educationRecordIdToRemove).arg(repository.lastErrorText());
+        return;
     }
+    reload();
 }

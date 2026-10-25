@@ -5,10 +5,10 @@ import JobCrush
 //
 // A text field whose entries become removable chips. Built because a
 // comma-separated box cannot hold "Pittsburgh, PA" — the separator is inside
-// the value. Chips solve that outright: each entry is its own object, so a
-// comma in one means nothing to the next.
+// the value. Chips solve that: each entry is its own object, so a comma in
+// one means nothing to the next.
 //
-// Behaviour, aimed at costing the user as little attention as possible:
+// Behavior, aimed at costing the user as little attention as possible:
 //   type            → suggestions drop down beneath the field
 //   Up / Down       → move through them
 //   Enter / Tab     → take the highlighted suggestion, or what was typed
@@ -47,6 +47,8 @@ Item {
     readonly property bool suggestionsAreShowing:
         currentSuggestions.length > 0 && tokenTextInput.activeFocus
 
+    // Asks the provider for suggestions that match what is typed, and lights
+    // the first one. An empty box, or no provider, clears the list.
     function refreshSuggestions() {
         if (suggestionProvider === null || tokenTextInput.text.trim().length === 0) {
             currentSuggestions = []
@@ -154,6 +156,11 @@ Item {
 
                 onTextChanged: tokenEntryField.refreshSuggestions()
 
+                // Up and Down wrap around the list. Down from the last row
+                // goes to the first. Up from the first goes to the last.
+                // The remainder (%) does the wrap. For Up, the list length is
+                // added before subtracting 1, so the number never goes below
+                // zero before the remainder is taken.
                 Keys.onDownPressed: {
                     if (tokenEntryField.currentSuggestions.length > 0) {
                         tokenEntryField.highlightedSuggestionIndex =
@@ -196,8 +203,8 @@ Item {
                 // would sometimes add the typed text instead of the thing the
                 // user just clicked — the exact kind of "it did something
                 // else" moment that makes people distrust an app. Typed text
-                // simply stays in the box, and the hint below says what to do
-                // with it.
+                // stays in the box, and the hint below says what to do with
+                // it.
             }
         }
 

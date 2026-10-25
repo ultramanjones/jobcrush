@@ -12,8 +12,9 @@ namespace {
 // How far back the two time charts look. Six months. Long enough to show a
 // pattern, short enough that a search started last week is not one bump on a
 // flat line.
+constexpr int daysInAWeek = 7;
 constexpr int weeksShown = 26;
-constexpr int daysShown = 182;
+constexpr int daysShown = weeksShown * daysInAWeek; // 182
 
 // Below this many applications, a percent is misleading. Show the count.
 constexpr int fewestApplicationsForARate = 5;
@@ -21,8 +22,12 @@ constexpr int fewestApplicationsForARate = 5;
 QDate startOfWeekFor(const QDate &date)
 {
     // Weeks start on Monday, which is how people talk about their own week.
+    // Qt numbers the days Monday 1 to Sunday 7, so stepping back
+    // (dayOfWeek - 1) days always lands on that week's Monday.
     return date.addDays(-(date.dayOfWeek() - 1));
 }
+
+// The name each level has on the Stats page.
 
 QString displayNameFor(PipelineStage pipelineStage)
 {
@@ -48,6 +53,8 @@ QString displayNameFor(PipelineStage pipelineStage)
 // rare enough to ignore.
 bool reachedAtLeast(PipelineStage stageOfCampaign, PipelineStage stageAsked)
 {
+    // How far up the levels a stage is. A higher number has passed every
+    // level with a lower one.
     auto depthOf = [](PipelineStage stage) {
         switch (stage) {
         case PipelineStage::Saved:     return 0;
@@ -152,9 +159,10 @@ void JobSearchStatistics::recount()
 
     // Writing a draft counts as activity. A day spent on four cover letters
     // that were not sent is not a day off.
-    for (const StagedDocument &piece : stagedDocumentRepository.loadEveryStagedDocument()) {
-        if (piece.createdTimestamp.isValid()) {
-            activityByDay[piece.createdTimestamp.date()] += 1;
+    for (const StagedDocument &stagedDocument :
+             stagedDocumentRepository.loadEveryStagedDocument()) {
+        if (stagedDocument.createdTimestamp.isValid()) {
+            activityByDay[stagedDocument.createdTimestamp.date()] += 1;
         }
     }
 
@@ -174,10 +182,13 @@ void JobSearchStatistics::recount()
                            countOffer });
 
     // --- the weeks, including empty ones ---
+    //
+    // weekNumber counts how many weeks back from this one. It runs down to
+    // zero, so the oldest week comes first and this week comes last.
     countedWeeks.clear();
     const QDate thisWeekStart = startOfWeekFor(today);
     for (int weekNumber = weeksShown - 1; weekNumber >= 0; --weekNumber) {
-        const QDate weekStart = thisWeekStart.addDays(-7 * weekNumber);
+        const QDate weekStart = thisWeekStart.addDays(-daysInAWeek * weekNumber);
         WeekOfEffort week = effortByWeek.value(weekStart);
         week.weekStartDate = weekStart;
         countedWeeks.append(week);

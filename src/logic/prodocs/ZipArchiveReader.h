@@ -9,13 +9,16 @@
 // Pulls one named file out of a ZIP archive.
 //
 // It exists because a .docx IS a ZIP archive full of XML, and Qt ships no
-// public ZIP reader. The same reader is what the Phase 5 packet export will
-// need to WRITE, so the format has to be understood here either way.
+// public ZIP reader. Writing is done by ZipArchiveWriter, in exporting/.
 //
-// Deliberately minimal: it reads the central directory, finds an entry by
-// name, and decompresses it. No writing, no encryption, no spanned archives,
-// no ZIP64. Those are real parts of the format and none of them appear in a
-// Word document.
+// Kept small on purpose: it reads the central directory (the archive's
+// index), finds an entry by name, and decompresses it. No writing, no
+// encryption, no archives split across several files, no ZIP64. Those are
+// real parts of the format and none of them appear in a Word document. The
+// .cpp explains the file layout.
+//
+// The whole file is read into memory when the reader is made. A .docx is
+// small, so that is fine.
 class ZipArchiveReader {
 public:
     explicit ZipArchiveReader(const QString &archiveFilePath);

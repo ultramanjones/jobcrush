@@ -19,7 +19,7 @@
 // having.
 //
 // Ashby does not send the company's real name either, so the board account
-// name stands in for it, same as Lever.
+// name stands in for it, same as Lever. See companyNameFromTenant.
 class AshbyBoardSource : public EmployerBoardProvider {
 public:
     AshbyBoardSource();

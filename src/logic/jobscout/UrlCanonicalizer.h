@@ -44,16 +44,20 @@ public:
         // unequal to the same job found later over https.
         url.setScheme(QStringLiteral("https"));
 
+        const QString wwwPrefix = QStringLiteral("www.");
         QString host = url.host().toLower();
-        if (host.startsWith(QStringLiteral("www."))) {
-            host.remove(0, 4);
+        if (host.startsWith(wwwPrefix)) {
+            host.remove(0, wwwPrefix.size());
         }
         url.setHost(host);
 
         // The fragment is a scroll position, never part of the job's identity.
+        // A user name or password in a link is never part of it either.
         url.setFragment(QString());
         url.setUserInfo(QString());
 
+        // Rebuild the query with the tracking parameters left out. Order and
+        // values of the kept ones stay as they were.
         QUrlQuery query(url);
         const QList<QPair<QString, QString>> everyParameter = query.queryItems();
         QUrlQuery keptQuery;
@@ -64,6 +68,7 @@ public:
         }
         url.setQuery(keptQuery);
 
+        // Trailing slashes off, but a path that is only "/" stays.
         QString path = url.path();
         while (path.endsWith(QLatin1Char('/')) && path.length() > 1) {
             path.chop(1);
@@ -73,7 +78,8 @@ public:
         return url.toString();
     }
 
-    // True when two URLs point at the same job.
+    // True when two URLs point at the same job. The compare ignores case,
+    // so "/Acme/" and "/acme/" count as one. An empty URL matches nothing.
     bool sameJob(const QString &firstUrl, const QString &secondUrl) const
     {
         const QString first = canonicalFormOf(firstUrl);

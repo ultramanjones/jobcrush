@@ -9,9 +9,8 @@
 // been written yet. Pure data.
 //
 // The Settings page lists every descriptor in the catalog below, so the user
-// can see the whole landscape at once — the same honesty the AIBrain provider
-// tabs use: a site that isn't wired up yet says so out loud instead of being
-// hidden until some future release surprises them with it.
+// can see every site at once. The AIBrain provider tabs do the same: a site
+// that is not wired up yet is listed and says so, instead of being hidden.
 struct JobSourceDescriptor {
     QString storageName;        // "remotive" — the id used in settings and the database
     QString displayName;        // "Remotive" — what a human reads
@@ -22,8 +21,8 @@ struct JobSourceDescriptor {
 
     // Some sites want the email address the key was registered under, sent on
     // every request. USAJOBS is one: it puts that email in the User-Agent
-    // header, which is unusual enough that leaving it out is the single most
-    // common way people fail to get their first response.
+    // header. That is unusual, and leaving it out is a common way people fail
+    // to get their first response.
     bool requiresRegisteredEmail = false;
 
     // Where to go and get the free key. Shown as a link beside the box the
@@ -121,7 +120,9 @@ inline QList<JobSourceDescriptor> jobSourceCatalog()
     };
 }
 
-// The descriptor for one storage name. found is set accordingly.
+// The descriptor for one storage name. found is set to true when the name
+// is in the catalog, and to false (with an empty descriptor returned) when
+// it is not.
 inline JobSourceDescriptor jobSourceDescriptorFor(const QString &storageName, bool &found)
 {
     for (const JobSourceDescriptor &descriptor : jobSourceCatalog()) {

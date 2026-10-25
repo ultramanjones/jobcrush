@@ -41,6 +41,13 @@ Item {
         border.width: 1
 
         // The thumb. Its length says how much of the whole list is on screen.
+        // Its height is the track height times the share of the content that
+        // fits on screen, but never shorter than minimumThumbHeight, so a
+        // very long list still leaves something to grab.
+        //
+        // Its y is how far the target has scrolled, as a fraction from 0 to
+        // 1, times the room the thumb can move in. contentY is measured from
+        // originY, which is not always 0 for a ListView.
         Rectangle {
             id: scrollThumb
 
@@ -88,8 +95,14 @@ Item {
                 if (usableTrackHeight <= 0) {
                     return
                 }
-                // Centre the thumb on the pointer, so the spot grabbed is the
-                // spot that ends up under the cursor.
+                // Center the thumb on the pointer, so the spot grabbed is the
+                // spot that ends up under the cursor. The steps:
+                //  1. Subtract half the thumb, so the thumb's middle is what
+                //     follows the pointer, not its top edge.
+                //  2. Divide by the room the thumb can move in. That gives
+                //     how far down the track the pointer is, from 0 to 1.
+                //  3. Clamp to 0..1, so a drag past either end stops there.
+                //  4. Turn that fraction into a contentY for the target.
                 const requestedFraction =
                     (pointerY - scrollThumb.height / 2) / usableTrackHeight
                 const clampedFraction = Math.max(0, Math.min(1, requestedFraction))

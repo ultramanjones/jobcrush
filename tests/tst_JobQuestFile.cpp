@@ -82,7 +82,7 @@ private slots:
         QCOMPARE(result.problemSentences.count(), 2);
     }
 
-    void statusWords()
+    void statusWordsAreReadAndWritten()
     {
         PipelineStage stage = PipelineStage::Saved;
         QVERIFY(JobQuestFile::readStatus(QStringLiteral("Rejected"), stage));
@@ -106,6 +106,9 @@ private slots:
                  QStringLiteral("10/04/2026"));
     }
 
+    // Only Status, Applied on and Notes change. Every other line, including
+    // ones Job Crush does not know, stays as it was, with its line endings.
+    // A missing Applied on line is added at the end.
     void boardChangesKeepEveryOtherLine()
     {
         const QString existingText = QStringLiteral(
@@ -131,6 +134,8 @@ private slots:
             "Applied on: 10/14/2026\r\n"));
     }
 
+    // A notes line that starts like a field ("Status: ...") is written with
+    // "- " in front, so reading the file back does not take it as a field.
     void notesThatLookLikeLinesSurviveARoundTrip()
     {
         JobQuest quest;

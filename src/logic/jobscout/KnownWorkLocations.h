@@ -112,8 +112,9 @@ inline QStringList knownWorkLocations()
 // The suggestions for what has been typed so far, best first.
 //
 // Ranking rule: entries that START with what was typed come before entries
-// that merely contain it, because someone typing "Pit" means Pittsburgh, not
-// a job in "Pit Crew Operations". Already-chosen places are left out.
+// that only contain it, because someone typing "Ca" most likely means
+// California or Canada, not North Carolina. Already-chosen places are left
+// out. The match ignores case. At most maximumSuggestions come back.
 inline QStringList workLocationSuggestionsFor(const QString &typedPrefix,
                                               const QStringList &alreadyChosenLocations,
                                               int maximumSuggestions = 8)

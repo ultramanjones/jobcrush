@@ -1,5 +1,6 @@
 #include "JobSourceRoster.h"
 
+#include <QDebug>
 #include <QSettings>
 
 #include "JobSourceDescriptor.h"
@@ -70,10 +71,19 @@ void JobSourceRoster::setSourceEnabled(const QString &sourceStorageName, bool sh
     const JobSourceDescriptor descriptor =
         jobSourceDescriptorFor(sourceStorageName, descriptorFound);
     if (!descriptorFound || !descriptor.clientIsBuilt) {
-        return; // nothing to enable — the UI never offers this box
+        // Nothing to enable. The UI never offers this box, so reaching here
+        // is a mistake in the caller, and the log says which site.
+        qWarning().noquote() << QStringLiteral(
+            "JobSourceRoster::setSourceEnabled: refused to change \"%1\" — no client "
+            "is built for that site").arg(sourceStorageName);
+        return;
     }
     if (shouldBeEnabled && !sourceHasWhatItNeeds(sourceStorageName)) {
-        return; // no key yet — the UI says so beside the box
+        // No key yet. The UI says so beside the box.
+        qWarning().noquote() << QStringLiteral(
+            "JobSourceRoster::setSourceEnabled: refused to tick \"%1\" — its key or "
+            "email is not filled in").arg(sourceStorageName);
+        return;
     }
 
     const bool isCurrentlyEnabled = sourceIsEnabled(sourceStorageName);

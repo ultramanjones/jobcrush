@@ -1,12 +1,14 @@
 #pragma once
 
 #include <QDateTime>
+#include <QHash>
 #include <QList>
 #include <QObject>
 #include <QString>
 
 #include <memory>
 
+#include "AiBrainLevel.h"
 #include "AiBrainProvider.h"
 
 class AiBrainReply;
@@ -105,6 +107,18 @@ public:
     // here; a screen merely opening does not.
     void checkConnectionBecauseUserAskedFor();
 
+    // --- How much brain ---------------------------------------------------
+
+    // The level the user picked for one provider: Quick, Balanced or Best.
+    // Balanced until they pick. Each provider keeps its own level, so
+    // switching brains does not change how much brain each one uses.
+    AiBrainLevel brainLevelFor(AiProviderKind providerKind) const;
+    void setBrainLevelFor(AiProviderKind providerKind, AiBrainLevel brainLevel);
+
+    // The vendor's model name for a provider and level, to show the user.
+    // Empty when no client is written for that provider.
+    QString modelNameFor(AiProviderKind providerKind, AiBrainLevel brainLevel) const;
+
     // --- Asking the brain something ---------------------------------------
 
     // Starts a streaming conversation with the selected brain. The returned
@@ -123,7 +137,7 @@ signals:
     // connectionState()/connectionStatusText() changed.
     void connectionStateChanged();
 
-    // A check the USER started just came back refused. The tick has already
+    // A check the USER started came back refused. The tick has already
     // come off the box; this is what gets said out loud about it.
     //
     // Only fires for a check the user set in motion — ticking a box, pasting
@@ -136,6 +150,9 @@ signals:
     // Configuration changed (a key added/removed/toggled in Settings, or a
     // different brain selected).
     void configurationChanged();
+
+    // A provider's brain level changed.
+    void brainLevelsChanged();
 
 private:
     // The provider implementation for a kind, or nullptr while that vendor's
@@ -153,12 +170,15 @@ private:
     // require ticking a box before anything works). found reports success.
     AiProviderKind effectivelySelectedProviderKind(bool &found) const;
 
+    // Saves storedSelectionText to settings at once.
     void persistSelectionToSettings() const;
 
     // Abandons any in-flight check and drops back to "nothing verified yet",
     // because something underneath the answer changed.
     void resetConnectionStateAfterChange();
 
+    // Stores the new state and text, and emits connectionStateChanged only
+    // when one of them really changed.
     void setConnectionState(AiBrainConnectionState newState,
                             const QString &statusText);
 
@@ -181,6 +201,10 @@ private:
     // provider's storage name.
     QString storedSelectionText;
 
+    // Each provider's brain level, keyed by the provider's storage name.
+    // A provider not in here is Balanced.
+    QHash<QString, AiBrainLevel> storedBrainLevels;
+
     AiBrainConnectionState currentConnectionState = AiBrainConnectionState::NoBrainSelected;
     QString currentConnectionStatusText;
     QString verifiedCredentialFingerprint;
@@ -188,7 +212,7 @@ private:
     AiBrainReply *activeVerificationReply = nullptr; // owned via Qt parentage to this
 
     // Whether the check now in flight was set in motion by the user. Decides
-    // whether a refusal is announced out loud or simply recorded in the
+    // whether a refusal is announced out loud or only recorded in the
     // banner. Cleared as soon as the check settles.
     bool checkInFlightWasStartedByUser = false;
 };

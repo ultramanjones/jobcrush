@@ -1,10 +1,19 @@
 #include "JobPipelines.h"
 
+#include <QDebug>
+
 #include <QDateTime>
 
 #include "../../model/JobApplicationRepository.h"
 #include "../../model/JobPostingRepository.h"
 #include "../../model/PostingSourceRepository.h"
+
+namespace {
+
+// The hour an applied date is stored at. See setAppliedDate for why it is noon.
+constexpr int appliedHourOfDay = 12;
+
+} // namespace
 
 JobPipelines::JobPipelines(JobApplicationRepository &applicationRepository,
                            JobPostingRepository &postingRepositoryToUse,
@@ -29,8 +38,12 @@ void JobPipelines::loadFromDatabase()
         // A campaign whose posting has vanished is a card with no job on it.
         // Skipping it keeps the board honest; it is not deleted, because the
         // row is evidence that something went wrong and deleting evidence
-        // makes the next bug harder to find.
+        // makes the next bug harder to find. The log line says which row it is.
         if (!postingFound) {
+            qWarning().noquote() << QStringLiteral(
+                "JobPipelines::loadFromDatabase: no posting for job application %1 — job "
+                "posting %2 is missing, so the card is left off the board")
+                    .arg(campaign.jobApplicationId).arg(campaign.jobPostingId);
             continue;
         }
         loadedTargetedJobs.append({ campaign, posting });
@@ -42,6 +55,35 @@ void JobPipelines::loadFromDatabase()
 QList<TargetedJob> JobPipelines::everyTargetedJob() const
 {
     return loadedTargetedJobs;
+}
+
+bool JobPipelines::markStillOpenByUser(qint64 jobApplicationId)
+{
+    for (const TargetedJob &targetedJob : loadedTargetedJobs) {
+        if (targetedJob.campaign.jobApplicationId != jobApplicationId) {
+            continue;
+        }
+        if (!postingRepository.markStillOpenByUser(targetedJob.posting.jobPostingId)) {
+            return false;
+        }
+        loadFromDatabase();
+        return true;
+    }
+    qWarning().noquote() << QStringLiteral(
+        "JobPipelines::markStillOpenByUser: no card has job application id %1")
+            .arg(jobApplicationId);
+    return false;
+}
+
+QList<TargetedJob> JobPipelines::everyOpenTargetedJob() const
+{
+    QList<TargetedJob> openTargetedJobs;
+    for (const TargetedJob &targetedJob : loadedTargetedJobs) {
+        if (targetedJob.campaign.pipelineStage != PipelineStage::Closed) {
+            openTargetedJobs.append(targetedJob);
+        }
+    }
+    return openTargetedJobs;
 }
 
 int JobPipelines::countInStage(PipelineStage pipelineStage) const
@@ -88,8 +130,11 @@ bool JobPipelines::crushJobPosting(qint64 jobPostingId, QString &reasonText)
     newCampaign.targetedTimestamp = QDateTime::currentDateTime();
 
     if (!campaignRepository.insertJobApplication(newCampaign)) {
-        // The database's own words, because "try again in a moment" is what an
-        // app says when it has not bothered to find out.
+        // The database's own words, so the user sees what really went wrong
+        // instead of a guess.
+        qWarning().noquote() << QStringLiteral(
+            "JobPipelines::crushJobPosting: could not add a card for job posting %1 — %2")
+                .arg(jobPostingId).arg(campaignRepository.lastErrorText());
         reasonText = QStringLiteral(
             "Job Crush couldn't put that on the board — %1. The job is still on "
             "Discoveries, so nothing was lost.")
@@ -130,6 +175,9 @@ qint64 JobPipelines::putOnBoardFromJobFolder(qint64 jobPostingId,
     newCampaign.notesText = notesText;
 
     if (!campaignRepository.insertJobApplication(newCampaign)) {
+        qWarning().noquote() << QStringLiteral(
+            "JobPipelines::putOnBoardFromJobFolder: could not add a card for job posting "
+            "%1 — %2").arg(jobPostingId).arg(campaignRepository.lastErrorText());
         reasonText = QStringLiteral("Job Crush couldn't put that job on the board: %1.")
                          .arg(campaignRepository.lastErrorText());
         return 0;
@@ -155,7 +203,7 @@ qint64 JobPipelines::jobApplicationIdForPosting(qint64 jobPostingId) const
 bool JobPipelines::moveToStage(qint64 jobApplicationId, PipelineStage newPipelineStage)
 {
     if (!campaignRepository.updatePipelineStage(jobApplicationId, newPipelineStage)) {
-        return false;
+        return false; // the repository logs why
     }
 
     // Arriving at Applied stamps the date, once. "When did I apply?" is the
@@ -170,6 +218,7 @@ bool JobPipelines::moveToStage(qint64 jobApplicationId, PipelineStage newPipelin
         for (const TargetedJob &targetedJob : loadedTargetedJobs) {
             if (targetedJob.campaign.jobApplicationId == jobApplicationId
                     && !targetedJob.campaign.appliedTimestamp.isValid()) {
+                // A failed save is logged by the repository.
                 campaignRepository.updateAppliedTimestamp(jobApplicationId,
                                                           QDateTime::currentDateTime());
                 break;
@@ -184,7 +233,7 @@ bool JobPipelines::moveToStage(qint64 jobApplicationId, PipelineStage newPipelin
 bool JobPipelines::setNotesText(qint64 jobApplicationId, const QString &notesText)
 {
     if (!campaignRepository.updateNotesText(jobApplicationId, notesText)) {
-        return false;
+        return false; // the repository logs why
     }
     loadFromDatabase();
     return true;
@@ -203,7 +252,7 @@ bool JobPipelines::setAppliedDate(qint64 jobApplicationId, const QDate &appliedD
     // before when it is read back in another time zone. Noon has twelve hours
     // of room either way.
     const QDateTime appliedTimestamp = appliedDate.isValid()
-        ? QDateTime(appliedDate, QTime(12, 0))
+        ? QDateTime(appliedDate, QTime(appliedHourOfDay, 0))
         : QDateTime();
 
     if (!campaignRepository.updateAppliedTimestamp(jobApplicationId, appliedTimestamp)) {
@@ -219,7 +268,7 @@ bool JobPipelines::setAppliedDate(qint64 jobApplicationId, const QDate &appliedD
 bool JobPipelines::removeFromBoard(qint64 jobApplicationId)
 {
     if (!campaignRepository.removeJobApplication(jobApplicationId)) {
-        return false;
+        return false; // the repository logs why
     }
     loadFromDatabase();
     return true;

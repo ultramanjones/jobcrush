@@ -13,24 +13,50 @@
 
 namespace {
 
-// The Anthropic Messages API endpoint and protocol version.
+// The Anthropic Messages API endpoint.
 const QString anthropicMessagesEndpointUrl = QStringLiteral("https://api.anthropic.com/v1/messages");
 
 // The connection check reads this instead: listing models is authenticated,
 // free, and small — the cheapest honest way to ask "does this key work?".
 const QString anthropicModelsEndpointUrl = QStringLiteral("https://api.anthropic.com/v1/models");
+
+// The API version Job Crush is written against, sent in every request's
+// "anthropic-version" header.
 const QByteArray anthropicApiVersionHeaderValue = QByteArrayLiteral("2023-06-01");
 
-// The model Brain Chat speaks to. One named place to change it; a Settings
-// choice can replace this constant in a later phase.
-const QString anthropicDefaultModelName = QStringLiteral("claude-sonnet-4-5");
+// The model for each brain level. Anthropic pins every model name to one
+// version, so this list goes stale and has to be updated by hand. Checked
+// 2026-10-23: claude-sonnet-4-5, the old default, shuts down 2026-11-30.
+QString anthropicModelNameFor(AiBrainLevel brainLevel)
+{
+    switch (brainLevel) {
+    case AiBrainLevel::Quick:    return QStringLiteral("claude-haiku-5-5");
+    case AiBrainLevel::Balanced: return QStringLiteral("claude-sonnet-5-5");
+    case AiBrainLevel::Best:     return QStringLiteral("claude-opus-5-5");
+    }
+    return QStringLiteral("claude-sonnet-5-5");
+}
 
 // Generous but bounded — chat answers and cover-letter drafts, not novels.
 constexpr int anthropicMaxResponseTokens = 2048;
 
+// The most web searches the model may run for one answer. Each search costs
+// money, so the number is kept small.
+constexpr int anthropicMostWebSearchesPerAnswer = 5;
+
+// In the stream, one event ends at a blank line, and each payload line
+// starts with "data:".
+const QByteArray serverSentEventSeparator = QByteArrayLiteral("\n\n");
+const QByteArray serverSentEventDataPrefix = QByteArrayLiteral("data:");
+
 } // namespace
 
 AnthropicApiProvider::AnthropicApiProvider() = default;
+
+QString AnthropicApiProvider::modelNameFor(AiBrainLevel brainLevel) const
+{
+    return anthropicModelNameFor(brainLevel);
+}
 
 QString AnthropicApiProvider::providerDisplayName() const
 {
@@ -57,7 +83,8 @@ QByteArray AnthropicApiProvider::buildRequestBody(
     }
 
     QJsonObject requestBodyObject;
-    requestBodyObject.insert(QStringLiteral("model"), anthropicDefaultModelName);
+    requestBodyObject.insert(QStringLiteral("model"),
+                             anthropicModelNameFor(requestOptions.brainLevel));
     requestBodyObject.insert(QStringLiteral("max_tokens"),
                              qMax(anthropicMaxResponseTokens, requestOptions.longestAnswerTokens));
     requestBodyObject.insert(QStringLiteral("stream"), true);
@@ -75,7 +102,7 @@ QByteArray AnthropicApiProvider::buildRequestBody(
         QJsonObject webSearchTool;
         webSearchTool.insert(QStringLiteral("type"), QStringLiteral("web_search_20250305"));
         webSearchTool.insert(QStringLiteral("name"), QStringLiteral("web_search"));
-        webSearchTool.insert(QStringLiteral("max_uses"), 5);
+        webSearchTool.insert(QStringLiteral("max_uses"), anthropicMostWebSearchesPerAnswer);
         QJsonArray toolsArray;
         toolsArray.append(webSearchTool);
         requestBodyObject.insert(QStringLiteral("tools"), toolsArray);
@@ -112,29 +139,36 @@ AiBrainReply *AnthropicApiProvider::streamConversation(
     //     event: content_block_delta
     //     data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hel"}}
     //
-    // We keep a rolling buffer per reply (captured by the lambda), cut off
-    // complete frames as they arrive, and forward every text_delta fragment.
-    // Anything half-received stays in the buffer for the next readyRead.
+    // Each reply keeps its own rolling buffer, held by the lambda. The steps:
+    //  1. Add whatever bytes arrived to the end of the buffer.
+    //  2. While the buffer holds a blank line, cut off everything before it.
+    //     That is one complete frame. The blank line itself is thrown away.
+    //  3. In the frame, read each "data:" line as JSON. A text_delta is passed
+    //     on to the chat. An "error" event fails the reply.
+    //  4. Bytes after the last blank line are half an event. They stay in the
+    //     buffer until the next readyRead brings the rest.
+    // Lines that are not JSON (or JSON of another type, like "ping") are
+    // skipped. They carry no text.
     auto streamParseBuffer = std::make_shared<QByteArray>();
 
     QObject::connect(networkReply, &QNetworkReply::readyRead, brainReply,
                      [networkReply, brainReply, streamParseBuffer]() {
         streamParseBuffer->append(networkReply->readAll());
 
-        // Frames are separated by a blank line ("\n\n").
-        int frameSeparatorIndex = streamParseBuffer->indexOf("\n\n");
+        int frameSeparatorIndex = streamParseBuffer->indexOf(serverSentEventSeparator);
         while (frameSeparatorIndex >= 0) {
             const QByteArray completeFrame = streamParseBuffer->left(frameSeparatorIndex);
-            streamParseBuffer->remove(0, frameSeparatorIndex + 2);
-            frameSeparatorIndex = streamParseBuffer->indexOf("\n\n");
+            streamParseBuffer->remove(0, frameSeparatorIndex + serverSentEventSeparator.size());
+            frameSeparatorIndex = streamParseBuffer->indexOf(serverSentEventSeparator);
 
             // Within a frame, only the "data:" lines carry JSON payloads.
             const QList<QByteArray> frameLines = completeFrame.split('\n');
             for (const QByteArray &frameLine : frameLines) {
-                if (!frameLine.startsWith("data:")) {
+                if (!frameLine.startsWith(serverSentEventDataPrefix)) {
                     continue;
                 }
-                const QByteArray payloadJson = frameLine.mid(5).trimmed();
+                const QByteArray payloadJson =
+                    frameLine.mid(serverSentEventDataPrefix.size()).trimmed();
                 const QJsonObject payloadObject =
                     QJsonDocument::fromJson(payloadJson).object();
                 const QString payloadType =
@@ -167,7 +201,7 @@ AiBrainReply *AnthropicApiProvider::streamConversation(
 
         if (networkReply->error() != QNetworkReply::NoError) {
             // A 401 makes Qt discard the body, so the vendor's own message is
-            // usually gone — say something a human can act on instead.
+            // usually gone. Say something a person can act on instead.
             if (networkReply->error() == QNetworkReply::AuthenticationRequiredError) {
                 brainReply->markFailed(QStringLiteral(
                     "Anthropic did not accept this key. Double-check it in "
@@ -199,8 +233,8 @@ AiBrainReply *AnthropicApiProvider::verifyCredentialConnection(
     const AiCredential &credential, QObject *replyParent)
 {
     // The cheapest authenticated read Anthropic offers: list the models.
-    // It costs no tokens, returns a small body, and fails loudly on a bad
-    // key — exactly what "is this brain actually connected?" needs.
+    // It costs no tokens, returns a small body, and fails plainly on a bad
+    // key. That is all "is this brain connected?" needs.
     AiBrainReply *brainReply = new AiBrainReply(replyParent);
 
     QNetworkRequest networkRequest{QUrl(anthropicModelsEndpointUrl)};

@@ -8,9 +8,8 @@
 //
 // Dates are TEXT, not dates. Resumes say "2016 – 2019", "Jan 2016 to Present",
 // "Summer 2018" — forcing those into a QDate would mean inventing precision
-// nobody wrote down, and inventing detail about somebody's employment history
-// is the one thing this app must never do. They are shown back exactly as
-// they were written.
+// nobody wrote down. This app must never invent detail about somebody's
+// work history. The dates are shown back exactly as they were written.
 struct WorkExperience {
     qint64 workExperienceId = 0;
     QString employerName;

@@ -3,11 +3,17 @@
 #include <QSettings>
 
 namespace {
+// Where each preference is kept in QSettings. These keys are saved on the
+// user's machine, so renaming one loses that setting.
 const QString boardThemeSettingsKey = QStringLiteral("appearance/boardThemeName");
 const QString downloadFormatSettingsKey = QStringLiteral("packets/defaultDownloadFormat");
 const QString exportFolderSettingsKey = QStringLiteral("packets/exportFolderPath");
 const QString hintsDismissedSettingsKey = QStringLiteral("moonlight/hintsDismissed");
 const QString tipsTurnedOnSettingsKey = QStringLiteral("moonlight/tipsTurnedOn");
+
+// What a preference is when nothing has been saved yet.
+const QString fallbackBoardThemeName = QStringLiteral("classic");
+const QString fallbackDownloadFormat = QStringLiteral("docx");
 } // namespace
 
 AppPreferences::AppPreferences(QObject *parent)
@@ -19,9 +25,9 @@ void AppPreferences::loadFromSettings()
 {
     QSettings settings;
     selectedBoardThemeName =
-        settings.value(boardThemeSettingsKey, QStringLiteral("classic")).toString();
+        settings.value(boardThemeSettingsKey, fallbackBoardThemeName).toString();
     selectedDownloadFormat =
-        settings.value(downloadFormatSettingsKey, QStringLiteral("docx")).toString();
+        settings.value(downloadFormatSettingsKey, fallbackDownloadFormat).toString();
     selectedExportFolderPath =
         settings.value(exportFolderSettingsKey, QString()).toString();
     // Hidden tips come back each time Job Crush opens (Ultra, 2026-10-16):
@@ -30,6 +36,7 @@ void AppPreferences::loadFromSettings()
     settings.remove(hintsDismissedSettingsKey);
     tipsTurnedOn = settings.value(tipsTurnedOnSettingsKey, true).toBool();
 
+    // Tell anything already bound that the values may have changed.
     emit boardThemeNameChanged();
     emit defaultDownloadFormatChanged();
     emit exportFolderPathChanged();
