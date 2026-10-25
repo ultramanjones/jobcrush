@@ -16,8 +16,8 @@ Rectangle {
     id: discoveriesPage
 
     // Set by Main.
-    property var discoveredJobListViewModel
-    property var jobSourceRosterViewModel
+    property DiscoveredJobListViewModel discoveredJobListViewModel
+    property JobSourceRosterViewModel jobSourceRosterViewModel
 
     // Asks Main to show Settings. The empty states point the user there.
     signal settingsRequested

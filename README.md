@@ -81,6 +81,7 @@ src/
 │   ├── stats/              the numbers on the Stats page
 │   └── tasks/              application packets
 ├── model/                  data records + repositories; the only place SQL lives
+├── ViewModelQmlTypes.h     gives QML each viewmodel's type, from outside the viewmodel folder
 └── main.cpp                the composition root — everything wired by hand
 tests/                      headless QtTest programs, one per class under test
 tools/                      the AI app bridge and the Windows installer

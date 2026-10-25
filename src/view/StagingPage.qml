@@ -17,8 +17,8 @@ Rectangle {
     // Injected from Main.
     // stagedJobListViewModel: the jobs on the board, for the left column.
     // stagingPacketViewModel: the packet for the job picked on the left.
-    property var stagedJobListViewModel
-    property var stagingPacketViewModel
+    property StagedJobListViewModel stagedJobListViewModel
+    property StagingPacketViewModel stagingPacketViewModel
 
     color: JobCrushTheme.appBackgroundColor
 

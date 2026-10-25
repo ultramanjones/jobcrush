@@ -23,14 +23,14 @@ Rectangle {
     id: settingsPage
 
     // Injected from Main.
-    property var credentialRosterViewModel
-    property var preferencesViewModel
-    property var brainConnectionViewModel
-    property var jobSourceRosterViewModel
-    property var followedEmployerListViewModel
-    property var jobSearchProfileViewModel
-    property var activeJobsFolderViewModel
-    property var aiAppConnectionViewModel
+    property AiCredentialRosterViewModel credentialRosterViewModel
+    property AppPreferencesViewModel preferencesViewModel
+    property SelectedBrainConnectionViewModel brainConnectionViewModel
+    property JobSourceRosterViewModel jobSourceRosterViewModel
+    property FollowedEmployerListViewModel followedEmployerListViewModel
+    property JobSearchProfileViewModel jobSearchProfileViewModel
+    property ActiveJobsFolderViewModel activeJobsFolderViewModel
+    property AiAppConnectionViewModel aiAppConnectionViewModel
 
     color: JobCrushTheme.appBackgroundColor
 

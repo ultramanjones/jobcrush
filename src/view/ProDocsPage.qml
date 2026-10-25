@@ -18,9 +18,9 @@ Rectangle {
     id: proDocsPage
 
     // Injected from Main.
-    property var professionalDocumentListViewModel
-    property var workExperienceListViewModel
-    property var educationListViewModel
+    property ProfessionalDocumentListViewModel professionalDocumentListViewModel
+    property WorkExperienceListViewModel workExperienceListViewModel
+    property EducationListViewModel educationListViewModel
 
     color: JobCrushTheme.appBackgroundColor
 

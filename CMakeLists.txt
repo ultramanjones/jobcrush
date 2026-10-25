@@ -16,6 +16,7 @@ endif()
 
 qt_add_executable(jobcrush
     src/main.cpp
+    src/ViewModelQmlTypes.h
     ${jobCrushWindowsIconResource}
 
     # Model layer — close to the metal

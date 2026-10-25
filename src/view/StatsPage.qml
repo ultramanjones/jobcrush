@@ -19,7 +19,7 @@ Rectangle {
     id: statsPage
 
     // Injected from Main.
-    property var jobSearchStatsViewModel
+    property JobSearchStatsViewModel jobSearchStatsViewModel
 
     color: JobCrushTheme.appBackgroundColor
 

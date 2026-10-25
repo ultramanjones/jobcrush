@@ -20,7 +20,7 @@ Rectangle {
     id: addOneJobPanel
 
     // Injected by the page.
-    property var discoveredJobListViewModel
+    property DiscoveredJobListViewModel discoveredJobListViewModel
 
     // Raised when the user asks to be taken to the job that was just added.
     // The panel does not navigate; it does not know where the list is or
