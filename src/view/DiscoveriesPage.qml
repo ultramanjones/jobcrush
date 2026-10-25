@@ -57,7 +57,7 @@ Rectangle {
     property string crushOutcomeText: ""
 
     // The row to mark after a jump, or -1 for none. The mark goes away after
-    // a few seconds, once the user has seen where the job is.
+    // the interval, once the user has seen where the job is.
     property int highlightedRowIndex: -1
 
     Timer {
