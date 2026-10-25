@@ -13,23 +13,23 @@ Window {
     id: applicationWindow
 
     // Injected by main.cpp.
-    required property var brainChatConversationViewModel
-    required property var jobPipelineBoardViewModel
-    required property var aiCredentialRosterViewModel
-    required property var appPreferencesViewModel
-    required property var selectedBrainConnectionViewModel
-    required property var discoveredJobListViewModel
-    required property var jobSourceRosterViewModel
-    required property var followedEmployerListViewModel
-    required property var jobSearchProfileViewModel
-    required property var professionalDocumentListViewModel
-    required property var workExperienceListViewModel
-    required property var educationListViewModel
-    required property var stagedJobListViewModel
-    required property var stagingPacketViewModel
-    required property var jobSearchStatsViewModel
-    required property var activeJobsFolderViewModel
-    required property var aiAppConnectionViewModel
+    required property BrainChatConversationViewModel brainChatConversationViewModel
+    required property JobPipelineBoardViewModel jobPipelineBoardViewModel
+    required property AiCredentialRosterViewModel aiCredentialRosterViewModel
+    required property AppPreferencesViewModel appPreferencesViewModel
+    required property SelectedBrainConnectionViewModel selectedBrainConnectionViewModel
+    required property DiscoveredJobListViewModel discoveredJobListViewModel
+    required property JobSourceRosterViewModel jobSourceRosterViewModel
+    required property FollowedEmployerListViewModel followedEmployerListViewModel
+    required property JobSearchProfileViewModel jobSearchProfileViewModel
+    required property ProfessionalDocumentListViewModel professionalDocumentListViewModel
+    required property WorkExperienceListViewModel workExperienceListViewModel
+    required property EducationListViewModel educationListViewModel
+    required property StagedJobListViewModel stagedJobListViewModel
+    required property StagingPacketViewModel stagingPacketViewModel
+    required property JobSearchStatsViewModel jobSearchStatsViewModel
+    required property ActiveJobsFolderViewModel activeJobsFolderViewModel
+    required property AiAppConnectionViewModel aiAppConnectionViewModel
 
     width: 1280
     height: 800

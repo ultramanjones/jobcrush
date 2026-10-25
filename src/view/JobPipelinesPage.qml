@@ -16,7 +16,7 @@ Rectangle {
     id: jobPipelinesPage
 
     // Injected from Main.
-    property var jobPipelineBoardViewModel
+    property JobPipelineBoardViewModel jobPipelineBoardViewModel
 
     color: JobCrushTheme.appBackgroundColor
 
@@ -24,7 +24,7 @@ Rectangle {
     // column, because a drag starts in one column and ends in another.
     property int draggingJobApplicationId: -1
 
-    readonly property var stageNames:
+    readonly property list<string> stageNames:
         jobPipelineBoardViewModel ? jobPipelineBoardViewModel.stageNamesInBoardOrder() : []
 
     // Each stage has its own color in the theme. The names here are the

@@ -249,6 +249,14 @@ both land in Closed, and the Stats page cannot tell them apart. With a reason,
 it can.
 
 
+**34. Discoveries tabs: pick more than one.** Ultra, 2026-10-25. The tabs
+show one list at a time. The user wants to see several at once, for example
+Manual Add plus Companies you follow. The row mixes two kinds of tab: ways
+of looking at every job (Top Prospects, Manual Add, Outside your area) and
+the site a job came from. A redesign should make that difference clear.
+Also: the "Show me" button for a job just added lives inside the Add form,
+so it goes away when the form closes.
+
 **33. Bugs found in the comment pass.** 2026-10-25. Found while every file
 was read for comments. Not fixed then, because that pass changed no
 behavior. Fixed in the same pass: a possible crash when a chat is cleared

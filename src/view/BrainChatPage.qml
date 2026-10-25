@@ -14,14 +14,14 @@ Rectangle {
     id: brainChatPage
 
     // Injected from Main: the BrainChatConversationViewModel.
-    property var conversationViewModel
+    property BrainChatConversationViewModel conversationViewModel
 
     // Injected from Main: the same connection viewmodel Settings uses, so
     // the two screens always agree about which brain is connected.
-    property var brainConnectionViewModel
+    property SelectedBrainConnectionViewModel brainConnectionViewModel
 
     // Injected from Main: the hints, and whether the strip was closed.
-    property var preferencesViewModel
+    property AppPreferencesViewModel preferencesViewModel
 
     // Asks Main to show Settings. Used when no brain is set up yet.
     signal settingsRequested

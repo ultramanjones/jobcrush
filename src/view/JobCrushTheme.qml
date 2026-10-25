@@ -15,8 +15,9 @@ import QtQuick
 // that theme's tokens so the rest of the app has one name to read.
 //
 // To add a theme: write the file, add a property for it below, add it to the
-// everyTheme list, and add it to QML_FILES in CMakeLists.txt. Nothing else in the app changes. Settings
-// builds its chips from availableThemes, so the new theme shows up on its own.
+// everyTheme list, and add it to QML_FILES in CMakeLists.txt. Nothing else
+// in the app changes. Settings builds its chips from availableThemes, so the
+// new theme shows up on its own.
 //
 // Main.qml binds activeThemeName to the preferences viewmodel. Everything else
 // reads the tokens below and re-renders when the theme changes.
