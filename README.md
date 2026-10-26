@@ -93,14 +93,19 @@ Dependency injection is constructor injection, by hand, in that one composition 
 
 Rather than browsing folders, follow one feature straight down through all four layers:
 
-**Brain Chat** — `BrainChatPage.qml` → `BrainChatConversationViewModel` → `BrainChatSession` → `AiBrain` → `OpenRouterApiProvider`
+**Discoveries** — the page that lists the jobs Job Crush found and ranks them.
+
+1. View: `src/view/DiscoveriesPage.qml`
+2. ViewModel: `src/viewmodel/DiscoveredJobListViewModel.h` and `.cpp`
+3. Logic: `src/logic/jobscout/JobScout.h` and `.cpp`, with `DiscoveryWorker` (saves and ranks found jobs on a background thread, so the window never freezes) and `ProspectScorer` (the match score)
+4. Model: `src/model/JobPostingRepository.h` and `.cpp`
 
 Ten minutes, and the layering either convinces you or it doesn't.
 
-Two other places worth a look:
+Two places in that slice worth a closer look:
 
-- **`src/logic/aibrain/AiBrainProvider.h`** and **`src/logic/jobscout/JobSourceProvider.h`** — the same seam solved twice on purpose. Adding an AI vendor or a job board is one class and one catalog line; nothing above either interface changes.
 - **`src/logic/jobscout/ProspectScorer.cpp`** — job ranking as a self-contained deterministic algorithm. Its weights are named constants in a single block, so tuning it means editing numbers rather than hunting through arithmetic.
+- **`src/logic/jobscout/JobSourceProvider.h`**, and its twin **`src/logic/aibrain/AiBrainProvider.h`** outside the slice — the same seam solved twice on purpose. Adding a job board or an AI vendor is one new class and a few lines to register it; nothing above either interface changes.
 
 ## What runs today
 
