@@ -15,40 +15,59 @@
 class JobCrushDatabase;
 class JobPostingRepository;
 
-// Which rows the Discoveries page wants.
+// A request from the Discoveries page for the job rows of one tab. rowKind
+// says which tab.
+//
+// Several tabs use the location filter. If the user named one or more places
+// in the search profile, the filter hides a job unless the job is remote,
+// names no location, or names one of those places.
+// ProspectScorer::jobPostingIsInsideSearchArea makes that choice.
 struct DiscoveryRowRequest {
     enum class RowKind {
-        TopProspects,       // every found job inside the search area, best first
-        OutsideSearchArea,  // every found job the location filter holds back
-        OneSource,          // one site's jobs inside the search area, newest first
-        HandAdded           // the jobs the user added, the one added last first
+        // Top Prospects tab: every saved job from every site that passes the
+        // location filter, highest score first. A job that two sites list
+        // shows once.
+        TopProspects,
+        // Outside your area tab: every saved job that the location filter
+        // hides, highest score first. A job that two sites list shows once.
+        OutsideSearchArea,
+        // One site's tab: the jobs from the site named in sourceStorageName
+        // that pass the location filter, newest posting first.
+        OneSource,
+        // Manual Add tab: the jobs the user added by hand, the most recently
+        // added first. The location filter does not apply here.
+        HandAdded
     };
 
     RowKind rowKind = RowKind::TopProspects;
-    QString sourceStorageName;   // used only for OneSource
+    QString sourceStorageName;   // which site; used only for OneSource
 };
 
-// The rows for one request, and how many found jobs the location filter is
-// holding back. The count is worked out on every request, because the tab
-// row shows it whichever tab is open.
+// The answer to one DiscoveryRowRequest. scoredJobPostings holds the rows
+// for the tab. jobCountOutsideSearchArea counts the saved jobs that the
+// location filter hides. It counts every copy, so a job that two sites list
+// counts twice. The "Outside your area (N)" tab label shows this count no
+// matter which tab is open, so the worker counts it on every request. If the
+// user named no places, nothing is hidden and the count is 0.
 struct DiscoveryRows {
     QList<ScoredJobPosting> scoredJobPostings;
     int jobCountOutsideSearchArea = 0;
 };
 
-// What happened when one batch of found jobs was saved.
+// The result of one saveFindings call: how many jobs were saved, how many
+// were new, and how many the database failed to save.
 struct FindingsSaveOutcome {
-    int jobsSaved = 0;          // saved now, or already known
-    int newJobs = 0;            // saved now for the first time
-    int jobsRefused = 0;        // the database would not take them
-    QString firstRefusalReason; // the database's own words for the first one
+    int jobsSaved = 0;          // new jobs plus jobs that were saved before
+    int newJobs = 0;            // jobs saved for the first time by this call
+    int jobsRefused = 0;        // jobs the database failed to save
+    QString firstRefusalReason; // the database error text for the first failure
 };
 
-// Two boards can carry the same job. This key is how Job Crush tells that
-// two postings are the same job: the company and the title together,
-// lowercase, with everything except letters and numbers taken out. That way
-// a difference in spacing or punctuation between two boards does not make
-// the same job show twice.
+// Returns a key that tells whether two postings are the same job. Two job
+// sites can list the same job. The key is the company name plus the job
+// title, in lowercase, with every character that is not a letter or a number
+// removed. So if two sites write the same company and title with different
+// spaces or punctuation, the job still shows only once.
 QString crossSourceIdentityOf(const JobPosting &jobPosting);
 
 Q_DECLARE_METATYPE(DiscoveryRowRequest)
@@ -57,45 +76,67 @@ Q_DECLARE_METATYPE(FindingsSaveOutcome)
 
 // DiscoveryWorker
 //
-// The slow work behind the Discoveries page, done on a background thread so
-// the window never freezes. It saves found jobs, marks jobs that are gone
-// from a company's board, and loads and scores the rows for a tab.
+// DiscoveryWorker does the slow database work for the Discoveries page on a
+// background thread. It has three tasks:
+//  - It saves the jobs that a sweep finds. A sweep is one round of asking
+//    the job sites for jobs.
+//  - It finds saved jobs that a company's job board no longer lists.
+//  - It loads and scores the job rows for one tab.
 //
-// With thousands of found jobs, each of these can take a second or more.
-// Done on the screen's thread, that froze the window, and Windows called Job
-// Crush "not responding". Here, the window keeps drawing while the work goes
-// on.
+// With thousands of saved jobs, each task can take a second or more. When
+// this work ran on the screen's thread, the window froze, and Windows said
+// Job Crush was "not responding". On a background thread, the window keeps
+// drawing while the work runs.
 //
-// It has its own connection to the database, because Qt lets a connection be
-// used only on the thread that opened it. JobScout owns it and talks to it
-// only through queued calls and signals. Nothing else touches it.
+// The worker opens its own connection to the database, because Qt lets a
+// database connection be used only on the thread that opened it. JobScout
+// creates the worker and moves it to the background thread. JobScout calls
+// it only through queued calls, and gets the results back through the
+// worker's signals. No other class calls it.
 class DiscoveryWorker : public QObject {
     Q_OBJECT
 public:
     explicit DiscoveryWorker(const QString &databaseFilePath);
     ~DiscoveryWorker() override;
 
-    // Opens this thread's database connection. Call it first, on the worker's
-    // own thread.
+    // Opens the worker's own database connection. Call this first, on the
+    // background thread. If it fails, the other functions send back empty
+    // results.
     void openDatabase();
 
-    // Saves one batch of found jobs, such as one company's answer. Jobs
-    // already known are counted, not saved again. Sends findingsSaved.
+    // Saves a list of jobs that one site found, or that one company's board
+    // listed. A job that is already saved is counted, but it is not saved a
+    // second time. When done, it sends findingsSaved with the counts.
     void saveFindings(const QString &sourceStorageName,
                       const QList<JobPosting> &foundJobPostings);
 
-    // For sources that read a company's whole board: finds the saved jobs
-    // from those companies that this sweep did not find. A job that was
-    // marked gone and is listed again loses the mark here. The missing ones
-    // are only sent back, not marked: one missing answer is not enough to
-    // call a job gone, so JobScout checks each one again first. Jobs the
-    // user said are still open are left out. Sends jobsMissingFromBoards.
+    // Finds saved jobs that a company's job board no longer lists. Only the
+    // "Companies you follow" source reads a company's whole board, so only
+    // its sweeps call this. employersReadInFull lists the boards it read in
+    // full, as "board/tenant" keys such as "greenhouse/acme".
+    // foundJobPostings is every job it found in this sweep.
+    //
+    // It looks at each saved job from sourceStorageName that came from one
+    // of those boards:
+    //  - If the board lists the job again and the job was marked gone, this
+    //    function clears the gone mark. Employers do repost jobs.
+    //  - If the board does not list the job, the job is not marked gone, and
+    //    the user has not said the job is still open, the job goes in the
+    //    missing list.
+    //
+    // This function does not mark the missing jobs gone. One missing answer
+    // is not enough proof. It sends the missing list with
+    // jobsMissingFromBoards, and JobScout checks each job again before it
+    // marks the job gone.
     void findJobsMissingFromBoardsReadInFull(const QString &sourceStorageName,
                                              const QStringList &employersReadInFull,
                                              const QList<JobPosting> &foundJobPostings);
 
-    // Loads and scores the rows for one tab. Sends rowsPrepared with the same
-    // request number, so the caller can drop answers to old requests.
+    // Loads and scores the job rows for the tab that rowRequest names.
+    // scoringProfile is a copy of the user's search profile. When done, it
+    // sends rowsPrepared with the same requestNumber. The user can switch
+    // tabs before an answer comes back, so the caller ignores any answer
+    // whose number is not the newest request.
     void prepareRows(int requestNumber, const DiscoveryRowRequest &rowRequest,
                      const ScoringProfile &scoringProfile);
 
@@ -107,8 +148,11 @@ signals:
     void rowsPrepared(int requestNumber, const DiscoveryRows &preparedRows);
 
 private:
-    // Every found job, best match first, each job once even when two sites
-    // carry it. insideSearchArea picks which side of the location filter.
+    // Scores the jobs in allDiscoveredJobPostings and sorts them, highest
+    // score first. If two sites list the same job, only the copy with the
+    // higher score is kept. If insideSearchArea is true, it keeps only the
+    // jobs that pass the location filter. If it is false, it keeps only the
+    // jobs that the filter hides.
     QList<ScoredJobPosting> rankedJobPostings(const QList<JobPosting> &allDiscoveredJobPostings,
                                               const ProspectScorer &prospectScorer,
                                               bool insideSearchArea) const;

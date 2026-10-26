@@ -13,12 +13,15 @@
 
 namespace {
 
-// The name of this thread's database connection.
+// The name Qt uses to tell the worker's database connection apart from the
+// connection that the screen's thread uses.
 const QString workerConnectionName = QStringLiteral("jobCrushDiscoveryWorkerConnection");
 
-// How many jobs are saved in one write to the disk. A small batch keeps the
-// database free for the screen's thread between batches, for example when
-// the user presses CRUSH in the middle of a sweep.
+// saveFindings saves jobs in groups of jobsSavedPerBatch jobs, with one
+// write to the disk per group. While a group is being written, the screen's thread cannot write to
+// the database. Small groups give the screen's thread a turn between groups.
+// For example, the user may press a job's CRUSH button in the middle of a
+// sweep. That click saves to the database from the screen's thread.
 constexpr int jobsSavedPerBatch = 200;
 
 } // namespace
@@ -70,17 +73,21 @@ void DiscoveryWorker::saveFindings(const QString &sourceStorageName,
         const int batchEnd = std::min<int>(batchStart + jobsSavedPerBatch,
                                            foundJobPostings.count());
 
-        // One write to the disk per batch, not one per job.
+        // Start one database transaction for this group, so the disk is
+        // written once per group, not once per job. If the transaction
+        // cannot start, the loop still saves each job, one write per job.
         const bool savingAsOneBatch = workerJobPostingRepository->beginManyChanges();
         for (int jobIndex = batchStart; jobIndex < batchEnd; ++jobIndex) {
             JobPosting foundJobPosting = foundJobPostings.at(jobIndex);
             bool wasAlreadyKnown = false;
             if (!workerJobPostingRepository->insertDiscoveryIfNew(foundJobPosting,
                                                                   wasAlreadyKnown)) {
-                // One bad row must not stop the others, but it must not be
-                // lost quietly either. A site whose every row is refused looks
-                // exactly like a site that found nothing. That mistake once
-                // took days to find, so refusals are counted and reported.
+                // If the database refuses one job, the loop goes on to the
+                // next job. But the refusal is counted, and the first error
+                // text is kept for the report. If refusals were not counted,
+                // a site whose every job was refused would look the same as
+                // a site that found no jobs. That mistake once took days to
+                // find.
                 ++saveOutcome.jobsRefused;
                 if (saveOutcome.firstRefusalReason.isEmpty()) {
                     saveOutcome.firstRefusalReason =
@@ -136,17 +143,20 @@ void DiscoveryWorker::findJobsMissingFromBoardsReadInFull(
         if (!identity.namesOneJob()) {
             continue;
         }
+        // If this sweep did not read this company's whole board, it cannot
+        // tell whether the job is gone, so skip the job.
         const QString employerKey =
             QStringLiteral("%1/%2").arg(identity.boardName, identity.tenant).toLower();
         if (!employersReadInFull.contains(employerKey)) {
-            continue; // that company did not answer this time, so nothing is known
+            continue;
         }
 
         const bool isStillListed = jobsStillListed.contains(identity.asKey().toLower());
         const bool wasMarkedGone = knownPosting.postingGoneSinceTimestamp.isValid();
         if (isStillListed && wasMarkedGone) {
-            // It is listed again. Employers do repost jobs. A failed update is
-            // logged by the repository.
+            // The job was marked gone, but the board lists it again.
+            // Employers do repost jobs. So this clears the gone mark. If the
+            // update fails, the repository logs the error.
             workerJobPostingRepository->updatePostingGoneSince(knownPosting.jobPostingId,
                                                                QDateTime());
         } else if (!isStillListed && !wasMarkedGone
@@ -163,7 +173,8 @@ void DiscoveryWorker::prepareRows(int requestNumber, const DiscoveryRowRequest &
 {
     DiscoveryRows preparedRows;
     if (!databaseIsOpen) {
-        // The page gets an empty answer, so it is not left waiting.
+        // Send an empty answer anyway. Otherwise the page would wait forever
+        // for its rows.
         qWarning().noquote() << QStringLiteral(
             "DiscoveryWorker::prepareRows: could not load rows for request %1 — the "
             "background database connection is not open").arg(requestNumber);
@@ -174,8 +185,11 @@ void DiscoveryWorker::prepareRows(int requestNumber, const DiscoveryRowRequest &
     const ProspectScorer prospectScorer(scoringProfile);
     const bool searchAreaIsNarrowed = !scoringProfile.preferredWorkLocations.isEmpty();
 
-    // Top Prospects, Outside your area, and the held-back count all start
-    // from every found job, so that list is loaded once and shared.
+    // Three things need every saved job from every site: the Top Prospects
+    // tab, the Outside your area tab, and the count of jobs that the location
+    // filter hides. If this request needs any of them, load that list once
+    // and use it for all three. The count is needed whenever the user has
+    // named a place, no matter which tab was asked for.
     QList<JobPosting> allDiscoveredJobPostings;
     const bool needsEveryDiscoveredJob =
         searchAreaIsNarrowed
@@ -205,8 +219,9 @@ void DiscoveryWorker::prepareRows(int requestNumber, const DiscoveryRowRequest &
         break;
 
     case DiscoveryRowRequest::RowKind::OneSource:
-        // A site's own tab stays newest first. The score comes along so the
-        // row can show it, but only Top Prospects sorts by score.
+        // A site's own tab keeps the order the database returns: newest
+        // posting first. Each row still gets a score, so the row can show
+        // it. Only Top Prospects and Outside your area sort by score.
         for (const JobPosting &storedJobPosting :
              workerJobPostingRepository->loadJobPostingsFromSource(
                  rowRequest.sourceStorageName)) {
@@ -219,8 +234,8 @@ void DiscoveryWorker::prepareRows(int requestNumber, const DiscoveryRowRequest &
         break;
 
     case DiscoveryRowRequest::RowKind::HandAdded:
-        // No search-area filter. The user asked for these jobs by name, so
-        // the filter never hides them.
+        // The Manual Add tab does not use the location filter. The user
+        // added these jobs by hand, so the app never hides them.
         for (const JobPosting &storedJobPosting :
              workerJobPostingRepository->loadHandAddedJobPostings()) {
             preparedRows.scoredJobPostings.append(
@@ -237,8 +252,11 @@ QList<ScoredJobPosting> DiscoveryWorker::rankedJobPostings(
     const ProspectScorer &prospectScorer,
     bool insideSearchArea) const
 {
-    // The best-scoring copy of each job, keyed by company and title, so a job
-    // carried by two sites shows once.
+    // Maps each job's key from crossSourceIdentityOf (company plus title) to
+    // the copy of that job with the highest score. So if two sites list the
+    // same job, the list shows it once. If two copies have the same score,
+    // the first one seen is kept. loadAllDiscoveredJobPostings returns the
+    // newest posting first, so that is the newer copy.
     QHash<QString, ScoredJobPosting> bestScoredJobPostingByIdentity;
 
     for (const JobPosting &discoveredJobPosting : allDiscoveredJobPostings) {
@@ -269,7 +287,7 @@ QList<ScoredJobPosting> DiscoveryWorker::rankedJobPostings(
             return leftJobPosting.matchResult.matchScoreOutOfOneHundred
                    > rightJobPosting.matchResult.matchScoreOutOfOneHundred;
         }
-        // Equal scores: the newer posting goes first.
+        // If the two scores are equal, the newer posting goes first.
         return leftJobPosting.jobPosting.postedTimestamp
                > rightJobPosting.jobPosting.postedTimestamp;
     });

@@ -9,7 +9,9 @@
 
 namespace {
 
-// The one place that turns a query row into a JobPosting.
+// Copies each column of one query result row into a new JobPosting and
+// returns it. Every load method in this file calls this function, so the
+// match between columns and fields is written in only one place.
 JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
 {
     JobPosting jobPosting;
@@ -35,33 +37,40 @@ JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
     return jobPosting;
 }
 
-// A QString that was never given a value is NULL, not empty. Binding a NULL
-// to a NOT NULL column makes SQLite refuse the whole row.
+// Returns an empty string if possiblyNullText is NULL. Otherwise returns the
+// text unchanged. A QString that was never given a value is NULL, not empty.
+// If code binds a NULL to a NOT NULL column, SQLite refuses the whole row.
 //
-// This really happened. Arbeitnow sends no salary field, so every posting
-// from it had a NULL salaryText, and every insert was refused. About 175
-// jobs a day were lost, and the only sign was an empty tab. Any field a
-// source does not send goes through here, so the fix lives in one place.
+// This really happened. Arbeitnow, a job site, sends no salary field, so
+// every posting from it had a NULL salaryText, and every insert was refused.
+// About 175 jobs a day were lost, and the only sign was an empty tab. Text
+// fields pass through this function before they are bound, so the fix is in
+// one place.
 QString textOrEmpty(const QString &possiblyNullText)
 {
     return possiblyNullText.isNull() ? QStringLiteral("") : possiblyNullText;
 }
 
-// A date as stored text, or an empty string for "no date".
+// Returns the timestamp as ISO 8601 text, which is how the database stores
+// dates. If the timestamp is invalid, returns an empty string. The database
+// uses an empty string to mean "no date".
 QString timestampTextOrEmpty(const QDateTime &timestamp)
 {
     return timestamp.isValid() ? timestamp.toString(Qt::ISODate) : QStringLiteral("");
 }
 
-// Newest first, by the date the EMPLOYER posted the job. A posting with no
-// posting date uses the date Job Crush found it instead, so it does not sink
-// to the bottom of the list for good.
+// An ORDER BY clause that some load methods add to the end of their SELECT.
+// It sorts newest first by postedTimestamp, the date the EMPLOYER posted the
+// job. If a posting has no posted date, it uses discoveredTimestamp, the
+// date Job Crush found the job. Without that, every posting with no posted
+// date would always be at the bottom of the list.
 const QString newestPostingFirstOrdering = QStringLiteral(
     " ORDER BY CASE WHEN postedTimestamp <> '' THEN postedTimestamp "
     "               ELSE discoveredTimestamp END DESC");
 
-// How a posting is named in a log line: its title and company, and its id
-// once it has one.
+// Returns a short name for a job posting, for log lines. It gives the title
+// and company. If the posting has an id (jobPostingId is not 0), it adds the
+// id too.
 QString describeJobPosting(const JobPosting &jobPosting)
 {
     const QString titleAndCompany = QStringLiteral("\"%1\" at %2")
@@ -128,8 +137,9 @@ bool JobPostingRepository::insertJobPosting(JobPosting &jobPosting)
                           textOrEmpty(jobPosting.fullDescriptionText));
     insertQuery.bindValue(QStringLiteral(":postingSource"),
                           textOrEmpty(jobPosting.postingSource));
-    // A posting with no scout source came from a sweep. An empty string would
-    // tell nobody who found it.
+    // If scoutSource is empty, this saves "scout", which means a JobScout
+    // sweep found the job. An empty string would not tell anyone whether
+    // the user or a sweep brought the job in.
     insertQuery.bindValue(QStringLiteral(":scoutSource"),
                           jobPosting.scoutSource.trimmed().isEmpty()
                               ? ScoutSourceText::Scout
@@ -154,29 +164,39 @@ bool JobPostingRepository::insertDiscoveryIfNew(JobPosting &jobPosting, bool &wa
 {
     wasAlreadyKnown = false;
 
-    // With no id from the source, there is no way to tell this job from
-    // another one, and the unique index does not cover it. It is saved.
+    // If the source gave no id for this job (externalSourceId is empty),
+    // this code cannot tell whether the job is already stored. The
+    // uniquePostingPerBoard index also skips rows with no id. So the job is
+    // always saved as a new row.
     if (textOrEmpty(jobPosting.externalSourceId).isEmpty()) {
         return insertJobPosting(jobPosting);
     }
 
-    // Look first, instead of letting the unique index refuse the insert. A
-    // job seen before is a normal answer, and should not show up as an error.
+    // Before inserting, this looks for a stored row with the same
+    // postingSource and externalSourceId. The uniquePostingPerBoard index
+    // would refuse a duplicate insert, but that refusal is a database error.
+    // A job seen before is a normal result, so this code looks first and
+    // does not report an error.
     //
-    // The "externalSourceId <> ''" line looks like it does nothing, but it is
-    // what lets SQLite use the uniquePostingPerBoard index, which only covers
-    // rows with an id. Without it, SQLite reads the whole table for every job
-    // saved. With thousands of jobs, that made a sweep crawl.
+    // The line "externalSourceId <> ''" looks useless, because the code
+    // above already returned if the id is empty. It is needed anyway. The
+    // uniquePostingPerBoard index covers only rows where externalSourceId is
+    // not empty, and SQLite uses that index only if the query has the same
+    // condition. Without the line, SQLite reads the whole table for every
+    // job saved. With thousands of jobs, that made a sweep very slow.
     QSqlQuery existingDiscoveryQuery(jobCrushDatabase.connection());
     existingDiscoveryQuery.prepare(QStringLiteral(
         "SELECT jobPostingId FROM jobPosting "
         "WHERE postingSource = :postingSource "
         "  AND externalSourceId = :externalSourceId "
         "  AND externalSourceId <> ''"));
-    // textOrEmpty on the source name, the same as the insert does. A NULL
-    // never equals anything in SQLite, not even another NULL. Without it, this
-    // lookup would never find a row the insert stored with "", and the same
-    // job would be stored again on every sweep.
+    // This passes postingSource through textOrEmpty, the same way
+    // insertJobPosting does. So a NULL source name is stored as "" and
+    // looked up as "". In SQLite, NULL never equals anything, not even
+    // another NULL. If this lookup bound a NULL, it would never find the row
+    // the insert stored with "". Then every sweep would try to insert the
+    // same job again, and the uniquePostingPerBoard index would refuse it
+    // as an error.
     existingDiscoveryQuery.bindValue(QStringLiteral(":postingSource"),
                                      textOrEmpty(jobPosting.postingSource));
     existingDiscoveryQuery.bindValue(QStringLiteral(":externalSourceId"),
@@ -278,9 +298,11 @@ bool JobPostingRepository::updatePostingGoneSince(qint64 jobPostingId,
     updateQuery.prepare(QStringLiteral(
         "UPDATE jobPosting SET postingGoneSinceTimestamp = :postingGoneSinceTimestamp "
         "WHERE jobPostingId = :jobPostingId "
-        // A job the user said is still open is never marked gone. Checked
-        // here as well as before the check starts, because the user can
-        // press "still open" while the check is waiting on the network.
+        // If the user has said this job is still open, this UPDATE does not
+        // set the "gone" mark. It can still clear the mark. The caller looks
+        // at this before it asks the employer's board if the job is still
+        // listed. It is checked again here because the user can press
+        // "still open" while that request waits on the network.
         "  AND (:isClearingTheMark = 1 OR userSaysStillOpenTimestamp = '')"));
     updateQuery.bindValue(QStringLiteral(":postingGoneSinceTimestamp"),
                           timestampTextOrEmpty(goneSinceTimestamp));
@@ -311,9 +333,11 @@ QList<JobPosting> JobPostingRepository::loadHandAddedJobPostings()
 {
     QList<JobPosting> handAddedJobPostings;
 
-    // Ordered by when the USER added the job, not when the employer posted
-    // it. An old posting added a minute ago is still the one the user is
-    // looking for.
+    // Sorted newest first by discoveredTimestamp, the time Job Crush first
+    // stored the job, not by the date the employer posted it. If the user
+    // added an old posting a minute ago, it is the job they are looking for,
+    // so it goes at the top. For a job a sweep stored first and the user
+    // pasted in later, discoveredTimestamp is still the time of the sweep.
     QSqlQuery selectQuery(jobCrushDatabase.connection());
     selectQuery.prepare(QStringLiteral(
         "SELECT * FROM jobPosting WHERE scoutSource = :scoutSource "
@@ -377,10 +401,13 @@ QString JobPostingRepository::lastErrorText() const
 
 bool JobPostingRepository::beginManyChanges()
 {
-    // BEGIN IMMEDIATE takes the right to write at the start, waiting if the
-    // other thread is writing. A plain BEGIN waits for nothing: if the other
-    // thread writes after this batch's first read, SQLite refuses every
-    // insert in the batch as "database is locked".
+    // Job Crush has two connections to the database. The screen's thread
+    // uses one. A background thread that saves and ranks jobs uses the
+    // other. BEGIN IMMEDIATE starts a transaction and takes the write lock
+    // right away. If the other connection is writing, it waits for it. A
+    // plain BEGIN does not take the write lock at the start. If the other
+    // connection then writes after this transaction's first read, SQLite
+    // refuses every insert in the transaction with "database is locked".
     QSqlQuery beginQuery(jobCrushDatabase.connection());
     beginQuery.prepare(QStringLiteral("BEGIN IMMEDIATE"));
     return runQuery(beginQuery, "beginManyChanges",

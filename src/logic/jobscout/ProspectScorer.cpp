@@ -5,9 +5,10 @@
 
 namespace {
 
-// Words that appear in so many job titles that matching on them says nothing.
-// Without this list, "Senior" in the user's target title would match "Senior
-// Accountant", and that job would rank as a partial title match.
+// Words so common in job titles that a match on them tells nothing about the
+// job. significantWordsOf drops these words. Without this list, the word
+// "Senior" in a target title of "Senior Qt Developer" would match "Senior
+// Accountant", and that job would get partial title points.
 const QStringList meaninglessTitleWords = {
     QStringLiteral("senior"), QStringLiteral("junior"), QStringLiteral("lead"),
     QStringLiteral("staff"),  QStringLiteral("principal"), QStringLiteral("i"),
@@ -16,10 +17,11 @@ const QStringList meaninglessTitleWords = {
     QStringLiteral("mid"),    QStringLiteral("level"),  QStringLiteral("remote"),
 };
 
-// Common role words. Unlike the words above, these do mean something:
-// "Developer" is a different job from "Nurse". But a title that matches a
-// target title ONLY on one of these words is a weak match. "JavaScript
-// Developer" is not a good match for "Qt Developer".
+// Common role words. Unlike the words in meaninglessTitleWords, these do tell
+// something: a "Developer" job is different from a "Nurse" job. But if a
+// posting's title matches a target title ONLY on these words, the match is
+// weak, and scoreTitleMatch divides its points by 4. "JavaScript Developer"
+// is not a good match for "Qt Developer".
 const QStringList genericRoleWords = {
     QStringLiteral("developer"),   QStringLiteral("engineer"),
     QStringLiteral("programmer"),  QStringLiteral("manager"),
@@ -30,9 +32,10 @@ const QStringList genericRoleWords = {
     QStringLiteral("software"),
 };
 
-// Splits a phrase into the words worth matching on: lowercase, longer than
-// one letter, and not in meaninglessTitleWords. Plus and hash signs count as
-// part of a word, so "C++" and "C#" stay whole.
+// Splits a phrase into lowercase words and keeps only the useful ones: words
+// longer than one letter that are not in meaninglessTitleWords. Any character
+// other than a-z, 0-9, "+" and "#" splits words. So "C++" and "C#" stay
+// whole words.
 QStringList significantWordsOf(const QString &phrase)
 {
     static const QRegularExpression nonWordCharacterPattern(QStringLiteral("[^a-z0-9+#]+"));
@@ -138,12 +141,14 @@ int ProspectScorer::scoreTitleMatch(const QString &loweredPositionTitle,
         int thisTitleScore = 0;
 
         if (loweredPositionTitle.contains(loweredTargetTitle)) {
-            // The posting's title holds the whole target title: full points.
+            // If the posting's title contains the whole target title, it gets
+            // full points.
             thisTitleScore = titleMatchMaximumPoints;
         } else {
-            // Otherwise, count how many of the target title's words are in
-            // the posting's title. "C++ Engineer" against "Software Engineer,
-            // C++" should still score well.
+            // If not, count how many of the target title's useful words
+            // appear as whole words in the posting's title. For example, a
+            // target of "C++ Engineer" and a posting of "Software Engineer,
+            // C++" share both words, so the posting still scores well.
             const QStringList targetWords = significantWordsOf(loweredTargetTitle);
             if (!targetWords.isEmpty()) {
                 int matchedWordCount = 0;
@@ -158,12 +163,15 @@ int ProspectScorer::scoreTitleMatch(const QString &loweredPositionTitle,
                     }
                 }
 
-                // Points in proportion to the words matched, out of a maximum
-                // a little below a full-phrase match.
+                // Give points in proportion to the share of words matched.
+                // The most a partial match can get is titleMatchMaximumPoints
+                // minus partialTitleMatchShortfall, so it always scores below
+                // a full match.
                 thisTitleScore = (titleMatchMaximumPoints - partialTitleMatchShortfall)
                                  * matchedWordCount / targetWords.count();
 
-                // Matched only on a common role word like "Developer".
+                // If every matched word is a common role word like
+                // "Developer", divide the points by 4.
                 if (matchedDistinctiveWordCount == 0) {
                     thisTitleScore /= genericWordOnlyTitleDivisor;
                 }
@@ -176,9 +184,10 @@ int ProspectScorer::scoreTitleMatch(const QString &loweredPositionTitle,
         }
     }
 
-    // A match weaker than smallestTitleScoreWorthAReason still counts toward
-    // the score, but gets no reason on the row, because the user would read
-    // it and disagree.
+    // Add a title reason to the row. A full match says "direct match". A
+    // partial match says "overlaps". If the title score is below
+    // smallestTitleScoreWorthAReason (8), the points still count, but the row
+    // gets no title reason, because the user would read it and disagree.
     if (bestTitleScore >= titleMatchMaximumPoints) {
         matchReasons.append(QStringLiteral("Title is a direct match for %1")
                                 .arg(bestMatchingTitle));
@@ -225,8 +234,10 @@ int ProspectScorer::scoreSkillMatch(const QString &loweredSearchableText,
 int ProspectScorer::scoreRemoteFit(const JobPosting &jobPosting,
                                    QStringList &matchReasons) const
 {
-    // An on-site job earns nothing here, but loses nothing either. The
-    // penalty for "remote only" is applied once, in scoreJobPosting.
+    // A remote job gets remoteFitMaximumPoints. A job not listed as remote
+    // gets 0 points here. If the user asked for remote jobs only, scoreJobPosting also cuts
+    // the total score of a job that is not remote. That cut happens there,
+    // once, not here.
     if (!jobPosting.isRemoteRole) {
         return 0;
     }
@@ -245,11 +256,13 @@ QString ProspectScorer::matchedWorkLocationFor(const JobPosting &jobPosting) con
 
     const QString loweredLocationText = jobPosting.locationText.toLower();
 
-    // Matching any one of the user's places is enough. The match is loose on
-    // purpose, because boards write the same place many ways: "Pittsburgh,
-    // PA", "Pittsburgh PA, USA", "Greater Pittsburgh Area". This answer
-    // decides whether a job is hidden, so a loose match that shows a few
-    // extra jobs is better than a strict one that hides real ones.
+    // A posting matches one of the user's places if any one useful word of
+    // that place appears in the posting's location text. So "Pittsburgh, PA"
+    // also matches "Erie, PA", because the word "pa" matches. The match is
+    // loose on purpose, because job sites write the same place many ways:
+    // "Pittsburgh, PA", "Pittsburgh PA, USA", "Greater Pittsburgh Area". This
+    // answer decides whether a job is hidden, so a loose match that shows a
+    // few extra jobs is better than a strict one that hides real ones.
     for (const QString &preferredLocation : preferredWorkLocations) {
         for (const QString &locationWord : significantWordsOf(preferredLocation)) {
             // Words of three letters or fewer are usually state codes ("PA",
@@ -308,7 +321,7 @@ int ProspectScorer::scoreSalaryFit(const QString &salaryText,
 {
     const int minimumSalary = searchProfile.minimumAcceptableSalary;
     if (minimumSalary <= 0 || salaryText.isEmpty()) {
-        return 0; // no floor set, or the posting gives no pay
+        return 0; // the user set no minimum salary, or the posting lists no pay
     }
 
     // Salary text is free-form, like "$120,000 - $150,000 USD". Pull out
@@ -331,7 +344,8 @@ int ProspectScorer::scoreSalaryFit(const QString &salaryText,
         }
     }
 
-    // Some boards give pay in thousands, so "120k" arrives here as 120.
+    // Some job sites write pay in thousands, such as "120k". The code above
+    // reads that as 120, so multiply it by 1000.
     if (largestAdvertisedFigure > 0
             && largestAdvertisedFigure < smallestFigureReadAsWholeDollars) {
         largestAdvertisedFigure *= 1000;
@@ -395,9 +409,10 @@ ProspectMatchResult ProspectScorer::scoreJobPosting(const JobPosting &jobPosting
     totalScore += scoreSalaryFit(jobPosting.salaryText, matchResult.matchReasons);
     totalScore += scoreFreshness(jobPosting, matchResult.matchReasons);
 
-    // The user asked for remote jobs only, and this one is not listed as
-    // remote. It drops far down the list but is still shown, because boards
-    // often label remote jobs wrong. The user decides, not the app.
+    // If the user asked for remote jobs only, and this job is not listed as
+    // remote, divide its total score by 2. This moves it far down the list,
+    // but it is still shown, because job sites often label remote jobs wrong.
+    // The user decides, not the app.
     if (searchProfile.remoteRolesOnly && !jobPosting.isRemoteRole) {
         totalScore /= notRemoteScoreDivisor;
         matchResult.matchReasons.append(QStringLiteral("Not listed as remote"));

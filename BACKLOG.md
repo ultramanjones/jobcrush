@@ -292,6 +292,21 @@ an empty USAJOBS apply link.
 - InlineEditField.qml: showStoredText() breaks the binding to fieldText.
 - TokenEntryField.qml: Tab can't leave the field.
 - AppPreferences::loadFromSettings never sends moonlightTipsTurnedOnChanged.
+- ProspectScorer: one matching word is enough for a place to match, so
+  "New York" matches "New Jersey" and "Pittsburgh, PA" matches all of
+  Pennsylvania. Hourly pay such as "$45/hour" is read as $45,000 a year. A
+  target title made only of common role words ("Software Engineer") gives
+  "Engineer, Software" 8 points, not 35.
+- The "Outside your area (N)" count includes copies of the same job found
+  on two sites, but the tab shows each job once, so N can be higher than the
+  rows shown.
+- DiscoveryWorker::saveFindings: if a batch of 200 fails at COMMIT, those
+  jobs still count as saved and new.
+- JobPostingRepository::markJobPostingAsHandAdded changes only scoutSource.
+  A job a sweep found earlier, then pasted in by the user, sorts on the
+  Manual Add tab by the sweep time, so it may not be the top row.
+- DiscoveredJobListViewModel: SourceDisplayNameRole and
+  PostingSourceDisplayNameRole return the same value.
 - removePacketForApplication is never called, so a deleted campaign leaves
   its packet rows behind.
 - Messages that end with "try again" or no next step (UI rule): see

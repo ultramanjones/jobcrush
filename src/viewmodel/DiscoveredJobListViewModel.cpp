@@ -15,16 +15,23 @@
 
 namespace {
 
-// A typed date is stored at this time of day. See addJobFromFilledForm.
+// A date the user types is stored at noon on that day. The comment in
+// addJobFromFilledForm says why.
 const QTime timeOfDayForTypedDates(12, 0);
 
-// The reserved tab names. Neither can ever match a real source's storage
-// name, because every real one is a plain word with no hyphen.
+// The names of the two special tabs, Manual Add and Outside your area.
+// Every other tab is named by a job site's storage name. Each storage name
+// is a plain word with no hyphen. These two names have hyphens, so they can
+// never match a job site's storage name.
 const QString manualAddTabName = QStringLiteral("jobcrush-manual-add");
 const QString outsideSearchAreaTabName = QStringLiteral("jobcrush-outside-area");
 
-// The section header a row sits under. The last two days get words, because
-// "Today" is easier to read than a date. Older days get a date.
+// Returns the heading the page shows above a day's group of rows. It uses
+// the date the job was posted. If the posting gave no date, it uses the date
+// Job Crush found the job. Today and yesterday are shown as words, because
+// "Today" is easier to read than a date. Older days are shown as a date,
+// such as "August 21". If there is no date at all, it returns "No date
+// given".
 QString postedDayTextFor(const JobPosting &jobPosting)
 {
     const QDateTime timestampToShow = jobPosting.postedTimestamp.isValid()
@@ -46,10 +53,12 @@ QString postedDayTextFor(const JobPosting &jobPosting)
     return QLocale().toString(postedDate, QStringLiteral("MMMM d"));
 }
 
-// The name to show for where a posting came from. A source is either a job
-// SITE that Job Crush sweeps, or an employer BOARD it reads. They are listed
-// in two different places, so both are asked. Asking only the first once put
-// "ashby" on screen in lowercase.
+// Returns the name to show for the place a posting came from. That place is
+// either a job SITE that Job Crush sweeps, such as Remotive, or an employer's
+// job BOARD that it reads, such as Ashby. Sites and boards are listed in two
+// different places. This function checks the site list first, then the
+// board list. An earlier version checked only the site list. Then "ashby"
+// showed on screen in lowercase, because Ashby is a board, not a site.
 QString sourceDisplayNameFor(const QString &sourceStorageName)
 {
     bool descriptorFound = false;
@@ -64,8 +73,8 @@ QString sourceDisplayNameFor(const QString &sourceStorageName)
         return boardDisplayName;
     }
 
-    // Unknown to both lists. Show the stored name, because a blank where the
-    // source belongs looks like a fault.
+    // Neither list knows this name. Show the stored name as it is. A blank
+    // space would look like a bug to the user.
     return sourceStorageName;
 }
 
@@ -99,8 +108,9 @@ DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
     connect(&discoveryJobScout, &JobScout::leadStatusChanged,
             this, &DiscoveredJobListViewModel::leadStatusChanged);
 
-    // A job can be put on the board, or taken off it, from this page or from
-    // Job Pipelines. Either way, every row's CRUSH button has to update.
+    // The user can put a job on the board, or take it off, from this page or
+    // from the Job Pipelines page. Either way, JobPipelines sends
+    // boardChanged. Then every row has to update its CRUSH button.
     connect(&jobPipelines, &JobPipelines::boardChanged,
             this, &DiscoveredJobListViewModel::refreshIsOnTheBoardForEveryRow);
 
@@ -109,10 +119,11 @@ DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
 
 void DiscoveredJobListViewModel::requestRowsForTheActiveTab()
 {
-    // The "Outside your area" tab exists only while the user has named a
-    // place. If they clear the last place in Settings while that tab is
-    // showing, the tab goes away, so the page goes back to Top Prospects
-    // instead of showing an empty list under no tab.
+    // The "Outside your area" tab exists only while the user has named at
+    // least one place to search in. If the user removes the last place in
+    // Settings while that tab is showing, the tab goes away. So this code
+    // switches back to Top Prospects. Otherwise the page would show an empty
+    // list under a tab that no longer exists.
     if (storedActiveTabSourceName == outsideSearchAreaTabName
             && !discoveryJobScout.searchAreaIsNarrowed()) {
         storedActiveTabSourceName.clear();
@@ -140,7 +151,8 @@ void DiscoveredJobListViewModel::whenRowsAreReady(int requestNumber,
         return;
     }
 
-    // A full reset is simple, and fast enough with the scoring already done.
+    // This replaces the whole list at once. That is simple, and it is fast
+    // enough, because the background thread already did the slow scoring.
     beginResetModel();
     displayedJobPostings = preparedRows.scoredJobPostings;
     endResetModel();
@@ -248,8 +260,8 @@ void DiscoveredJobListViewModel::setActiveTabSourceName(const QString &sourceSto
     storedActiveTabSourceName = sourceStorageName;
     emit activeTabSourceNameChanged();
 
-    // The old tab's rows go at once, so they never show under the new tab's
-    // name while the new rows are being prepared.
+    // This clears the old tab's rows right away. If it waited, the old rows
+    // would show under the new tab's name until the new rows were ready.
     beginResetModel();
     displayedJobPostings.clear();
     endResetModel();
@@ -400,9 +412,10 @@ void DiscoveredJobListViewModel::openJobPostingInBrowser(int rowIndex) const
         return; // a hand-added job with no link has nothing to open
     }
 
-    // Only web links are opened. The link came from a job board, not from
-    // the user, and a link like file:// or a program's own scheme could make
-    // the computer do something other than show a web page.
+    // This opens only web links, which start with http or https. Most links
+    // come from job boards, and Job Crush does not control what they send. A
+    // link that starts with file:// or with another program's name could make
+    // the computer open a file or start a program instead of a web page.
     const QUrl postingUrl(jobPosting.sourceUrl);
     const QString urlScheme = postingUrl.scheme().toLower();
     if (urlScheme != QStringLiteral("https") && urlScheme != QStringLiteral("http")) {
@@ -427,9 +440,10 @@ QString DiscoveredJobListViewModel::crushJobPostingAt(int rowIndex)
                               "try again.");
     }
 
-    // The sentence comes back whether the crush worked or not. "Already on
-    // your board" is an answer for the user, not an error. When the crush
-    // works, the board sends boardChanged, and every row's button updates.
+    // JobPipelines fills in crushOutcomeText whether the crush worked or not.
+    // If the job is already on the board, the text says so. That is an answer
+    // for the user, not an error. If the crush works, JobPipelines sends
+    // boardChanged, and every row's CRUSH button updates.
     QString crushOutcomeText;
     jobPipelines.crushJobPosting(displayedJobPostings.at(rowIndex).jobPosting.jobPostingId,
                                  crushOutcomeText);
@@ -481,8 +495,9 @@ void DiscoveredJobListViewModel::addJobFromFilledForm(const QString &companyName
                                                       const QString &postedText,
                                                       bool isRemoteRole)
 {
-    // Start from what Moonlight filled in, so the description it found is
-    // kept, then apply the boxes as the user left them.
+    // Start from the posting Moonlight filled in. That keeps the job
+    // description Moonlight found, which this function does not receive.
+    // Then copy in the value of each box as the user left it.
     JobPosting jobPostingFromForm = discoveryJobScout.filledFormFromPastedText();
     jobPostingFromForm.companyName = companyName;
     jobPostingFromForm.positionTitle = positionTitle;
@@ -491,8 +506,10 @@ void DiscoveredJobListViewModel::addJobFromFilledForm(const QString &companyName
     jobPostingFromForm.salaryText = salaryText;
     jobPostingFromForm.isRemoteRole = isRemoteRole;
 
-    // A typed date is stored at noon, so a time zone change cannot move it
-    // to the day before or after. A date that cannot be read is left empty.
+    // The typed date is stored at noon. If it were stored at midnight, a
+    // time zone change could move it to the day before. Noon is twelve hours
+    // from either end of the day, so the date stays the same. If
+    // TypedDateReader cannot read the date, the posted date is left empty.
     QDate postedDate;
     jobPostingFromForm.postedTimestamp =
         TypedDateReader::readTypedDate(postedText, QDate::currentDate(), QLocale(), postedDate)

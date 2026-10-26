@@ -33,7 +33,8 @@ namespace {
 // rebuild its rows, and hundreds of rebuilds would freeze it.
 constexpr int discoveriesChangedPauseMilliseconds = 1000;
 
-// Goes between the per-site lines in the progress, trouble and notice text.
+// Goes between one site's piece and the next in the progress, trouble and
+// notice text.
 const QString sourceLineSeparator = QStringLiteral("   ·   ");
 
 } // namespace
@@ -55,9 +56,10 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
     , followedEmployerRoster(followedEmployerRoster)
     , searchProfile(searchProfile)
 {
-    // One client per job site, built once and kept. Adding a site means
-    // writing its class and adding one line here. Nothing above JobScout
-    // changes.
+    // Build one client for each job site, and keep it. To add a new site,
+    // write its client class, add one line here, and set clientIsBuilt to
+    // true for that site in the catalog in JobSourceDescriptor.h. The view
+    // models and pages do not change.
     builtJobSourceProviders.push_back(
         std::make_unique<FollowedEmployerJobSource>(followedEmployerRoster));
     builtJobSourceProviders.push_back(std::make_unique<RemotiveJobSource>());
@@ -70,21 +72,28 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
     brainJobFinder = std::make_unique<BrainJobFinder>(aiBrain, this);
     pastedTextReader = std::make_unique<PastedTextJobReader>(aiBrain);
 
-    // Editing the profile ranks every stored job again. This is instant and
-    // free, because the scorer is arithmetic, not a paid AI call.
+    // When the user edits the search profile, the page asks for its rows
+    // again, and every saved job is scored again. This costs no money,
+    // because the scorer does plain arithmetic. It does not call a paid AI
+    // service.
     connect(&searchProfile, &JobSearchProfile::searchProfileChanged,
             this, &JobScout::discoveriesChanged);
 
-    // Ticking a site changes which tabs exist and what a sweep covers.
+    // When the user ticks or unticks a site in Settings, the page asks for
+    // its rows again. Each ticked site has its own tab, so the set of tabs
+    // changes, and so does the list of sites the next sweep asks.
     connect(&jobSourceRoster, &JobSourceRoster::enabledSourcesChanged,
             this, &JobScout::discoveriesChanged);
 
     connect(&followedEmployerRoster, &FollowedEmployerRoster::followedEmployersChanged,
             this, &JobScout::discoveriesChanged);
 
-    // The background thread for saving and ranking. The worker is moved onto
-    // it, opens its own database connection there, and is deleted there when
-    // the thread stops.
+    // Set up the background thread that saves and scores jobs. The three
+    // types are registered so Qt can copy them between threads in queued
+    // calls and signals. The DiscoveryWorker is moved onto the background
+    // thread. It opens its own database connection there, because Qt lets a
+    // connection be used only on the thread that opened it. When the thread
+    // stops, the worker is deleted on that thread.
     qRegisterMetaType<DiscoveryRowRequest>();
     qRegisterMetaType<DiscoveryRows>();
     qRegisterMetaType<FindingsSaveOutcome>();
@@ -110,10 +119,12 @@ JobScout::JobScout(JobPostingRepository &jobPostingRepository,
 
 JobScout::~JobScout()
 {
-    // Stop the background thread after the work already sent to it, so found
-    // jobs waiting to be saved are saved. quit() is sent as one more piece of
-    // work for that reason; called straight from here it would drop them.
-    // The thread deletes the worker as it stops.
+    // Stop the background thread, but only after it finishes the work
+    // already sent to it. That way found jobs that are waiting to be saved
+    // still get saved. To do that, the call to quit() is queued behind that
+    // work, as one more task. If this code called quit() directly, the
+    // thread would stop and drop the waiting work. When the thread stops, it
+    // deletes the worker.
     QMetaObject::invokeMethod(discoveryWorker, [thread = &discoveryThread]() {
         thread->quit();
     });
@@ -207,9 +218,10 @@ void JobScout::startSweep()
     storedLastSweepSummaryText.clear();
     storedLastSweepTroubleText.clear();
 
-    // Fill the list of running sites BEFORE starting any of them. A site that
-    // answers from its cache can finish at once. If the list were still
-    // empty then, the sweep would report itself done before it started.
+    // Put every site in sourcesStillSweeping BEFORE starting any of them. A
+    // site that answers from its cache can finish right away, inside the
+    // call that starts it. If the list were still empty at that moment, the
+    // sweep would report that it was done before the other sites started.
     for (const QString &sourceStorageName : enabledSourceNames) {
         if (providerFor(sourceStorageName) != nullptr) {
             sourcesStillSweeping.append(sourceStorageName);
@@ -246,8 +258,9 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
 
     JobScoutReply *scoutReply = sourceProvider->searchForJobs(searchProfile, this);
 
-    // A source that hears from many companies hands each company's jobs
-    // over as they arrive. They are saved right away, one company at a time.
+    // Some sites hear from many companies. That kind of site sends each
+    // company's jobs as soon as they arrive, through someJobsFound. Each
+    // batch is saved right away, one company at a time.
     connect(scoutReply, &JobScoutReply::someJobsFound, this,
             [this, sourceStorageName](const QList<JobPosting> &someFoundJobPostings) {
         saveFindingsInTheBackground(sourceStorageName, someFoundJobPostings);
@@ -259,14 +272,18 @@ void JobScout::beginSweepOfSource(const QString &sourceStorageName)
         progress.replyHasFinished = true;
         progress.jobsArrived = foundJobPostings.count();
 
-        // Jobs already handed over one company at a time are already being
-        // saved. Everything else is saved now, in one go.
+        // If the site already sent its jobs one company at a time, those
+        // jobs are already being saved, so they are not saved again.
+        // Otherwise, all of the site's jobs are saved now, in one batch.
         if (!scoutReply->deliveredJobsAsTheyArrived()) {
             saveFindingsInTheBackground(sourceStorageName, foundJobPostings);
         }
 
-        // Looking for jobs that are gone is queued after the saving, so it
-        // sees every job this sweep found.
+        // If the site read some companies' whole job boards, ask the
+        // background thread to find saved jobs from those companies that
+        // were not on their boards this time. Those jobs may be gone. This
+        // task is queued after the save tasks, so it runs after every job
+        // from this sweep is saved.
         const QStringList employersReadInFull = scoutReply->employersReadInFull();
         if (!employersReadInFull.isEmpty()) {
             ++progress.backgroundTasksPending;
@@ -327,7 +344,8 @@ void JobScout::whenFindingsWereSaved(const QString &sourceStorageName,
     totalJobsFoundThisSweep += saveOutcome.jobsSaved;
     totalNewJobsThisSweep += saveOutcome.newJobs;
 
-    // The new jobs show up on the page while the sweep goes on.
+    // If the batch had new jobs, tell the page soon, so the new jobs show
+    // up while the sweep is still running.
     if (saveOutcome.newJobs > 0) {
         sayDiscoveriesChangedSoon();
     }
@@ -342,10 +360,13 @@ void JobScout::whenJobsAreMissingFromBoards(const QString &sourceStorageName,
     sayDiscoveriesChangedSoon();
     finishSourceIfEverythingIsDone(sourceStorageName);
 
-    // A job missing from one read of the board is not yet gone. Each one is
-    // asked about again, on its own page and in the company's list, and is
-    // marked gone only when both agree. This runs after the sweep's own
-    // numbers are reported, because it only changes the amber marks.
+    // One missing answer is not enough to call a job gone, so each missing
+    // job is checked again. Job Crush asks the company's board two
+    // questions: one about the job's own page, and one about the company's
+    // list of jobs. The job is marked gone only if both answers say it is
+    // gone. These checks run after this site is marked finished in the
+    // sweep. They do not change the sweep's counts. They only change which
+    // jobs show the amber "gone" mark.
     const AtsBoardDetector boardDetector;
     for (const JobPosting &missingJobPosting : missingJobPostings) {
         const AtsBoardIdentity identity = boardDetector.identify(missingJobPosting.sourceUrl);
@@ -382,9 +403,10 @@ void JobScout::finishSourceIfEverythingIsDone(const QString &sourceStorageName)
     const FindingsSaveOutcome &totals = progress.saveTotals;
 
     if (progress.replyFailed) {
-        // Not every failure is trouble. A site that asked Job Crush to wait
-        // an hour, while Job Crush waits, is working as it should. That is
-        // shown as a notice, not as an error.
+        // Not every failure is a problem. For example, a site may ask Job
+        // Crush to wait before asking again. While Job Crush waits, the site
+        // is working as it should. If the reply said the failure is not a
+        // problem, it is shown as a notice, not as an error.
         const QString outcomeText =
             QStringLiteral("%1: %2").arg(displayName, progress.failureReason);
         if (!progress.failureIsTrouble) {
@@ -394,13 +416,14 @@ void JobScout::finishSourceIfEverythingIsDone(const QString &sourceStorageName)
         return;
     }
 
-    // A site that answers with no jobs is not an error, but it is not a
-    // success either. The outcome line says so, so the user knows why that
-    // site's tab is empty.
+    // If a site answers with no jobs, that is not an error, but it is not a
+    // success either. The site's outcome line says it sent no jobs, so the
+    // user knows why that site's tab is empty. The site is also listed in
+    // the trouble text.
     const bool sourceCameBackEmpty = progress.jobsArrived == 0;
 
-    // Jobs arrived but Job Crush could not save them. That is a problem in
-    // Job Crush, not with the site, and the outcome line says so.
+    // If jobs arrived but the database refused every one, the problem is in
+    // Job Crush, not in the site. The outcome line says so.
     const bool everyJobWasRefused = !sourceCameBackEmpty
         && totals.jobsRefused == progress.jobsArrived;
 
@@ -450,8 +473,8 @@ void JobScout::finishSourceAndReportProgress(const QString &sourceStorageName,
                 .arg(sitesSwept)
                 .arg(sitesSwept == 1 ? QStringLiteral("site") : QStringLiteral("sites"));
 
-        // Whatever went wrong is kept after the sweep ends. The summary does
-        // not replace it.
+        // Keep the trouble text and the notice text after the sweep ends.
+        // The summary does not replace them.
         storedLastSweepTroubleText =
             sourcesThatHadTroubleThisSweep.join(sourceLineSeparator);
         storedLastSweepNoticeText =
@@ -459,7 +482,9 @@ void JobScout::finishSourceAndReportProgress(const QString &sourceStorageName,
 
         writeSweepLog();
 
-        // The sweep is over, so the page is refreshed now, not in a second.
+        // The sweep is over, so tell the page to refresh now. Stop the
+        // one-second timer first, so the page does not refresh again a
+        // second later.
         discoveriesChangedTimer.stop();
         emit discoveriesChanged();
     }
@@ -491,7 +516,8 @@ void JobScout::writeSweepLog() const
 
     QFile sweepLogFile(QDir(sweepLogFolderPath).filePath(QStringLiteral("lastSweep.log")));
     if (!sweepLogFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-        // The sweep itself worked, so it is not undone. The failure is logged.
+        // The log file could not be opened. The sweep itself worked, so its
+        // results are kept. Only a warning is written.
         qWarning().noquote() << QStringLiteral(
             "JobScout::writeSweepLog: could not open %1 for writing — %2")
                 .arg(sweepLogFile.fileName(), sweepLogFile.errorString());
@@ -562,8 +588,9 @@ QString JobScout::pastedTextStatusText() const
 
 bool JobScout::aBrainCanReadPastedText() const
 {
-    // Reading text needs no web search, so any connected brain will do,
-    // Ollama included.
+    // Reading pasted text does not need a web search, so any connected brain
+    // can do it. That includes Ollama, which runs on the user's own computer
+    // and cannot search the web.
     return brainJobFinder->aBrainIsAvailable();
 }
 
@@ -615,9 +642,11 @@ void JobScout::addJobFromFilledForm(const JobPosting &formFields)
     storedPastedTextStatus.clear();
     emit pastedTextFormChanged();
 
-    // The same hunt as every other added job: the employer's own board, then
-    // the page, then the brain. If none of them has it, the form is saved as
-    // the user left it.
+    // Start the same search as for any job added by hand. The form always
+    // has a company and a title, so the search starts on the employer's own
+    // job board. If that finds nothing, the AI brain is asked, if it can
+    // search the web. If nothing finds the job, the job is saved with what
+    // the user left in the form.
     beginHuntForOneLead(jobLead);
 }
 
@@ -637,15 +666,16 @@ void JobScout::lookForOtherPlacesToApply(qint64 jobPostingId)
         return; // nothing to search with
     }
 
-    // The place the job was found is a place to apply too. It is recorded
-    // first, so the job always has at least that one.
+    // The place where the job was found is also a place to apply. Record it
+    // first, so the job always has at least one place to apply.
     if (!jobPosting.sourceUrl.isEmpty() && !jobPosting.postingSource.isEmpty()) {
         rememberRouteToThisJob(jobPostingId, jobPosting.postingSource,
                                jobPosting.externalSourceId, jobPosting.sourceUrl);
     }
 
-    // The job was already read off the employer's own board. There is
-    // nothing better to find, so no requests are sent.
+    // If the job's link already points to one job on an employer's own
+    // board, there is nothing better to find. Stop here and send no
+    // requests.
     if (AtsBoardDetector().identify(jobPosting.sourceUrl).namesOneJob()) {
         return;
     }
@@ -700,8 +730,9 @@ void JobScout::addJobFromLink(const QString &pastedLink)
         return;
     }
     if (aLeadIsBeingResolved) {
-        // sayThisAboutTheLead, not finishLeadWith. finishLeadWith would turn
-        // the buttons back on and let a second search start beside the first.
+        // Use sayThisAboutTheLead here, not finishLeadWith. finishLeadWith
+        // sets aLeadIsBeingResolved to false. That would turn the add buttons
+        // back on and let a second search start while the first one runs.
         sayThisAboutTheLead(QStringLiteral(
             "Job Crush is still looking for the last one. Give it a moment."));
         return;
@@ -713,16 +744,17 @@ void JobScout::addJobFromLink(const QString &pastedLink)
     AtsBoardDetector boardDetector;
     jobLead.boardIdentity = boardDetector.identify(trimmedLink);
 
-    // Only a real board name goes in here. A link from a site Job Crush is not
-    // allowed to read names no board, so the field stays empty. That the
-    // user pasted it is recorded separately, as the posting's scout source.
+    // postingSource holds only the name of a real job board, such as
+    // Greenhouse. If the link does not point to a known board, postingSource
+    // stays empty. The fact that the user pasted the link is recorded in a
+    // different field, scoutSource, when the job is saved.
     jobLead.postingSource = jobLead.boardIdentity.isKnown()
         ? jobLead.boardIdentity.boardName
         : QString();
 
-    // Job Crush does not open LinkedIn or Indeed links, and the link itself
-    // does not say which job it is. Tell the user now, and say what to do
-    // instead.
+    // Job Crush does not open LinkedIn or Indeed links. The link alone does
+    // not say which company or which job it is. So if the link is from one
+    // of those sites, tell the user now, and tell them what to do instead.
     if (!jobLead.boardIdentity.isKnown() && boardDetector.isWalledGarden(trimmedLink)) {
         finishLeadWith(QStringLiteral(
             "Job Crush isn't allowed to read that site, and the link alone doesn't "
@@ -747,8 +779,9 @@ void JobScout::addJobFromCompanyAndTitle(const QString &companyName,
         return;
     }
     if (aLeadIsBeingResolved) {
-        // sayThisAboutTheLead, not finishLeadWith. finishLeadWith would turn
-        // the buttons back on and let a second search start beside the first.
+        // Use sayThisAboutTheLead here, not finishLeadWith. finishLeadWith
+        // sets aLeadIsBeingResolved to false. That would turn the add buttons
+        // back on and let a second search start while the first one runs.
         sayThisAboutTheLead(QStringLiteral(
             "Job Crush is still looking for the last one. Give it a moment."));
         return;
@@ -757,30 +790,38 @@ void JobScout::addJobFromCompanyAndTitle(const QString &companyName,
     JobLead jobLead;
     jobLead.companyName = trimmedCompany;
     jobLead.positionTitle = trimmedTitle;
-    // No link, so no board is known yet. A resolver may fill this in.
+    // The user gave no link, so no job board is known yet. The search of the
+    // employer boards looks for the company by its name instead.
 
     beginHuntForOneLead(jobLead);
 }
 
-// The hunt for one hand-added job, in the order the steps are tried:
+// The search for one job the user added by hand. The steps:
 //
-//   1. The employer's own board, when the link names one or the company
-//      name leads to one. This is the best result: the employer's own
-//      words, and a posting that goes away when the job is filled.
-//   2. The page the user pasted, read off the web. Most job pages hold the
-//      job in a labeled block, and the reader knows how to find it.
-//   3. The AI brain, asked to search the web. Only after steps 1 and 2 find
-//      nothing, and only when a brain is connected, because it costs money.
-//      The brain finds a link, and Job Crush goes back to step 1 or 2 to
-//      read it. That way the saved posting is the employer's text, not the
-//      brain's summary of it.
+//   1. If the link points to a known job board, or the user gave both a
+//      company and a job title, search the employer's own job board. This
+//      gives the best result. The text is the employer's own words, and the
+//      posting is taken down when the job is filled.
+//      Otherwise, read the web page at the pasted link. Most job pages put
+//      the job's details in a block of JSON-LD data, and the page reader
+//      knows how to read it.
+//   2. If step 1 finds nothing, ask the AI brain to search the web. This
+//      happens only if a brain is connected and it can search the web. The
+//      brain is asked only once per job, because each search costs money.
+//      The brain answers with a link. If the link points to one job on an
+//      employer's board, Job Crush reads it from that board. Otherwise Job
+//      Crush reads the web page at the link. That way the saved posting
+//      holds the employer's text, not the brain's summary of it.
 //
-// When every step misses, what the user gave is saved anyway.
+// If every step finds nothing, the job is saved with what the user gave.
+// If the user gave only a link, there is nothing to save, and the user is
+// asked to type the company and the title instead.
 void JobScout::beginHuntForOneLead(const JobLead &jobLead)
 {
     aLeadIsBeingResolved = true;
-    // Forget the last added job now, so the "show me" button cannot jump to
-    // the wrong row while this one is being found.
+    // Clear the id of the last hand-added job now. The "Show me" button
+    // jumps to the row of that job. While this new job is being looked up,
+    // the button would otherwise jump to the previous job, not this one.
     lastHandAddedJobPostingId = 0;
 
     if (jobLead.boardIdentity.isKnown()
@@ -861,8 +902,9 @@ void JobScout::whenTheHuntCameUpEmpty(const JobLead &jobLead,
 
     QString whatToSay = whyNothingWasFound;
     if (brainWasAlreadyAsked) {
-        // The brain gave a link, and Job Crush could not read the page. The
-        // job is still saved, and the user can open the link to check it.
+        // The brain was already asked. It gave a link, but Job Crush could
+        // not read the page at that link. The job is still saved, with the
+        // brain's link, so the user can open the link and check it.
         whatToSay = QStringLiteral("%1 found a link but Job Crush couldn't read the "
                                    "page: %2 Open the link to check it.")
             .arg(brainJobFinder->brainDisplayName(), whyNothingWasFound);
@@ -895,10 +937,11 @@ void JobScout::askTheBrainToFindIt(const JobLead &jobLead,
         }
         const JobPosting &brainsAnswer = foundLeads.first();
 
-        // The brain's answer is a lead, not a posting. Job Crush reads the
-        // page it points to, the same way it reads a pasted link, so what
-        // gets saved is the employer's text. Where the brain left a field
-        // blank, what the user typed is kept.
+        // Treat the brain's answer as a new JobLead, not as a finished
+        // posting. Job Crush reads the page at the brain's link, the same
+        // way it reads a pasted link. That way the saved text is the
+        // employer's text. If the brain left the title or the company blank,
+        // the value the user typed is used instead.
         JobLead foundLead;
         foundLead.discoveryUrl = brainsAnswer.sourceUrl;
         foundLead.positionTitle = brainsAnswer.positionTitle.isEmpty()
@@ -938,10 +981,12 @@ void JobScout::keepTheRealPosting(const JobLead &jobLead, const JobPosting &real
         realPosting, AtsBoardName::displayNameFor(realPosting.postingSource));
 
     if (lastHandAddedJobPostingId != 0) {
-        // The link the user pasted is a real place to apply, and it is often
-        // not the one the search found. Paste a Lever link for a company that
-        // is also on Ashby, and the search answers from Ashby. Both links
-        // work, so both are kept, and the user picks which one to use.
+        // The job was saved. If the user pasted a link to a different board
+        // than the one the posting came from, record that link too. The
+        // pasted link is a real place to apply. For example, if the user
+        // pastes a Lever link for a company that is also on Ashby, the search
+        // may answer from Ashby. Both links work, so both are kept, and the
+        // user picks which one to use.
         if (jobLead.boardIdentity.isKnown()
                 && jobLead.boardIdentity.boardName != realPosting.postingSource) {
             rememberRouteToThisJob(lastHandAddedJobPostingId,
@@ -969,7 +1014,8 @@ QString JobScout::keepWhatTheUserGaveUs(const JobLead &jobLead,
 {
     if (jobLead.positionTitle.trimmed().isEmpty()
             || jobLead.companyName.trimmed().isEmpty()) {
-        // Nothing to save. A link with no title and no company is not a job.
+        // If the title or the company is missing, there is nothing to save.
+        // A link alone is not enough to make a job.
         return QStringLiteral(
             "Job Crush couldn't get the job off that link. %1 Type the company name "
             "and the job title instead and it will go look again.")
@@ -985,15 +1031,16 @@ QString JobScout::keepWhatTheUserGaveUs(const JobLead &jobLead,
     leadAsPosting.fullDescriptionText = jobLead.rawText;
     leadAsPosting.isRemoteRole = jobLead.isRemoteRole;
     leadAsPosting.postedTimestamp = jobLead.postedTimestamp;
-    // Nothing was read off a board, so the posting has no board. The lead may
-    // name one, because the link pointed at Greenhouse, say. Recording that
-    // board here would tell the user Job Crush found the job there, and it
-    // did not.
+    // No job board was read, so leave postingSource empty. The JobLead may
+    // name a board, for example if the pasted link pointed at Greenhouse. If
+    // that board were recorded here, the user would be told that Job Crush
+    // found the job on Greenhouse. That would not be true.
     leadAsPosting.postingSource.clear();
 
-    // A hand-added job has no id from a board, so one is made from its company
-    // and title. The repository finds duplicates by source and id, so without
-    // this, pasting the same job twice would store it twice.
+    // A job added by hand has no id from a board. So make an id from its
+    // company and title. The repository finds duplicates by matching the
+    // source and the id. Without this id, pasting the same job twice would
+    // save it twice.
     leadAsPosting.externalSourceId = crossSourceIdentityOf(leadAsPosting);
 
     return storeOnePostingAndSayWhatHappened(leadAsPosting, QString())
@@ -1010,8 +1057,8 @@ void JobScout::rememberRouteToThisJob(qint64 jobPostingId, const QString &boardN
     route.externalId   = externalId;
     route.postingUrl   = postingUrl;
 
-    // If this fails, the card is missing one link. The job itself is already
-    // saved, so the failure is logged and the work goes on.
+    // If this fails, the job's card is missing one link. The job itself is
+    // already saved, so a warning is written and the work goes on.
     if (!postingSourceRepository.recordPostingSourceIfNew(route)) {
         qWarning().noquote() << QStringLiteral(
             "JobScout::rememberRouteToThisJob: could not record %1 for job posting "
@@ -1027,8 +1074,9 @@ QString JobScout::storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
         jobPosting.discoveredTimestamp = QDateTime::currentDateTime();
     }
 
-    // Only the hand-add steps call this function, so every posting that
-    // reaches it was added by the user. This is the one place that marks it.
+    // Only the steps for adding a job by hand call this function. So every
+    // posting that comes here was added by the user. This is the only place
+    // that sets scoutSource to You.
     jobPosting.scoutSource = ScoutSourceText::You;
 
     bool wasAlreadyKnown = false;
@@ -1038,26 +1086,27 @@ QString JobScout::storeOnePostingAndSayWhatHappened(JobPosting jobPosting,
             .arg(jobPostingRepository.lastErrorText());
     }
 
-    // Remembered so the page can take the user straight to the row.
+    // Keep the id so the page can jump straight to this job's row.
     lastHandAddedJobPostingId = jobPosting.jobPostingId;
 
-    // Job Crush already had this job, from a sweep or an earlier paste. The
-    // user has now added it by hand, so it goes on the Manual Add list.
-    // This must happen before discoveriesChanged below, or the list is
-    // rebuilt without it.
+    // If Job Crush already had this job, from a sweep or an earlier paste,
+    // mark it as added by hand, so it shows on the Manual Add tab. This must
+    // happen before discoveriesChanged is sent below. Otherwise the tab's
+    // list would be rebuilt without this job.
     if (wasAlreadyKnown
             && !jobPostingRepository.markJobPostingAsHandAdded(jobPosting.jobPostingId)) {
-        // Logged by the repository. The job is saved, but the user is told
-        // the truth: it will not be on the Manual Add list.
+        // The repository already logged the error. The job is saved, but it
+        // will not be on the Manual Add tab. The user is told that, and told
+        // where to look instead.
         lastHandAddedJobPostingId = 0;
         return QStringLiteral("You already had this job, but Job Crush couldn't move it "
                               "to Manual Add — %1. Look for it on Top Prospects.")
             .arg(jobPostingRepository.lastErrorText());
     }
 
-    // The place this posting was read off. Recorded even when it is the only
-    // one, because every card builds its links from this list, and a job with
-    // no recorded place would show no link at all.
+    // Record the place this posting was read from. Do this even when it is
+    // the only place, because every job card builds its links from this list
+    // of places. A job with no recorded place would show no link at all.
     rememberRouteToThisJob(jobPosting.jobPostingId, jobPosting.postingSource,
                            jobPosting.externalSourceId, jobPosting.sourceUrl);
 

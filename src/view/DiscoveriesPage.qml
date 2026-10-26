@@ -3,15 +3,23 @@ import JobCrush
 
 // DiscoveriesPage
 //
-// The jobs JobScout found. The tabs are Top Prospects (every job, ranked),
-// Manual Add (the jobs the user added by hand), Outside your area (the jobs
-// the location filter holds back), and one tab per job site the user ticked
-// in Settings. Untick a site in Settings and its tab goes away here.
+// This page lists the jobs that JobScout found. JobScout is the C++ class
+// that searches the job sites. One search of all the sites the user turned
+// on is called a sweep. The Scout now button starts a sweep.
 //
-// Nothing on this page puts a job on the board except the CRUSH button.
+// The page has these tabs, in this order:
+//  - Top Prospects: every job, ranked best match first.
+//  - Manual Add: the jobs the user added by hand.
+//  - One tab for each job site the user turned on in Settings. If the user
+//    turns a site off in Settings, its tab goes away here.
+//  - Outside your area: jobs outside the places the user said they would
+//    work. The location filter hides these jobs from the other tabs.
 //
-// This is the view layer: it binds to its viewmodels, asks Main to change
-// pages, and holds no business logic.
+// The CRUSH button puts a job on the user's board (the Job Pipelines
+// page). Nothing else on this page does that.
+//
+// This file is the view layer. It shows data from its viewmodels and asks
+// Main to change pages. It has no business logic.
 Rectangle {
     id: discoveriesPage
 
@@ -19,13 +27,14 @@ Rectangle {
     property DiscoveredJobListViewModel discoveredJobListViewModel
     property JobSourceRosterViewModel jobSourceRosterViewModel
 
-    // Asks Main to show Settings. The empty states point the user there.
+    // Asks Main to show the Settings page. The Open Settings button on the
+    // empty-list card sends this signal.
     signal settingsRequested
 
     color: JobCrushTheme.appBackgroundColor
 
-    // Which tab is showing. The viewmodel owns this. The page only reads it,
-    // and changes it through selectTab().
+    // The name of the tab that is showing. The viewmodel stores this value.
+    // The page reads it here, and changes it only through selectTab().
     readonly property string activeTabSourceName:
         discoveredJobListViewModel.activeTabSourceName
 
@@ -39,25 +48,33 @@ Rectangle {
     readonly property string outsideSearchAreaTabSourceName:
         discoveredJobListViewModel.outsideSearchAreaTabSourceName
 
-    // Empty string is Top Prospects.
+    // Shows the tab named tabSourceName. An empty string means Top Prospects.
     function selectTab(tabSourceName) {
         discoveredJobListViewModel.activeTabSourceName = tabSourceName
     }
 
-    // The row numbers belong to the tab that was showing. A highlight kept
-    // after the tab changes would mark whatever job now sits in that row.
+    // After the user adds a job by hand and presses "Show me" in the add
+    // form, the page draws an outline around that job. The outline stays
+    // until highlightFadeTimer's interval runs out. The page finds that job
+    // by its row number in the list. Each tab has its own list. Row 7 on one
+    // tab is a different job than row 7 on another tab. So when the user
+    // switches tabs, this code removes the outline and stops its timer.
+    // Otherwise the outline would land on the wrong job.
     onActiveTabSourceNameChanged: {
         discoveriesPage.highlightedRowIndex = -1
         highlightFadeTimer.stop()
     }
 
-    // What the last CRUSH did, in a strip at the bottom of the page. Not a
-    // dialog, because the user may press CRUSH many times in a row, and a
-    // dialog for each one would get in the way.
+    // The message about what the last CRUSH press did. A strip at the bottom
+    // of the page shows it. An empty string hides the strip. The page uses a
+    // strip and not a dialog, because the user may press CRUSH many times in
+    // a row. A dialog for each press would get in the way.
     property string crushOutcomeText: ""
 
-    // The row to mark after a jump, or -1 for none. The mark goes away after
-    // the interval, once the user has seen where the job is.
+    // The row number of the job to outline, or -1 for no outline. The page
+    // sets this after it scrolls to the job the user just added.
+    // highlightFadeTimer sets it back to -1 when its interval runs out. By
+    // then the user has seen where the job is.
     property int highlightedRowIndex: -1
 
     Timer {
@@ -66,11 +83,14 @@ Rectangle {
         onTriggered: discoveriesPage.highlightedRowIndex = -1
     }
 
-    // Takes the user to the job they just added: switches to Manual Add,
-    // finds the row, scrolls to it and marks it.
+    // The two functions below take the user to the job they just added by
+    // hand. They switch to the Manual Add tab, find the job's row, scroll to
+    // it and outline it.
     //
-    // The rows are prepared on a background thread, so the job may not be
-    // among them yet. Then the jump waits until the next rows arrive.
+    // The viewmodel builds the rows on a background thread. So right after
+    // the tab switch, the job may not be in the rows yet. If it is not, this
+    // flag is set to true. When the next rows finish loading, the
+    // Connections block below tries once more and clears the flag.
     property bool jumpToTheJobJustAddedIsWaiting: false
 
     function showTheJobJustAdded() {
@@ -115,8 +135,9 @@ Rectangle {
     onManualAddTabIsShowingChanged: addOneJobPanelIsOpen = manualAddTabIsShowing
     Component.onCompleted: addOneJobPanelIsOpen = manualAddTabIsShowing
 
-    // When the user unticks the site whose tab is showing, go back to Top
-    // Prospects instead of leaving a tab that no longer exists selected.
+    // If the user turns off the job site whose tab is showing, this code
+    // switches to Top Prospects. Otherwise the page would stay on a tab that
+    // no longer exists.
     Connections {
         target: discoveriesPage.jobSourceRosterViewModel
         function onEnabledSourcesChanged() {
@@ -137,8 +158,9 @@ Rectangle {
         }
     }
 
-    // One tab in the tab row. Every tab looks the same except for its
-    // colors, which each tab sets.
+    // One tab button in the row of tabs. Every tab uses this button. A tab
+    // can change its colors through the color properties below. The Outside
+    // your area tab does this.
     component DiscoveryTabButton: Rectangle {
         id: discoveryTabButton
 
@@ -146,7 +168,8 @@ Rectangle {
         property bool isActiveTab: false
         // Every selected tab has the accent color (cyan in the Classic
         // theme), the same color as a selected item on other pages. Pink is
-        // kept for buttons that do something, like CRUSH and Scout now.
+        // used only for buttons that start an action, like CRUSH and
+        // Scout now.
         property color activeBorderColor: JobCrushTheme.accentColor
         property color idleBorderColor: JobCrushTheme.hairlineBorderColor
         property color idleLabelColor: JobCrushTheme.secondaryTextColor
@@ -158,8 +181,9 @@ Rectangle {
         radius: 16
         color: isActiveTab ? JobCrushTheme.cardBackgroundColor : "transparent"
         border.color: isActiveTab ? activeBorderColor : idleBorderColor
-        // A thicker border on the active tab, so it stands out without
-        // relying on color. The Grayscale theme has no accent color.
+        // The active tab gets a thicker border, so the user can pick it out
+        // without color. This matters in the Grayscale theme, which has no
+        // accent color.
         border.width: isActiveTab ? 2 : 1
 
         GlowHalo {
@@ -207,20 +231,23 @@ Rectangle {
             font.weight: Font.DemiBold
         }
 
-        // The sweep's progress, in real counts from each site. This is what
-        // the page shows instead of a spinner.
+        // This label shows how the sweep is going, with real job counts from
+        // each site. The page shows this label instead of a spinner.
         Text {
             id: sweepProgressLabel
             anchors.verticalCenter: parent.verticalCenter
-            // Anchored to the title, not placed at a fixed distance, so it
-            // stays in place when the font or the title changes.
+            // The label's left edge is anchored to the title's right edge,
+            // not set at a fixed position. So if the font or the title text
+            // changes, the label moves with the title and never covers it.
             anchors.left: discoveriesTitle.right
             anchors.leftMargin: 20
             anchors.right: addOneJobButton.left
             anchors.rightMargin: 20
-            // While sweeping, the running counts. Afterward, anything that
-            // went wrong is shown before the summary, because a site that
-            // failed is what the user most needs to know about.
+            // While a sweep runs, the label shows the running counts. After
+            // the sweep, the label shows the trouble and notice lines from
+            // the last sweep. If there are none, it shows the summary. The
+            // trouble lines take the place of the summary, because a site
+            // that failed is what the user most needs to know about.
             text: {
                 const listViewModel = discoveriesPage.discoveredJobListViewModel
                 if (listViewModel.sweepIsRunning) {
@@ -265,8 +292,9 @@ Rectangle {
             }
         }
 
-        // Add one job by hand. It sits next to Scout now, because these are
-        // the two ways jobs get onto this page.
+        // The button for adding one job by hand. It is placed next to the
+        // Scout now button, because these two buttons are the two ways jobs
+        // get onto this page.
         //
         // When the form is closed, the button says "Add a job". Pressing it
         // goes to the Manual Add tab, and the form opens there. When the form
@@ -378,8 +406,8 @@ Rectangle {
         anchors.topMargin: 14
         spacing: 10
 
-        // The ranked list comes first, because it answers "what should I look
-        // at first?"
+        // Top Prospects comes first. Its list is ranked best match first, so
+        // it answers "what should I look at first?"
         DiscoveryTabButton {
             labelText: "Top Prospects"
             isActiveTab: discoveriesPage.showingTopProspects
@@ -387,7 +415,7 @@ Rectangle {
         }
 
         // Manual Add comes second, ahead of every site. These are jobs the
-        // user went and got, so they must always be easy to find.
+        // user found and added by hand, so they must always be easy to find.
         DiscoveryTabButton {
             labelText: "Manual Add"
             isActiveTab: discoveriesPage.showingManualAdd
@@ -408,11 +436,16 @@ Rectangle {
             }
         }
 
-        // The jobs the location filter holds back, from every site. It is
-        // last in the row because it looks different from the other tabs:
-        // gold, because it holds jobs the user does not see anywhere else.
-        // The tab shows only while the user has named a place. With no place
-        // named, no job is held back, so the tab would always be empty.
+        // The Outside your area tab. It lists jobs from every site that are
+        // outside the places the user said they would work. The location
+        // filter hides these jobs from the other tabs. The tab is gold, not
+        // the usual color, because the user does not see these jobs anywhere
+        // else. It is last in the row because it looks different from the
+        // other tabs.
+        //
+        // The tab shows only when the user has named at least one place. If
+        // no place is named, the filter hides no jobs, and the tab would
+        // always be empty.
         DiscoveryTabButton {
             visible: discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
             labelText: "Outside your area ("
@@ -442,10 +475,13 @@ Rectangle {
         onShowTheJobJustAddedRequested: discoveriesPage.showTheJobJustAdded()
     }
 
-    // How many jobs the location filter is holding back, and a button to see
-    // them. It is a full bar, not a line of small print, because the app is
-    // hiding jobs and the user must not miss that. Missed, it looks like a
-    // sweep that found nothing.
+    // A bar that says how many jobs the location filter is hiding. Its
+    // "Show me" button opens the Outside your area tab. On that tab, the bar
+    // says so instead, and its button goes back to Top Prospects.
+    //
+    // It is a full bar, not a line of small print, because the app is hiding
+    // jobs and the user must not miss that. If the user missed it, the page
+    // would look like the sweep found nothing.
     Rectangle {
         id: outsideSearchAreaBar
 
@@ -461,8 +497,9 @@ Rectangle {
             discoveriesPage.discoveredJobListViewModel.jobCountOutsideSearchArea
         readonly property bool showingOutside: discoveriesPage.showingOutsideSearchArea
 
-        // Never on the Manual Add tab. That list ignores the location filter,
-        // so a bar saying jobs are held back would be wrong there.
+        // The bar never shows on the Manual Add tab. The Manual Add list does
+        // not use the location filter, so a bar that says jobs are hidden
+        // would be wrong there.
         visible: discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
                  && !discoveriesPage.showingManualAdd
                  && (heldBackCount > 0 || showingOutside)
@@ -547,7 +584,7 @@ Rectangle {
     }
 
     // ------------------------------------------------------------------
-    // The rows
+    // The list of jobs, one row per job
     // ------------------------------------------------------------------
     ListView {
         id: discoveredJobListView
@@ -650,12 +687,15 @@ Rectangle {
             radius: 8
             color: discoveredJobRowMouseArea.containsMouse
                 ? JobCrushTheme.cardBackgroundColor : JobCrushTheme.panelBackgroundColor
-            // The outline color says one of four things, in this order:
-            //  - the job the user just added, so they can find it at a glance,
-            //  - a job the user added that no board had, so the posting is
-            //    incomplete and the user should fill in the rest,
-            //  - a job gone from the company's own board,
-            //  - anything else, with the ordinary thin line.
+            // The row's outline shows one of four cases. If more than one
+            // case is true, the first one in this list decides the color:
+            //  1. This is the job the user just added and asked to see. The
+            //     outline helps them find it at a glance.
+            //  2. The user added this job and no job board had it. The
+            //     posting is incomplete, and the user should fill in the rest.
+            //  3. The company's own job board no longer lists this job.
+            //  4. None of the above. The row gets the normal thin line.
+            // Cases 1 to 3 use a 2-pixel outline. Case 4 uses 1 pixel.
             border.color: discoveredJobRow.isTheJobJustAdded
                 ? JobCrushTheme.callToActionColor
                 : (discoveredJobRow.isManualAllTheWay
@@ -667,9 +707,11 @@ Rectangle {
                            || discoveredJobRow.isManualAllTheWay
                            || discoveredJobRow.postingSeemsGone) ? 2 : 1
 
-            // The right-hand column of the row: the score, and the CRUSH
-            // button under it. The text on the left stops at this column.
-            // Without it, the summary line ran under the CRUSH button.
+            // An empty item that marks the right-hand column of the row. The
+            // match score badge and the CRUSH button under it are anchored to
+            // this column. The text column on the left ends at this column's
+            // left edge. Before this column existed, the summary line ran
+            // under the CRUSH button.
             Item {
                 id: rowRightLane
                 anchors.right: parent.right
@@ -680,14 +722,20 @@ Rectangle {
                 implicitHeight: matchScoreBadge.height + 8 + crushButton.height
             }
 
-            // The score badge. Shown only once there is a search profile to
-            // score against. Without one, every job would show 0.
+            // The match score badge. The score says how well this job fits
+            // the user's search profile, from 0 to 100, so it is shown as a
+            // percent, like "46%". The percent sign tells the user the number
+            // is a score and not a count or a job number.
+            //
+            // The badge shows only when the user has a search profile. Without
+            // a profile there is nothing to score against, and every job would
+            // show 0%.
             Rectangle {
                 id: matchScoreBadge
                 visible: discoveriesPage.discoveredJobListViewModel.canRankProspects
                 anchors.right: rowRightLane.right
                 anchors.top: rowRightLane.top
-                width: 46
+                width: Math.max(46, matchScoreText.implicitWidth + 16)
                 height: 26
                 radius: 6
                 color: "transparent"
@@ -699,8 +747,9 @@ Rectangle {
                            : JobCrushTheme.hairlineBorderColor)
 
                 Text {
+                    id: matchScoreText
                     anchors.centerIn: parent
-                    text: discoveredJobRow.matchScore
+                    text: discoveredJobRow.matchScore + "%"
                     color: discoveredJobRow.matchStrength === "strong"
                         ? JobCrushTheme.positiveColor
                         : (discoveredJobRow.matchStrength === "fair"
@@ -721,7 +770,8 @@ Rectangle {
                 anchors.topMargin: 12
                 spacing: 4
 
-                // Text.PlainText on every Text that shows a job board's words.
+                // Every Text below that shows words from a job board sets
+                // textFormat to Text.PlainText.
                 //
                 // Qt's default is AutoText, which shows a string as rich text
                 // when it looks like markup. That would let a job board decide
@@ -758,8 +808,9 @@ Rectangle {
                     elide: Text.ElideRight
                 }
 
-                // For a job the user added, what happened when they added it.
-                // There are two cases, and the row says which one it is.
+                // This line shows only for a job the user added by hand. It
+                // says which of two things happened: no job board had the
+                // job, or Job Crush found the posting on a named site.
                 Text {
                     width: parent.width
                     visible: discoveredJobRow.wasAddedByHand
@@ -789,8 +840,9 @@ Rectangle {
                     elide: Text.ElideRight
                 }
 
-                // The company's own board stopped listing this job. Shown in
-                // the same amber as the card on the board.
+                // This line shows when the company's own job board no longer
+                // lists this job. It uses the same amber color as this job's
+                // card on the user's board (the Job Pipelines page).
                 Text {
                     width: parent.width
                     visible: discoveredJobRow.postingSeemsGone
@@ -826,8 +878,8 @@ Rectangle {
                 }
             }
 
-            // CRUSH puts the job on the board. It is on the row, so the user
-            // can act while looking at the job.
+            // CRUSH puts the job on the user's board. The button is on the
+            // row, so the user can act while looking at the job.
             Rectangle {
                 id: crushButton
 
@@ -880,17 +932,17 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                // Opens the posting on the site that published it. Job Crush
-                // links to the employer's posting and never shows it as its
-                // own.
+                // Clicking the row opens the posting in the web browser, on
+                // the site that published it. Job Crush links to the posting
+                // and never shows the posting's content as its own.
                 onClicked: discoveriesPage.discoveredJobListViewModel
                     .openJobPostingInBrowser(discoveredJobRow.index)
             }
         }
     }
 
-    // Always shown while there are rows below the bottom of the list, so the
-    // user can see how much more there is.
+    // The scroll bar shows whenever the list is too long to fit, so the user
+    // can see how much more there is.
     VerticalScrollBar {
         anchors.top: discoveredJobListView.top
         anchors.bottom: discoveredJobListView.bottom
@@ -963,16 +1015,18 @@ Rectangle {
         border.color: JobCrushTheme.hairlineBorderColor
         border.width: 1
 
-        // The rows are being prepared on the background thread. The card says
-        // that, instead of "nothing found", until they arrive.
+        // True while the viewmodel builds the rows on a background thread.
+        // While it is true, the card says "Getting these jobs ready…" and not
+        // "Nothing found yet".
         readonly property bool rowsAreLoading:
             discoveriesPage.discoveredJobListViewModel.rowsAreLoading
         readonly property bool noSitesTicked:
             discoveriesPage.jobSourceRosterViewModel.enabledJobSourceTabs.length === 0
         readonly property bool noProfileYet:
             !discoveriesPage.discoveredJobListViewModel.canRankProspects
-        // Jobs were found, but every one is outside the places the user named.
-        // "Nothing found" would be wrong here.
+        // True when this list is empty but the location filter is hiding at
+        // least one job. Then "Nothing found yet" would be wrong, because
+        // jobs were found.
         readonly property bool everythingFilteredOut:
             !noSitesTicked
             && discoveriesPage.discoveredJobListViewModel.searchAreaIsNarrowed
