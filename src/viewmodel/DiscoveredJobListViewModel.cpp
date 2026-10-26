@@ -15,8 +15,10 @@
 
 namespace {
 
-// A date the user types is stored at noon on that day. The comment in
-// addJobFromFilledForm says why.
+// A date the user types, such as the date a job was posted, is stored at
+// noon on that day. If it were stored at midnight, a time zone change could
+// move it to the day before. Noon is twelve hours from either end of the
+// day, so the date stays the same.
 const QTime timeOfDayForTypedDates(12, 0);
 
 // The names of the two special tabs, Manual Add and Outside your area.

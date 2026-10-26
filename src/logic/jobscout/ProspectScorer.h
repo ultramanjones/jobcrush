@@ -44,8 +44,10 @@ enum class ProspectMatchStrength {
 // screen shows the score to the user as a percent. The score compares the
 // posting with the user's search profile: target job titles, skills, remote
 // only, places, and lowest salary. The Top Prospects and Outside your area
-// tabs sort jobs by this score. ProspectScorer also runs the location filter
-// (see jobPostingIsInsideSearchArea).
+// tabs sort jobs by this score. ProspectScorer also runs the location
+// filter, in jobPostingIsInsideSearchArea. The location filter hides a job
+// from the normal tabs when its location does not match a place the user
+// named.
 //
 // It uses only arithmetic and text matching. It makes no network calls and
 // uses no AI tokens, so it costs nothing to run. It works offline and with

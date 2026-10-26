@@ -335,8 +335,9 @@ Rectangle {
                     if (discoveriesPage.addOneJobPanelIsOpen) {
                         discoveriesPage.addOneJobPanelIsOpen = false
                     } else if (!discoveriesPage.manualAddTabIsShowing) {
-                        // Changing the tab opens the form. See
-                        // onManualAddTabIsShowingChanged above.
+                        // Go to the Manual Add tab. The form opens by
+                        // itself, because the page opens the form whenever
+                        // the Manual Add tab starts to show.
                         discoveriesPage.selectTab(discoveriesPage.manualAddTabSourceName)
                     } else {
                         discoveriesPage.addOneJobPanelIsOpen = true
