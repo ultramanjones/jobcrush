@@ -147,15 +147,29 @@ public:
     void addJobFromFilledForm(const JobPosting &formFields);
 
     // --- Every place a job can be applied to (BACKLOG item 13) ---
-    //
+
+    // How a search for another place to apply ended.
+    enum class OtherPlaceSearchResult {
+        FoundAnotherPlace,              // a new place to apply is on the card
+        NothingElseFound,               // it searched and found nothing new
+        AlreadyOnTheEmployersOwnBoard,  // the saved link is already the best
+        NothingToSearchWith,            // no company name or no job title
+        JobIsNotInTheDatabase,          // no job has that id
+    };
+    Q_ENUM(OtherPlaceSearchResult)
+
     // A job can often be applied to in more than one place. This function
     // first records the place where the job was found. Then it looks for the
     // same job on the employer's own job board (Greenhouse, Lever, Ashby,
     // SmartRecruiters, Workday or Taleo). If the job is there, it ADDS that
     // board as one more place to apply. It never replaces the saved job.
     // It runs when the user presses CRUSH to put a job on the board, and
-    // when the user asks for it on a job card. If nothing is found, the user
-    // is not told and nothing changes, because that is a normal answer.
+    // when the user asks for it on a job card. Every ending is reported with
+    // lookingElsewhereFinished, including finding nothing. The user pressed a
+    // button, so the user gets an answer.
+    //
+    // When another place is found, the "gone" mark is cleared. Job Crush just
+    // read the job off a live board, so it is not gone.
     void lookForOtherPlacesToApply(qint64 jobPostingId);
 
     // True while Job Crush is looking for a job the user added by hand.
@@ -219,6 +233,14 @@ signals:
 
     // A new place to apply was found for this job.
     void placesToApplyChanged(qint64 jobPostingId);
+
+    // A search for another place to apply ended. Sent every time, however it
+    // ended, so the screen can always say what happened. boardDisplayName
+    // holds the board that was found and is empty for the endings that found
+    // nothing.
+    void lookingElsewhereFinished(qint64 jobPostingId,
+                                  JobScout::OtherPlaceSearchResult result,
+                                  const QString &boardDisplayName);
 
 private:
     // Returns the client object that talks to the site with this storage

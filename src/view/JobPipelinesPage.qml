@@ -49,7 +49,9 @@ Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 78
+        // Tall enough for the message banner when the message runs to three
+        // lines. Normally 78.
+        height: Math.max(78, lastActionBanner.height + 16)
 
         Row {
             anchors.left: parent.left
@@ -131,12 +133,18 @@ Rectangle {
         // What just happened. Sits up here rather than popping over the board,
         // because the thing the user is looking at IS the board.
         Rectangle {
+            id: lastActionBanner
+
             anchors.right: parent.right
             anchors.rightMargin: 28
             anchors.verticalCenter: parent.verticalCenter
             visible: jobPipelinesPage.jobPipelineBoardViewModel.lastActionText.length > 0
-            width: Math.min(520, lastActionLabel.implicitWidth + 54)
-            height: 36
+            // A fixed width, and the height follows the text. The sentence
+            // wraps and is always readable from start to finish. A cut-off
+            // sentence is worse than no sentence: the user can see that
+            // something happened and cannot read what.
+            width: 520
+            height: Math.max(36, lastActionLabel.implicitHeight + 20)
             radius: 8
             color: JobCrushTheme.panelBackgroundColor
             border.width: 1
@@ -153,7 +161,7 @@ Rectangle {
                 textFormat: Text.PlainText
                 color: JobCrushTheme.secondaryTextColor
                 font.pixelSize: JobCrushTheme.smallFontSize
-                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
             }
 
             Text {

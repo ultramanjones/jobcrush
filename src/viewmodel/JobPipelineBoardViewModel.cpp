@@ -124,6 +124,51 @@ JobPipelineBoardViewModel::JobPipelineBoardViewModel(JobPipelines &pipelines,
         ++boardChangeCounter;
         emit boardChanged();
     });
+
+    // Say what came of "look for this job elsewhere". Every ending gets a
+    // sentence, including the endings that found nothing. Before this, three
+    // of the five endings were silent and the user was left guessing.
+    connect(&scout, &JobScout::lookingElsewhereFinished, this,
+            [this](qint64 jobPostingId, JobScout::OtherPlaceSearchResult result,
+                   const QString &boardDisplayName) {
+        if (jobPostingId != jobPostingIdTheUserAskedAbout) {
+            return; // this search started by itself, so it says nothing
+        }
+        jobPostingIdTheUserAskedAbout = 0;
+        switch (result) {
+        case JobScout::OtherPlaceSearchResult::FoundAnotherPlace:
+            setLastActionText(boardDisplayName.isEmpty()
+                ? QStringLiteral("Found another place to apply. The new link is on "
+                                 "the card.")
+                : QStringLiteral("Found it on %1. The new link is on the card, and "
+                                 "the gone mark is off.").arg(boardDisplayName));
+            return;
+        case JobScout::OtherPlaceSearchResult::NothingElseFound:
+            setLastActionText(QStringLiteral(
+                "Job Crush could not find this job anywhere else. The card still has "
+                "the only link it had."));
+            return;
+        case JobScout::OtherPlaceSearchResult::AlreadyOnTheEmployersOwnBoard:
+            setLastActionText(boardDisplayName.isEmpty()
+                ? QStringLiteral("The link on this card already points at the "
+                                 "employer's own posting, so there is nowhere better "
+                                 "to look.")
+                : QStringLiteral("The link on this card already points at the job on "
+                                 "%1, so there is nowhere better to look.")
+                      .arg(boardDisplayName));
+            return;
+        case JobScout::OtherPlaceSearchResult::NothingToSearchWith:
+            setLastActionText(QStringLiteral(
+                "This card has no company name or no job title, so there was nothing "
+                "to search with."));
+            return;
+        case JobScout::OtherPlaceSearchResult::JobIsNotInTheDatabase:
+            setLastActionText(QStringLiteral(
+                "Job Crush could not read this job out of its own database, so "
+                "nothing was searched."));
+            return;
+        }
+    });
 }
 
 int JobPipelineBoardViewModel::boardRevision() const
@@ -188,14 +233,19 @@ void JobPipelineBoardViewModel::lookForOtherPlacesToApply(qint64 jobApplicationI
 {
     for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
         if (targetedJob.campaign.jobApplicationId == jobApplicationId) {
+            // Remember the job and say what is starting BEFORE starting it.
+            // Some endings come back at once, and they have to be free to
+            // write over this line.
+            jobPostingIdTheUserAskedAbout = targetedJob.posting.jobPostingId;
+            setLastActionText(QStringLiteral("Looking for this job on %1's own board.")
+                                  .arg(targetedJob.posting.companyName));
             scout.lookForOtherPlacesToApply(targetedJob.posting.jobPostingId);
-            setLastActionText(QStringLiteral(
-                "Looking for %1 on %2's own board. If it is there, a new link shows on "
-                "the card.").arg(targetedJob.posting.positionTitle,
-                                 targetedJob.posting.companyName));
             return;
         }
     }
+    jobPostingIdTheUserAskedAbout = 0;
+    setLastActionText(QStringLiteral(
+        "That card is not on the board any more, so Job Crush did not search."));
     qWarning().noquote() << QStringLiteral(
         "JobPipelineBoardViewModel::lookForOtherPlacesToApply: job application %1 is "
         "not on the board").arg(jobApplicationId);

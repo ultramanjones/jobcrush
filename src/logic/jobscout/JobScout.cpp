@@ -659,10 +659,16 @@ void JobScout::lookForOtherPlacesToApply(qint64 jobPostingId)
         qWarning().noquote() << QStringLiteral(
             "JobScout::lookForOtherPlacesToApply: no job posting has id %1")
                 .arg(jobPostingId);
+        emit lookingElsewhereFinished(jobPostingId,
+                                      OtherPlaceSearchResult::JobIsNotInTheDatabase,
+                                      QString());
         return;
     }
     if (jobPosting.companyName.trimmed().isEmpty()
             || jobPosting.positionTitle.trimmed().isEmpty()) {
+        emit lookingElsewhereFinished(jobPostingId,
+                                      OtherPlaceSearchResult::NothingToSearchWith,
+                                      QString());
         return; // nothing to search with
     }
 
@@ -677,6 +683,9 @@ void JobScout::lookForOtherPlacesToApply(qint64 jobPostingId)
     // board, there is nothing better to find. Stop here and send no
     // requests.
     if (AtsBoardDetector().identify(jobPosting.sourceUrl).namesOneJob()) {
+        emit lookingElsewhereFinished(
+            jobPostingId, OtherPlaceSearchResult::AlreadyOnTheEmployersOwnBoard,
+            AtsBoardName::displayNameFor(jobPosting.postingSource));
         return;
     }
 
@@ -692,22 +701,37 @@ void JobScout::lookForOtherPlacesToApply(qint64 jobPostingId)
         resolverReply->deleteLater();
         if (foundPostings.isEmpty() || foundPostings.first().sourceUrl.isEmpty()
                 || foundPostings.first().sourceUrl == jobPosting.sourceUrl) {
+            emit lookingElsewhereFinished(jobPostingId,
+                                          OtherPlaceSearchResult::NothingElseFound,
+                                          QString());
             return;
         }
         const JobPosting &employersOwnPosting = foundPostings.first();
         rememberRouteToThisJob(jobPostingId, employersOwnPosting.postingSource,
                                employersOwnPosting.externalSourceId,
                                employersOwnPosting.sourceUrl);
+
+        // The job was just read off a live board, so any "gone" mark on it is
+        // wrong. Clear it. An invalid timestamp is how the mark is cleared.
+        jobPostingRepository.updatePostingGoneSince(jobPostingId, QDateTime());
+
         emit placesToApplyChanged(jobPostingId);
+        emit lookingElsewhereFinished(
+            jobPostingId, OtherPlaceSearchResult::FoundAnotherPlace,
+            AtsBoardName::displayNameFor(employersOwnPosting.postingSource));
     });
-    // Finding nothing is a normal answer here, so the user is not told. The
-    // reason is still logged, in case a board has stopped answering.
+    // Finding nothing is a normal answer, but the user asked a question and
+    // has to get an answer. The reason is logged too, in case a board has
+    // stopped answering.
     connect(resolverReply, &JobScoutReply::failed, this,
-            [resolverReply, jobPostingId](const QString &whyItFailed) {
+            [this, resolverReply, jobPostingId](const QString &whyItFailed) {
         resolverReply->deleteLater();
         qInfo().noquote() << QStringLiteral(
             "JobScout::lookForOtherPlacesToApply: no other place found for job "
             "posting %1 — %2").arg(jobPostingId).arg(whyItFailed);
+        emit lookingElsewhereFinished(jobPostingId,
+                                      OtherPlaceSearchResult::NothingElseFound,
+                                      QString());
     });
 }
 

@@ -141,4 +141,10 @@ private:
     JobScout &scout;
     int boardChangeCounter = 0;
     QString lastActionSentence;
+
+    // The job the user asked about with "look for this job elsewhere". Only
+    // that search reports on screen. The same search also runs by itself when
+    // a job is crushed, and that one says nothing, because the user did not
+    // ask for it. Zero means the user has not asked.
+    qint64 jobPostingIdTheUserAskedAbout = 0;
 };
