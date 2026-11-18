@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -135,12 +136,21 @@ signals:
 private:
     void setLastActionText(const QString &text);
 
+    // Fills jobsThatCannotBeChecked. Asking the checker costs one database
+    // read per card, so it is done once when the board loads, not once per
+    // card every time the board is drawn. The board is drawn on every drag.
+    void workOutWhichJobsCannotBeChecked();
+
     JobPipelines &board;
     PostingStillListedChecker &postingChecker;
     ActiveJobsFolder &activeJobs;
     JobScout &scout;
     int boardChangeCounter = 0;
     QString lastActionSentence;
+
+    // Job posting id to "Job Crush has no link it can check for this job".
+    // Worked out when the board loads. See workOutWhichJobsCannotBeChecked.
+    QHash<qint64, bool> jobsThatCannotBeChecked;
 
     // The job the user asked about with "look for this job elsewhere". Only
     // that search reports on screen. The same search also runs by itself when

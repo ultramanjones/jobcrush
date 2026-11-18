@@ -524,7 +524,7 @@ Rectangle {
         //
         // Being told a job is "in Discoveries" does not tell the user where
         // it is. The list can hold a thousand rows ranked by score. So the
-        // sentence comes with a Show me button that goes to the row.
+        // sentence comes with a "Show the job" button that goes to the row.
         Item {
             width: parent.width
             visible: statusSentence.text.length > 0
@@ -552,7 +552,7 @@ Rectangle {
                 // goes nowhere would only confuse the user.
                 visible: !addOneJobPanel.isBusy
                          && addOneJobPanel.discoveredJobListViewModel.hasSomewhereToJumpTo
-                labelText: "Show me"
+                labelText: "Show the job"
                 onPressed: addOneJobPanel.showTheJobJustAddedRequested()
             }
         }

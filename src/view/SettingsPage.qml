@@ -644,10 +644,10 @@ Rectangle {
                             // The pattern /^[aeiou]/ is true when the name
                             // starts with a lowercase vowel. Provider names
                             // are always lowercase here.
-                            text: "Where do I get "
+                            text: "Where to get "
                                   + (/^[aeiou]/.test(settingsPage.newKeyProviderKindName) ? "an " : "a ")
                                   + settingsPage.newKeyProviderKindName
-                                  + " key?  <a href=\"open\">Open the official page</a>"
+                                  + " key.  <a href=\"open\">Open the official page</a>"
                             // StyledText, not RichText. Text.linkColor is
                             // ignored under RichText — Qt draws the link in
                             // its own hard blue instead, which is a color
@@ -1248,7 +1248,7 @@ Rectangle {
 
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: "AI apps may work my board"
+                                    text: "Let AI apps work your board"
                                     color: JobCrushTheme.primaryTextColor
                                     font.pixelSize: JobCrushTheme.bodyFontSize
                                 }

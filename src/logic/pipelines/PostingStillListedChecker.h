@@ -55,6 +55,12 @@ public:
     // check, what was found. Empty before the first check.
     QString checkStatusText() const;
 
+    // True when Job Crush has at least one link for this job that it can
+    // check. False when it has none. The card uses this to say so. A card
+    // that cannot be checked looks exactly like a card that was checked and
+    // found still listed, and the user cannot tell them apart.
+    bool canCheckThisJob(const TargetedJob &targetedJob) const;
+
 signals:
     void checkStatusChanged();
 

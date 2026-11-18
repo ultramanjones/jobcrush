@@ -24,6 +24,44 @@ Rectangle {
     // column, because a drag starts in one column and ends in another.
     property int draggingJobApplicationId: -1
 
+    // A small button on a card, as wide as its own words. These used to be
+    // underlined text. People click buttons, not words: the underlined text
+    // did not read as something to press.
+    component CardButton: Rectangle {
+        id: cardButton
+
+        property string labelText: ""
+        property color edgeColor: JobCrushTheme.noticeTextColor
+
+        signal pressed
+
+        width: cardButtonLabel.implicitWidth + 20
+        height: 26
+        radius: 6
+        color: cardButtonMouseArea.containsMouse ? cardButton.edgeColor : "transparent"
+        border.width: 1
+        border.color: cardButton.edgeColor
+
+        Text {
+            id: cardButtonLabel
+            anchors.centerIn: parent
+            text: cardButton.labelText
+            textFormat: Text.PlainText
+            color: cardButtonMouseArea.containsMouse
+                ? JobCrushTheme.onAccentTextColor : cardButton.edgeColor
+            font.pixelSize: JobCrushTheme.smallFontSize
+            font.weight: Font.DemiBold
+        }
+
+        MouseArea {
+            id: cardButtonMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: cardButton.pressed()
+        }
+    }
+
     readonly property list<string> stageNames:
         jobPipelineBoardViewModel ? jobPipelineBoardViewModel.stageNamesInBoardOrder() : []
 
@@ -121,12 +159,15 @@ Rectangle {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: text.length > 0
-                width: Math.min(implicitWidth, 460)
+                // Wraps instead of cutting off. The sentence says how many
+                // jobs are gone, and a number the user cannot read is no
+                // better than no number.
+                width: 460
                 text: jobPipelinesPage.jobPipelineBoardViewModel.stillListedCheckText
                 textFormat: Text.PlainText
                 color: JobCrushTheme.secondaryTextColor
                 font.pixelSize: JobCrushTheme.smallFontSize
-                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
             }
         }
 
@@ -612,55 +653,54 @@ Rectangle {
                                             elide: Text.ElideRight
                                         }
 
-                                        Text {
+                                        // What to do about a job that looks
+                                        // gone. Two buttons, side by side,
+                                        // wrapping to a second row on a narrow
+                                        // card. "Mark this as still open" is
+                                        // the user's word, and their word
+                                        // wins: the amber mark comes off and
+                                        // stays off.
+                                        Flow {
                                             width: parent.width
                                             visible: cardSlot.card.postingSeemsGone
                                                      && targetedJobCard.isOpen
-                                            text: "search the web for it"
-                                            color: searchTheWebMouseArea.containsMouse
-                                                ? JobCrushTheme.accentColor
-                                                : JobCrushTheme.noticeTextColor
-                                            font.pixelSize: JobCrushTheme.smallFontSize
-                                            font.underline: searchTheWebMouseArea.containsMouse
+                                            spacing: 8
+                                            topPadding: 2
+                                            bottomPadding: 2
 
-                                            MouseArea {
-                                                id: searchTheWebMouseArea
-                                                anchors.fill: parent
-                                                anchors.margins: -3
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: jobPipelinesPage
+                                            CardButton {
+                                                labelText: "Search the web for it"
+                                                onPressed: jobPipelinesPage
                                                     .jobPipelineBoardViewModel
                                                     .searchTheWebForJob(
                                                         cardSlot.card.jobApplicationId)
                                             }
-                                        }
 
-                                        // The user checked the job and it is
-                                        // still listed. Their word wins: the
-                                        // amber mark comes off and stays off.
-                                        Text {
-                                            width: parent.width
-                                            visible: cardSlot.card.postingSeemsGone
-                                                     && targetedJobCard.isOpen
-                                            text: "It's still open, I checked"
-                                            color: stillOpenMouseArea.containsMouse
-                                                ? JobCrushTheme.accentColor
-                                                : JobCrushTheme.noticeTextColor
-                                            font.pixelSize: JobCrushTheme.smallFontSize
-                                            font.underline: stillOpenMouseArea.containsMouse
-
-                                            MouseArea {
-                                                id: stillOpenMouseArea
-                                                anchors.fill: parent
-                                                anchors.margins: -3
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: jobPipelinesPage
+                                            CardButton {
+                                                labelText: "Mark this as still open"
+                                                onPressed: jobPipelinesPage
                                                     .jobPipelineBoardViewModel
                                                     .userSaysJobIsStillOpen(
                                                         cardSlot.card.jobApplicationId)
                                             }
+                                        }
+
+                                        // Job Crush has no link for this job
+                                        // that it can check. The user has to
+                                        // check it themselves, so the card
+                                        // says so. Without this line the card
+                                        // looks the same as a card that was
+                                        // checked and found still listed.
+                                        Text {
+                                            width: parent.width
+                                            visible: cardSlot.card.cannotBeChecked
+                                                     && targetedJobCard.isOpen
+                                            text: "Job Crush can't check this one. The "
+                                                  + "link isn't to a job board it can read."
+                                            textFormat: Text.PlainText
+                                            color: JobCrushTheme.mutedTextColor
+                                            font.pixelSize: JobCrushTheme.smallFontSize
+                                            wrapMode: Text.WordWrap
                                         }
 
                                         // Shown on an open card once the user

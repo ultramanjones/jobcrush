@@ -679,7 +679,7 @@ Rectangle {
                     Text {
                         id: rereadDocumentsLabel
                         anchors.centerIn: parent
-                        text: "Read my documents again"
+                        text: "Read the documents again"
                         color: JobCrushTheme.onAccentTextColor
                         font.pixelSize: JobCrushTheme.smallFontSize
                         font.weight: Font.DemiBold

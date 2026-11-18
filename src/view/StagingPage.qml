@@ -310,7 +310,7 @@ Rectangle {
                     Repeater {
                         model: [
                             { label: "Draft the cover letter", action: "coverLetter" },
-                            { label: "Tailor my resume",       action: "resume" },
+                            { label: "Tailor the resume",      action: "resume" },
                             { label: "Work out the follow-up", action: "followUp" },
                             { label: "Read the posting again", action: "posting" },
                             { label: "Score the fit",          action: "fit" }
@@ -973,7 +973,7 @@ Rectangle {
                     Text {
                         id: markSentLabel
                         anchors.centerIn: parent
-                        text: "I've sent it"
+                        text: "Mark it as sent"
                         color: markSentMouseArea.containsMouse
                             ? JobCrushTheme.onAccentTextColor : JobCrushTheme.positiveColor
                         font.pixelSize: JobCrushTheme.bodyFontSize

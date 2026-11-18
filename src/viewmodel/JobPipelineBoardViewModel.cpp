@@ -121,9 +121,12 @@ JobPipelineBoardViewModel::JobPipelineBoardViewModel(JobPipelines &pipelines,
             this, &JobPipelineBoardViewModel::stillListedCheckChanged);
 
     connect(&board, &JobPipelines::boardChanged, this, [this]() {
+        workOutWhichJobsCannotBeChecked();
         ++boardChangeCounter;
         emit boardChanged();
     });
+
+    workOutWhichJobsCannotBeChecked();
 
     // Say what came of "look for this job elsewhere". Every ending gets a
     // sentence, including the endings that found nothing. Before this, three
@@ -270,6 +273,15 @@ QString JobPipelineBoardViewModel::lastActionText() const
     return lastActionSentence;
 }
 
+void JobPipelineBoardViewModel::workOutWhichJobsCannotBeChecked()
+{
+    jobsThatCannotBeChecked.clear();
+    for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
+        jobsThatCannotBeChecked.insert(targetedJob.posting.jobPostingId,
+                                       !postingChecker.canCheckThisJob(targetedJob));
+    }
+}
+
 void JobPipelineBoardViewModel::setLastActionText(const QString &text)
 {
     if (lastActionSentence == text) {
@@ -375,6 +387,14 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
                                          "else.")
                               .arg(shortDateTextFor(goneSince))
                         : QString());
+
+        // Job Crush can only ask a job board it can read. A card whose only
+        // links go to LinkedIn, to Indeed, to the company's own careers page,
+        // or to a whole job board instead of one job cannot be checked at
+        // all. Say so on the card. Without this line that card looks exactly
+        // like a card that was checked and found still listed.
+        card.insert(QStringLiteral("cannotBeChecked"),
+                    jobsThatCannotBeChecked.value(targetedJob.posting.jobPostingId, false));
 
         // The user checked the job themselves and said it is still open.
         const QDateTime userSaysOpenSince = targetedJob.posting.userSaysStillOpenTimestamp;

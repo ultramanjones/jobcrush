@@ -53,7 +53,7 @@ Rectangle {
         discoveredJobListViewModel.activeTabSourceName = tabSourceName
     }
 
-    // After the user adds a job by hand and presses "Show me" in the add
+    // After the user adds a job by hand and presses "Show the job" in the add
     // form, the page draws an outline around that job. The outline stays
     // until highlightFadeTimer's interval runs out. The page finds that job
     // by its row number in the list. Each tab has its own list. Row 7 on one
@@ -564,7 +564,7 @@ Rectangle {
                 id: outsideSearchAreaButtonLabel
                 anchors.centerIn: parent
                 text: outsideSearchAreaBar.showingOutside
-                    ? "Back to my area" : "Show me"
+                    ? "Back to your area" : "Show them"
                 color: JobCrushTheme.onAccentTextColor
                 font.pixelSize: JobCrushTheme.smallFontSize
                 font.weight: Font.DemiBold
@@ -575,8 +575,8 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                // "Show me" goes to the Outside your area tab. "Back to my
-                // area" goes to Top Prospects.
+                // "Show them" goes to the Outside your area tab. "Back to
+                // your area" goes to Top Prospects.
                 onClicked: discoveriesPage.selectTab(
                     outsideSearchAreaBar.showingOutside
                         ? "" : discoveriesPage.outsideSearchAreaTabSourceName)

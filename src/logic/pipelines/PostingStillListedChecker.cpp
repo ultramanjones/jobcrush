@@ -69,6 +69,11 @@ QList<AtsBoardIdentity> PostingStillListedChecker::checkableLinksFor(
     return checkableLinks;
 }
 
+bool PostingStillListedChecker::canCheckThisJob(const TargetedJob &targetedJob) const
+{
+    return !checkableLinksFor(targetedJob).isEmpty();
+}
+
 void PostingStillListedChecker::checkEveryOpenCard()
 {
     if (checkRunning) {

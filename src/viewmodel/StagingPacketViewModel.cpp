@@ -374,7 +374,7 @@ void StagingPacketViewModel::addAPieceOfMyOwn()
     StagedDocument piece;
     piece.jobApplicationId = selectedJobApplicationId;
     piece.documentKind = StagedDocumentKind::Other;
-    piece.titleText = QStringLiteral("My own note");
+    piece.titleText = QStringLiteral("Your own note");
     piece.wasEditedByUser = true;   // the user made it, so nothing overwrites it
     piece.createdTimestamp = QDateTime::currentDateTime();
     piece.lastEditedTimestamp = piece.createdTimestamp;
