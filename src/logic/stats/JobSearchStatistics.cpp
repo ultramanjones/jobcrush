@@ -37,6 +37,7 @@ QString displayNameFor(PipelineStage pipelineStage)
     case PipelineStage::Interview: return QStringLiteral("Interview");
     case PipelineStage::Offer:     return QStringLiteral("Offer");
     case PipelineStage::Closed:    return QStringLiteral("Closed");
+    case PipelineStage::Escaped:   return QStringLiteral("Escaped");
     }
     return QString();
 }
@@ -62,6 +63,9 @@ bool reachedAtLeast(PipelineStage stageOfCampaign, PipelineStage stageAsked)
         case PipelineStage::Interview: return 2;
         case PipelineStage::Offer:     return 3;
         case PipelineStage::Closed:    return 0; // see below
+        // Escaped means the job was never applied to, so it reached no
+        // level past Saved.
+        case PipelineStage::Escaped:   return 0;
         }
         return 0;
     };

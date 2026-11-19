@@ -15,11 +15,11 @@ class PostingStillListedChecker;
 
 // JobPipelineBoardViewModel
 //
-// Serves the board to QML: five columns of cards, and the handful of verbs
+// Serves the board to QML: six columns of cards, and the handful of verbs
 // that move them.
 //
 // Deliberately NOT a QAbstractListModel. Every other list in Job Crush is one,
-// because every other list is one list. A board is five lists. So each column
+// because every other list is one list. A board is six lists. So each column
 // is handed its own cards, instead of one model with a filter role that the
 // view would have to sort out. Columns are small, even in a long job search,
 // so rebuilding a column's list on every change is cheap and always correct.
@@ -74,6 +74,10 @@ public:
     // a card belongs in that column.
     Q_INVOKABLE QString hoverLineForStage(const QString &stageName) const;
 
+    // True for a column that starts folded to a thin strip at the right edge
+    // of the board: Escaped. The user clicks the strip to open it.
+    Q_INVOKABLE bool stageStartsFolded(const QString &stageName) const;
+
     // The cards in one column, in the order the user picked for that column
     // with its sort buttons. Each is a plain object the
     // QML delegate reads by name: jobApplicationId, positionTitle,
@@ -81,8 +85,8 @@ public:
     // isRemoteRole, stageName, notesText, targetedText, appliedText,
     // appliedDateEditText, appliedDateIsEditable, postingSeemsGone,
     // postingGoneText, userSaysStillOpen, userSaysStillOpenText,
-    // postingRoutes (a list of { boardDisplayName, postingUrl }), and
-    // jobFolderPath.
+    // canMoveToEscaped, postingRoutes (a list of { boardDisplayName,
+    // postingUrl }), and jobFolderPath.
     Q_INVOKABLE QVariantList cardsInStage(const QString &stageName) const;
 
     Q_INVOKABLE int countInStage(const QString &stageName) const;

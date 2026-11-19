@@ -92,6 +92,9 @@ private slots:
         QVERIFY(JobQuestFile::readStatus(QStringLiteral("crushed"), stage));
         QCOMPARE(stage, PipelineStage::Saved);
         QVERIFY(!JobQuestFile::readStatus(QStringLiteral("maybe"), stage));
+        QVERIFY(JobQuestFile::readStatus(QStringLiteral("Escaped"), stage));
+        QCOMPARE(stage, PipelineStage::Escaped);
+        QCOMPARE(JobQuestFile::statusWordFor(PipelineStage::Escaped), QStringLiteral("Escaped"));
         QCOMPARE(JobQuestFile::statusWordFor(PipelineStage::Interview),
                  QStringLiteral("Interviewing"));
     }

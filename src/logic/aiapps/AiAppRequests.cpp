@@ -141,7 +141,7 @@ AiAppAnswer AiAppRequests::listJobs(const QJsonObject &arguments) const
     const bool filterByColumn = !columnText.isEmpty();
     if (filterByColumn && !JobQuestFile::readStatus(columnText, wantedStage)) {
         return errorAnswer(QStringLiteral("\"%1\" is not a column. The columns are Saved, "
-                                          "Applied, Interview, Offer and Closed.")
+                                          "Applied, Interview, Offer, Closed and Escaped.")
                                .arg(columnText));
     }
     const QString searchText = argumentText(arguments, QStringLiteral("search"));
@@ -188,7 +188,7 @@ AiAppAnswer AiAppRequests::addJob(const QJsonObject &arguments, const QDate &tod
     // readStatus fills stage only when it can read the column word.
     if (!columnText.isEmpty() && !JobQuestFile::readStatus(columnText, stage)) {
         return errorAnswer(QStringLiteral("\"%1\" is not a column. The columns are Saved, "
-                                          "Applied, Interview, Offer and Closed. Nothing "
+                                          "Applied, Interview, Offer, Closed and Escaped. Nothing "
                                           "was added.").arg(columnText));
     }
 
@@ -322,7 +322,7 @@ AiAppAnswer AiAppRequests::moveJob(const QJsonObject &arguments) const
     PipelineStage stage = PipelineStage::Saved;
     if (!JobQuestFile::readStatus(columnText, stage)) {
         return errorAnswer(QStringLiteral("\"%1\" is not a column. The columns are Saved, "
-                                          "Applied, Interview, Offer and Closed.")
+                                          "Applied, Interview, Offer, Closed and Escaped.")
                                .arg(columnText));
     }
     if (!board.moveToStage(card.campaign.jobApplicationId, stage)) {
@@ -391,6 +391,7 @@ AiAppAnswer AiAppRequests::whatsWaiting(const QDate &today) const
             break;
         case PipelineStage::Offer:
         case PipelineStage::Closed:
+        case PipelineStage::Escaped:
             break;
         }
     }

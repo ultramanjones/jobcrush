@@ -15,6 +15,7 @@ QString stageDisplayNameFor(PipelineStage pipelineStage)
     case PipelineStage::Interview: return QStringLiteral("Interview");
     case PipelineStage::Offer:     return QStringLiteral("Offer");
     case PipelineStage::Closed:    return QStringLiteral("Closed");
+    case PipelineStage::Escaped:   return QStringLiteral("Escaped");
     }
     return QStringLiteral("On the board");
 }

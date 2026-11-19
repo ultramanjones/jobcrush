@@ -271,6 +271,7 @@ bool readStatus(const QString &statusText, PipelineStage &stageRead)
         { QStringLiteral("rejected"),     PipelineStage::Closed },
         { QStringLiteral("withdrawn"),    PipelineStage::Closed },
         { QStringLiteral("declined"),     PipelineStage::Closed },
+        { QStringLiteral("escaped"),      PipelineStage::Escaped },
     };
     // Lowercase, single spaces, and any full stops or exclamation marks at
     // the end taken off, so "Applied." and "APPLIED!" both read as applied.
@@ -292,6 +293,7 @@ QString statusWordFor(PipelineStage pipelineStage)
     case PipelineStage::Interview: return QStringLiteral("Interviewing");
     case PipelineStage::Offer:     return QStringLiteral("Offer");
     case PipelineStage::Closed:    return QStringLiteral("Closed");
+    case PipelineStage::Escaped:   return QStringLiteral("Escaped");
     }
     return QStringLiteral("Crushed");
 }

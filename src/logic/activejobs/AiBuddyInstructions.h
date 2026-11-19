@@ -48,6 +48,7 @@ inline QString instructionsFor(const QString &activeJobsFolderPath)
         "   Interviewing: an interview is scheduled.\n"
         "   Offer: they made me an offer.\n"
         "   Closed: it is over. They said no, I withdrew, or I turned it down.\n"
+        "   Escaped: I never applied, and the posting went away first.\n"
         "5. Save any resume or cover letter you write for a job in that job's "
         "folder.\n"
         "6. When something changes, edit the lines in that job's JobQuest.txt. "

@@ -70,13 +70,14 @@ struct ReadResult {
 // Reads the text of a JobQuest.txt file.
 ReadResult readQuestText(const QString &fileText);
 
-// Reads statusText as a board column. Accepts the five column names and a few
+// Reads statusText as a board column. Accepts the six column names and a few
 // common other words ("Rejected" means Closed, "Interviewing" means
 // Interview). Returns false when the word means nothing to Job Crush.
 bool readStatus(const QString &statusText, PipelineStage &stageRead);
 
 // The word a file uses for a stage. The same words as the board's column
-// headings: Crushed, Applied, Interviewing, Offer, Closed.
+// headings: Crushed, Applied, Interviewing, Offer, Closed and
+// Escaped.
 QString statusWordFor(PipelineStage pipelineStage);
 
 // Reads appliedOnText as a date. 10/14/2026 is read month first, the way the

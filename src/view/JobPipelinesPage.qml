@@ -3,7 +3,8 @@ import JobCrush
 
 // JobPipelinesPage
 //
-// The board. Five columns, and cards you drag between them.
+// The board. Six columns, and cards you drag between them. The last one,
+// Escaped, starts folded to a thin strip at the right edge.
 //
 // The name is plural on purpose. A job search is many leads at once, and
 // each one moves at its own speed. This screen shows the user how many
@@ -109,6 +110,30 @@ Rectangle {
     readonly property list<string> stageNames:
         jobPipelineBoardViewModel ? jobPipelineBoardViewModel.stageNamesInBoardOrder() : []
 
+    // A column that starts folded (Escaped) shows as a thin strip at the
+    // right edge until the user clicks it. This is false while it is
+    // folded. It is not saved, so the column is folded again every time Job
+    // Crush opens.
+    property bool foldedColumnIsOpen: false
+
+    // How wide a folded column's strip is.
+    readonly property int foldedColumnWidth: 40
+
+    // How many columns are folded right now. The other columns share the
+    // room those strips do not use.
+    readonly property int foldedColumnCount: {
+        if (jobPipelinesPage.foldedColumnIsOpen || !jobPipelineBoardViewModel) {
+            return 0
+        }
+        let count = 0
+        for (const stageName of jobPipelinesPage.stageNames) {
+            if (jobPipelineBoardViewModel.stageStartsFolded(stageName)) {
+                ++count
+            }
+        }
+        return count
+    }
+
     // The names of the three sort buttons each column has: "date", "title"
     // and "company". The viewmodel gives the words shown on each one.
     readonly property list<string> sortChoiceNames:
@@ -124,6 +149,7 @@ Rectangle {
         case "interview": return JobCrushTheme.stageInterviewColor
         case "offer":     return JobCrushTheme.stageOfferColor
         case "closed":    return JobCrushTheme.stageClosedColor
+        case "escaped":   return JobCrushTheme.mutedTextColor
         }
         return JobCrushTheme.hairlineBorderColor
     }
@@ -305,10 +331,21 @@ Rectangle {
                         .cardsInStage(stageColumn.stageName)
                 }
 
-                // The row's width, less the gaps between columns, split evenly.
-                width: (boardColumns.width
-                        - (jobPipelinesPage.stageNames.length - 1) * boardColumns.spacing)
-                       / jobPipelinesPage.stageNames.length
+                // True while this column shows only as a thin strip.
+                readonly property bool isFolded:
+                    jobPipelinesPage.jobPipelineBoardViewModel.stageStartsFolded(
+                        stageColumn.stageName)
+                    && !jobPipelinesPage.foldedColumnIsOpen
+
+                // A folded column is a thin strip. Every other column gets an
+                // even share of the row's width, less the gaps between
+                // columns and less the folded strips.
+                width: stageColumn.isFolded
+                    ? jobPipelinesPage.foldedColumnWidth
+                    : (boardColumns.width
+                       - (jobPipelinesPage.stageNames.length - 1) * boardColumns.spacing
+                       - jobPipelinesPage.foldedColumnCount * jobPipelinesPage.foldedColumnWidth)
+                      / (jobPipelinesPage.stageNames.length - jobPipelinesPage.foldedColumnCount)
                 height: boardColumns.height
                 radius: 10
                 color: JobCrushTheme.panelBackgroundColor
@@ -330,6 +367,67 @@ Rectangle {
                 }
 
                 // ---- Column heading ----
+                // ---- The folded strip ----
+                //
+                // While the column is folded, only this shows: an arrow, the
+                // count, and the column's name written sideways. Clicking
+                // anywhere on the strip opens the column. A card can still be
+                // dropped on the strip, because the DropArea at the bottom of
+                // the column covers it.
+                Item {
+                    id: foldedStrip
+                    anchors.fill: parent
+                    visible: stageColumn.isFolded
+
+                    Column {
+                        anchors.top: parent.top
+                        anchors.topMargin: 12
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: 10
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "‹"
+                            color: foldedStripMouseArea.containsMouse
+                                ? JobCrushTheme.primaryTextColor
+                                : JobCrushTheme.secondaryTextColor
+                            font.pixelSize: JobCrushTheme.bodyFontSize + 4
+                            font.weight: Font.DemiBold
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: stageColumn.cardsHere.length
+                            color: JobCrushTheme.secondaryTextColor
+                            font.pixelSize: JobCrushTheme.smallFontSize
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    // The column's name, turned to read from bottom to top.
+                    Text {
+                        id: foldedStripName
+                        anchors.centerIn: parent
+                        rotation: -90
+                        text: jobPipelinesPage.jobPipelineBoardViewModel
+                            .displayLabelForStage(stageColumn.stageName)
+                        color: foldedStripMouseArea.containsMouse
+                            ? JobCrushTheme.primaryTextColor
+                            : JobCrushTheme.secondaryTextColor
+                        font.pixelSize: JobCrushTheme.bodyFontSize
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.2
+                    }
+
+                    MouseArea {
+                        id: foldedStripMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: jobPipelinesPage.foldedColumnIsOpen = true
+                    }
+                }
+
                 Item {
                     id: columnHeading
                     anchors.top: parent.top
@@ -337,6 +435,7 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.margins: 12
                     height: 26
+                    visible: !stageColumn.isFolded
 
                     Rectangle {
                         id: stageStripe
@@ -366,12 +465,40 @@ Rectangle {
                     }
 
                     Text {
-                        anchors.right: parent.right
+                        id: columnCardCount
+                        anchors.right: foldColumnButton.visible
+                            ? foldColumnButton.left : parent.right
+                        anchors.rightMargin: foldColumnButton.visible ? 8 : 0
                         anchors.verticalCenter: parent.verticalCenter
                         text: stageColumn.cardsHere.length
                         color: JobCrushTheme.secondaryTextColor
                         font.pixelSize: JobCrushTheme.smallFontSize
                         font.weight: Font.DemiBold
+                    }
+
+                    // An arrow that folds the column back to its strip. Only
+                    // a column that starts folded has one.
+                    Text {
+                        id: foldColumnButton
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: jobPipelinesPage.jobPipelineBoardViewModel
+                            .stageStartsFolded(stageColumn.stageName)
+                        text: "›"
+                        color: foldColumnMouseArea.containsMouse
+                            ? JobCrushTheme.primaryTextColor
+                            : JobCrushTheme.secondaryTextColor
+                        font.pixelSize: JobCrushTheme.bodyFontSize + 4
+                        font.weight: Font.DemiBold
+
+                        MouseArea {
+                            id: foldColumnMouseArea
+                            anchors.fill: parent
+                            anchors.margins: -6
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: jobPipelinesPage.foldedColumnIsOpen = false
+                        }
                     }
 
                     // Rest the mouse on the heading to see what the column means.
@@ -389,6 +516,7 @@ Rectangle {
                 // column is too narrow for all three.
                 Flow {
                     id: columnSortButtons
+                    visible: !stageColumn.isFolded
                     anchors.top: columnHeading.bottom
                     anchors.topMargin: 4
                     anchors.left: parent.left
@@ -459,6 +587,7 @@ Rectangle {
                     anchors.rightMargin: 8
                     z: 50
                     visible: columnSortButtons.hoveredSortChoiceName !== ""
+                             && !stageColumn.isFolded
                     height: sortHoverText.implicitHeight + 16
                     radius: 6
                     color: JobCrushTheme.appBackgroundColor
@@ -499,7 +628,7 @@ Rectangle {
                     anchors.leftMargin: 8
                     anchors.rightMargin: 8
                     z: 50
-                    visible: columnHeadingHover.hovered
+                    visible: columnHeadingHover.hovered && !stageColumn.isFolded
                     height: columnMeaningText.implicitHeight + 16
                     radius: 6
                     color: JobCrushTheme.appBackgroundColor
@@ -535,6 +664,7 @@ Rectangle {
                     anchors.rightMargin: 14
                     visible: stageColumn.cardsHere.length === 0
                              && !columnHeadingHover.hovered
+                             && !stageColumn.isFolded
                     text: jobPipelinesPage.jobPipelineBoardViewModel
                         .explanationForStage(stageColumn.stageName)
                     color: JobCrushTheme.mutedTextColor
@@ -545,6 +675,7 @@ Rectangle {
                 // ---- The cards ----
                 Flickable {
                     id: columnScroller
+                    visible: !stageColumn.isFolded
                     anchors.top: columnSortButtons.bottom
                     anchors.topMargin: 8
                     anchors.left: parent.left
@@ -833,7 +964,7 @@ Rectangle {
                                         }
 
                                         // What to do about a job that looks
-                                        // gone. Two buttons, side by side,
+                                        // gone. Two or three buttons, side by side,
                                         // wrapping to a second row on a narrow
                                         // card. "Mark this as still open" is
                                         // the user's word, and their word
@@ -861,6 +992,19 @@ Rectangle {
                                                     .jobPipelineBoardViewModel
                                                     .userSaysJobIsStillOpen(
                                                         cardSlot.card.jobApplicationId)
+                                            }
+
+                                            // Only on a card still in Crushed.
+                                            // The job was never applied to,
+                                            // and now the posting is gone.
+                                            CardButton {
+                                                visible: cardSlot.card.canMoveToEscaped
+                                                labelText: "Move to Escaped"
+                                                onPressed: jobPipelinesPage
+                                                    .jobPipelineBoardViewModel
+                                                    .moveCardToStage(
+                                                        cardSlot.card.jobApplicationId,
+                                                        "escaped")
                                             }
                                         }
 
@@ -1203,7 +1347,7 @@ Rectangle {
 
             Text {
                 width: parent.width
-                text: "Five columns instead of a list because a job search is several "
+                text: "Columns instead of a list because a job search is several "
                       + "things happening at once, and the point of looking is seeing "
                       + "how many."
                 color: JobCrushTheme.mutedTextColor

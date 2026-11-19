@@ -90,7 +90,8 @@ QList<TargetedJob> JobPipelines::everyOpenTargetedJob() const
 {
     QList<TargetedJob> openTargetedJobs;
     for (const TargetedJob &targetedJob : loadedTargetedJobs) {
-        if (targetedJob.campaign.pipelineStage != PipelineStage::Closed) {
+        if (targetedJob.campaign.pipelineStage != PipelineStage::Closed
+                && targetedJob.campaign.pipelineStage != PipelineStage::Escaped) {
             openTargetedJobs.append(targetedJob);
         }
     }

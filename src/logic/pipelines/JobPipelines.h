@@ -68,8 +68,9 @@ public:
     // failed (the repository logs why).
     bool markStillOpenByUser(qint64 jobApplicationId);
 
-    // Every card that is not in Closed, in the same order. A closed job's
-    // search is over, so pages like Staging leave it out.
+    // Every card that is not in Closed or Escaped, in the same order. The
+    // search for those jobs is over, so pages like Staging leave them out,
+    // and the "are these still open?" check does not ask about them.
     QList<TargetedJob> everyOpenTargetedJob() const;
 
     // Every way of reaching one job. The card shows these so the user picks

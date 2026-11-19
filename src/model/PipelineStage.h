@@ -12,7 +12,8 @@ enum class PipelineStage {
     Applied,    // application packet has been sent by the human
     Interview,  // at least one interview scheduled or completed
     Offer,      // an offer is on the table
-    Closed      // finished: rejected, withdrawn, or declined
+    Closed,     // finished: rejected, withdrawn, or declined
+    Escaped     // never applied to, and the posting went away first
 };
 
 // Converts a PipelineStage to the exact text stored in the database.
@@ -24,6 +25,7 @@ inline QString pipelineStageToStorageText(PipelineStage stage)
     case PipelineStage::Interview: return QStringLiteral("interview");
     case PipelineStage::Offer:     return QStringLiteral("offer");
     case PipelineStage::Closed:    return QStringLiteral("closed");
+    case PipelineStage::Escaped:   return QStringLiteral("escaped");
     }
     return QStringLiteral("saved"); // never reached; stops a "no return value" warning
 }
@@ -37,5 +39,6 @@ inline PipelineStage pipelineStageFromStorageText(const QString &storageText)
     if (storageText == QStringLiteral("interview")) return PipelineStage::Interview;
     if (storageText == QStringLiteral("offer"))     return PipelineStage::Offer;
     if (storageText == QStringLiteral("closed"))    return PipelineStage::Closed;
+    if (storageText == QStringLiteral("escaped"))   return PipelineStage::Escaped;
     return PipelineStage::Saved;
 }

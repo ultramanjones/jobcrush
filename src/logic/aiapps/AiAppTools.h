@@ -69,7 +69,8 @@ inline QJsonObject columnProperty(const QString &description)
                                                     QStringLiteral("Applied"),
                                                     QStringLiteral("Interviewing"),
                                                     QStringLiteral("Offer"),
-                                                    QStringLiteral("Closed") } },
+                                                    QStringLiteral("Closed"),
+                                                    QStringLiteral("Escaped") } },
              { QStringLiteral("description"), description } };
 }
 
@@ -107,7 +108,8 @@ inline QJsonArray toolDefinitions()
     const QString columnMeanings = QStringLiteral(
         "Saved: the user wants the job but has not applied. Applied: the "
         "application was sent. Interview: an interview is scheduled. Offer: they "
-        "made an offer. Closed: it is over (rejected, withdrawn, or turned down).");
+        "made an offer. Closed: it is over (rejected, withdrawn, or turned down). "
+        "Escaped: the user never applied, and the posting went away first.");
 
     return {
         tool(ListJobs,
@@ -180,8 +182,9 @@ inline QJsonObject initializeResult(const QString &requestedVersion)
           QJsonObject { { QStringLiteral("name"), ServerName },
                         { QStringLiteral("version"), ServerVersion } } },
         { QStringLiteral("instructions"),
-          QStringLiteral("Job Crush tracks the user's job search on a board with five "
-                         "columns: Crushed, Applied, Interviewing, Offer, Closed. Keep it up to "
+          QStringLiteral("Job Crush tracks the user's job search on a board with six "
+                         "columns: Crushed, Applied, Interviewing, Offer, Closed, Escaped. Keep "
+                         "it up to "
                          "date whenever you help the user find or apply to a job.") },
     };
 }

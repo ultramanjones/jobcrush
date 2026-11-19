@@ -242,6 +242,23 @@ private slots:
         QVERIFY(qAbs(stamped.secsTo(QDateTime::currentDateTime())) < 60);
     }
 
+    void statusEscapedMovesTheCardWithNoAppliedDate()
+    {
+        const QString filePath = questPath(QStringLiteral("Acme - Qt Dev"));
+        writeTextFile(filePath, QStringLiteral("Company: Acme\nTitle: Qt Dev\nStatus: Crushed\n"));
+        activeJobs->startKeepingTheBoardAndFolderTheSame();
+
+        // The outside AI changes one line: Status: Escaped.
+        writeTextFile(filePath, QStringLiteral("Company: Acme\nTitle: Qt Dev\nStatus: Escaped\n"));
+        markChangedLater(filePath, 5);
+        activeJobs->lookAtEveryJobFolder();
+
+        QCOMPARE(onlyCard().campaign.pipelineStage, PipelineStage::Escaped);
+        QVERIFY(!onlyCard().campaign.appliedTimestamp.isValid());
+        // Escaped jobs are not open, so Staging and the still-listed check skip them.
+        QVERIFY(board->everyOpenTargetedJob().isEmpty());
+    }
+
     void closeFromDiscoveriesKeepsARecordOnTheBoard()
     {
         JobPosting posting;

@@ -25,6 +25,7 @@ const PipelineStage stagesInBoardOrder[] = {
     PipelineStage::Interview,
     PipelineStage::Offer,
     PipelineStage::Closed,
+    PipelineStage::Escaped,
 };
 
 // What each column is called on screen. Not the storage word: "saved" is how
@@ -37,6 +38,7 @@ QString displayLabelFor(PipelineStage pipelineStage)
     case PipelineStage::Interview: return QStringLiteral("Interviewing");
     case PipelineStage::Offer:     return QStringLiteral("Offer");
     case PipelineStage::Closed:    return QStringLiteral("Closed");
+    case PipelineStage::Escaped:   return QStringLiteral("Escaped");
     }
     return QString();
 }
@@ -61,6 +63,9 @@ QString explanationFor(PipelineStage pipelineStage)
     case PipelineStage::Closed:
         return QStringLiteral("Finished — turned down, withdrawn, or you said no. "
                               "Keeping them is how you see how far you got.");
+    case PipelineStage::Escaped:
+        return QStringLiteral("Jobs you never applied to, because the posting went "
+                              "away first.");
     }
     return QString();
 }
@@ -85,6 +90,8 @@ QString hoverLineFor(PipelineStage pipelineStage)
     case PipelineStage::Closed:
         return QStringLiteral("It is over: they said no, you withdrew, or you turned "
                               "it down.");
+    case PipelineStage::Escaped:
+        return QStringLiteral("You never applied, and the posting went away first.");
     }
     return QString();
 }
@@ -323,6 +330,13 @@ QString JobPipelineBoardViewModel::hoverLineForStage(const QString &stageName) c
     return hoverLineFor(pipelineStageFromStorageText(stageName));
 }
 
+bool JobPipelineBoardViewModel::stageStartsFolded(const QString &stageName) const
+{
+    // Escaped is a record, not work to do. It is folded so it takes almost
+    // no room on the board.
+    return pipelineStageFromStorageText(stageName) == PipelineStage::Escaped;
+}
+
 // The name to show for the board a route is on. A board is either a job SITE
 // Job Crush sweeps or an employer BOARD it reads. They are listed in two
 // different places, so both are asked. Asking only one would put a lowercase
@@ -396,6 +410,11 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
                               .arg(shortDateTextFor(goneSince))
                         : QString());
 
+        // A card still in Crushed whose posting is gone was never applied
+        // to, and now it cannot be. It gets a "Move to Escaped" button.
+        card.insert(QStringLiteral("canMoveToEscaped"),
+                    wantedStage == PipelineStage::Saved && goneSince.isValid());
+
         // Job Crush can only ask a job board it can read. A card whose only
         // links go to LinkedIn, to Indeed, to the company's own careers page,
         // or to a whole job board instead of one job cannot be checked at
@@ -415,10 +434,12 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
                         : QString());
 
         // The date can be set on any card that has left Crushed, and on any
-        // card that already has a date. A card still in Crushed with no date
-        // has not been sent, and a date box there would invite a mistake.
+        // card that already has a date. A card in Crushed or Escaped with no
+        // date has not been sent, and a date box there would invite a
+        // mistake.
         card.insert(QStringLiteral("appliedDateIsEditable"),
-                    wantedStage != PipelineStage::Saved
+                    (wantedStage != PipelineStage::Saved
+                     && wantedStage != PipelineStage::Escaped)
                         || targetedJob.campaign.appliedTimestamp.isValid());
 
         // Every way of reaching this job, ready for the card to list. The
