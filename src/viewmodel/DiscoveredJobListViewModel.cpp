@@ -8,6 +8,7 @@
 
 #include "../logic/jobscout/AtsBoardIdentity.h"
 #include "../logic/jobscout/ClearanceDetector.h"
+#include "../logic/jobscout/DiscoveryWorker.h"
 #include "../logic/jobscout/JobPostingTextCleanup.h"
 #include "../logic/jobscout/JobSourceDescriptor.h"
 #include "../logic/pipelines/JobPipelines.h"
@@ -112,9 +113,10 @@ DiscoveredJobListViewModel::DiscoveredJobListViewModel(JobScout &jobScout,
 
     // The user can put a job on the board, or take it off, from this page or
     // from the Job Pipelines page. Either way, JobPipelines sends
-    // boardChanged. Then every row has to update its CRUSH button.
+    // boardChanged. Then every row has to update its CRUSH button, and Top
+    // Prospects drops the jobs that are now on the board.
     connect(&jobPipelines, &JobPipelines::boardChanged,
-            this, &DiscoveredJobListViewModel::refreshIsOnTheBoardForEveryRow);
+            this, &DiscoveredJobListViewModel::whenTheBoardChanges);
 
     requestRowsForTheActiveTab();
 }
@@ -450,6 +452,80 @@ QString DiscoveredJobListViewModel::crushJobPostingAt(int rowIndex)
     jobPipelines.crushJobPosting(displayedJobPostings.at(rowIndex).jobPosting.jobPostingId,
                                  crushOutcomeText);
     return crushOutcomeText;
+}
+
+QString DiscoveredJobListViewModel::closeJobPostingAt(int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
+        return QStringLiteral("That job isn't on this list any more. Nothing was closed.");
+    }
+    // If this works, JobPipelines sends boardChanged, and whenTheBoardChanges
+    // takes the row off Top Prospects.
+    QString closeOutcomeText;
+    jobPipelines.closeJobPosting(displayedJobPostings.at(rowIndex).jobPosting.jobPostingId,
+                                 closeOutcomeText);
+    return closeOutcomeText;
+}
+
+QString DiscoveredJobListViewModel::removeJobPostingAt(int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= displayedJobPostings.count()) {
+        return QStringLiteral("That job isn't on this list any more. Nothing was removed.");
+    }
+    const JobPosting jobPosting = displayedJobPostings.at(rowIndex).jobPosting;
+    if (!discoveryJobScout.removeFromDiscoveries(jobPosting.jobPostingId)) {
+        return QStringLiteral("Job Crush couldn't remove %1 at %2. It is still here. "
+                              "Try again.")
+            .arg(jobPosting.positionTitle, jobPosting.companyName);
+    }
+
+    takeOffRowsFor({ crossSourceIdentityOf(jobPosting) });
+
+    if (jobPipelines.jobPostingIsOnTheBoard(jobPosting.jobPostingId)) {
+        return QStringLiteral("Removed %1 at %2 from Discoveries. Its card is still on "
+                              "your board.")
+            .arg(jobPosting.positionTitle, jobPosting.companyName);
+    }
+    return QStringLiteral("Removed %1 at %2. It won't come back.")
+        .arg(jobPosting.positionTitle, jobPosting.companyName);
+}
+
+bool DiscoveredJobListViewModel::showingATabThatLeavesOffBoardJobs() const
+{
+    return storedActiveTabSourceName.isEmpty()
+           || storedActiveTabSourceName == outsideSearchAreaTabName;
+}
+
+void DiscoveredJobListViewModel::whenTheBoardChanges()
+{
+    if (showingATabThatLeavesOffBoardJobs()) {
+        QSet<QString> boardJobIdentities;
+        for (const TargetedJob &targetedJob : jobPipelines.everyTargetedJob()) {
+            boardJobIdentities.insert(crossSourceIdentityOf(targetedJob.posting));
+        }
+        takeOffRowsFor(boardJobIdentities);
+    }
+    refreshIsOnTheBoardForEveryRow();
+}
+
+void DiscoveredJobListViewModel::takeOffRowsFor(const QSet<QString> &jobIdentities)
+{
+    // From the bottom up, so taking off one row does not change the row
+    // numbers of the rows still to be checked.
+    bool tookOffAnyRow = false;
+    for (int rowIndex = displayedJobPostings.count() - 1; rowIndex >= 0; --rowIndex) {
+        if (!jobIdentities.contains(
+                crossSourceIdentityOf(displayedJobPostings.at(rowIndex).jobPosting))) {
+            continue;
+        }
+        beginRemoveRows(QModelIndex(), rowIndex, rowIndex);
+        displayedJobPostings.removeAt(rowIndex);
+        endRemoveRows();
+        tookOffAnyRow = true;
+    }
+    if (tookOffAnyRow) {
+        emit discoveredJobsChanged();
+    }
 }
 
 int DiscoveredJobListViewModel::rowOfMostRecentlyHandAddedJob() const

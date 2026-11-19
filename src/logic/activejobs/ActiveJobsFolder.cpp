@@ -432,10 +432,23 @@ void ActiveJobsFolder::followChangedFile(ActiveJobFolder &link, const JobQuest &
 
     // The applied date. A file with no Applied on line has not said anything
     // about the date, so the card keeps the one it has.
+    //
+    // The move above may have just stamped the card with the date and time
+    // right now. If the file names that same day, then the card keeps its
+    // stamp. Writing the file's date over it would replace the real time with
+    // noon. So the file's date is checked against the card as it is now.
+    QDate cardAppliedDayNow;
+    for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
+        if (targetedJob.campaign.jobApplicationId == jobApplicationId) {
+            cardAppliedDayNow = appliedDayOf(targetedJob.campaign.appliedTimestamp);
+            break;
+        }
+    }
     QDate fileAppliedDate;
     if (JobQuestFile::readAppliedOn(quest.appliedOnText, QDate::currentDate(),
                                     fileAppliedDate)
-            && fileAppliedDate != appliedDayOf(link.syncedAppliedTimestamp)) {
+            && fileAppliedDate != appliedDayOf(link.syncedAppliedTimestamp)
+            && fileAppliedDate != cardAppliedDayNow) {
         QString reasonText;
         if (board.setAppliedDate(jobApplicationId, fileAppliedDate, reasonText)) {
             link.syncedAppliedTimestamp = QDateTime(fileAppliedDate, QTime(appliedHourOfDay, 0));
@@ -680,7 +693,7 @@ void ActiveJobsFolder::writeBoardChangesToFolders()
         const QString newText = JobQuestFile::questTextWithBoardChanges(
             existingText,
             JobQuestFile::statusWordFor(targetedJob.campaign.pipelineStage),
-            JobQuestFile::appliedOnTextFor(appliedDayOf(targetedJob.campaign.appliedTimestamp)),
+            JobQuestFile::appliedOnTextFor(targetedJob.campaign.appliedTimestamp),
             targetedJob.campaign.notesText);
 
         QDateTime fileChangedTimestamp;
@@ -725,8 +738,7 @@ void ActiveJobsFolder::makeJobFolderForCard(const TargetedJob &targetedJob)
     quest.postingLink = targetedJob.posting.sourceUrl;
     quest.foundOn = targetedJob.posting.postingSource;
     quest.statusText = JobQuestFile::statusWordFor(targetedJob.campaign.pipelineStage);
-    quest.appliedOnText = JobQuestFile::appliedOnTextFor(
-        appliedDayOf(targetedJob.campaign.appliedTimestamp));
+    quest.appliedOnText = JobQuestFile::appliedOnTextFor(targetedJob.campaign.appliedTimestamp);
     quest.payText = targetedJob.posting.salaryText;
     quest.whereText = targetedJob.posting.locationText;
     quest.notesText = targetedJob.campaign.notesText;

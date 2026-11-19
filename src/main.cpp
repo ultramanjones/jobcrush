@@ -220,7 +220,8 @@ int main(int argc, char *argv[])
     JobPipelineBoardViewModel jobPipelineBoardViewModel(jobPipelines,
                                                         postingStillListedChecker,
                                                         activeJobsFolder,
-                                                        jobScout);
+                                                        jobScout,
+                                                        appPreferences);
     ActiveJobsFolderViewModel activeJobsFolderViewModel(activeJobsFolder);
     AiAppConnectionViewModel aiAppConnectionViewModel(aiAppConnection);
     JobSourceRosterViewModel jobSourceRosterViewModel(jobSourceRoster);

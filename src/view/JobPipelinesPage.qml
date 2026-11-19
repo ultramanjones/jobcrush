@@ -62,8 +62,57 @@ Rectangle {
         }
     }
 
+    // A sort button at the top of a column. As wide as its own words. The
+    // button whose sort the column is using now is filled in with the
+    // column's color. The others are only outlined.
+    component SortButton: Rectangle {
+        id: sortButton
+
+        property string labelText: ""
+        property bool isInUse: false
+        property color stageColor: JobCrushTheme.hairlineBorderColor
+
+        // True while the mouse is on this button. The column reads it to show
+        // the button's hover line.
+        readonly property bool isHovered: sortButtonMouseArea.containsMouse
+
+        signal pressed
+
+        width: sortButtonLabel.implicitWidth + 14
+        height: 22
+        radius: 5
+        color: sortButton.isInUse ? sortButton.stageColor : "transparent"
+        border.width: 1
+        border.color: sortButton.isInUse || sortButtonMouseArea.containsMouse
+            ? sortButton.stageColor : JobCrushTheme.hairlineBorderColor
+
+        Text {
+            id: sortButtonLabel
+            anchors.centerIn: parent
+            text: sortButton.labelText
+            textFormat: Text.PlainText
+            color: sortButton.isInUse ? JobCrushTheme.onAccentTextColor
+                                      : JobCrushTheme.secondaryTextColor
+            font.pixelSize: JobCrushTheme.smallFontSize
+            font.weight: sortButton.isInUse ? Font.DemiBold : Font.Normal
+        }
+
+        MouseArea {
+            id: sortButtonMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: sortButton.pressed()
+        }
+    }
+
     readonly property list<string> stageNames:
         jobPipelineBoardViewModel ? jobPipelineBoardViewModel.stageNamesInBoardOrder() : []
+
+    // The names of the three sort buttons each column has: "date", "title"
+    // and "company". The viewmodel gives the words shown on each one.
+    readonly property list<string> sortChoiceNames:
+        jobPipelineBoardViewModel ? jobPipelineBoardViewModel.sortChoiceNames() : []
 
     // Each stage has its own color in the theme. The names here are the
     // storage names from the viewmodel, not the words shown on screen. An
@@ -331,6 +380,115 @@ Rectangle {
                     }
                 }
 
+                // ---- Sort buttons ----
+                //
+                // Three buttons under the heading: date, title and company.
+                // Clicking one sorts this column by it. Clicking the one in
+                // use flips the order. The viewmodel saves the choice for
+                // this column. A Flow puts a button on a second line if the
+                // column is too narrow for all three.
+                Flow {
+                    id: columnSortButtons
+                    anchors.top: columnHeading.bottom
+                    anchors.topMargin: 4
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    spacing: 6
+
+                    // The name of the sort button the mouse is on: "date",
+                    // "title" or "company". Empty when the mouse is on none
+                    // of them.
+                    property string hoveredSortChoiceName: ""
+
+                    Repeater {
+                        model: jobPipelinesPage.sortChoiceNames
+
+                        delegate: SortButton {
+                            id: columnSortButton
+
+                            required property string modelData
+                            readonly property string sortChoiceName: modelData
+
+                            // Reading boardRevision makes the words and the
+                            // fill update the moment the user clicks.
+                            labelText: {
+                                jobPipelinesPage.jobPipelineBoardViewModel.boardRevision
+                                return jobPipelinesPage.jobPipelineBoardViewModel
+                                    .sortButtonText(stageColumn.stageName,
+                                                    columnSortButton.sortChoiceName)
+                            }
+                            isInUse: {
+                                jobPipelinesPage.jobPipelineBoardViewModel.boardRevision
+                                return jobPipelinesPage.jobPipelineBoardViewModel
+                                    .sortChoiceIsInUse(stageColumn.stageName,
+                                                       columnSortButton.sortChoiceName)
+                            }
+                            stageColor: jobPipelinesPage.stageColorFor(stageColumn.stageName)
+
+                            onPressed: jobPipelinesPage.jobPipelineBoardViewModel
+                                .chooseSortFor(stageColumn.stageName,
+                                               columnSortButton.sortChoiceName)
+
+                            // When the mouse comes onto this button, the
+                            // column remembers this button's name, and the
+                            // box below shows its hover line. When the mouse
+                            // leaves, the name is cleared, unless the mouse
+                            // has already moved onto another button.
+                            onIsHoveredChanged: {
+                                if (columnSortButton.isHovered) {
+                                    columnSortButtons.hoveredSortChoiceName =
+                                        columnSortButton.sortChoiceName
+                                } else if (columnSortButtons.hoveredSortChoiceName
+                                           === columnSortButton.sortChoiceName) {
+                                    columnSortButtons.hoveredSortChoiceName = ""
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ---- What a sort button does, while the mouse is on it ----
+                Rectangle {
+                    anchors.top: columnSortButtons.bottom
+                    anchors.topMargin: 4
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    z: 50
+                    visible: columnSortButtons.hoveredSortChoiceName !== ""
+                    height: sortHoverText.implicitHeight + 16
+                    radius: 6
+                    color: JobCrushTheme.appBackgroundColor
+                    border.width: 1
+                    border.color: jobPipelinesPage.stageColorFor(stageColumn.stageName)
+
+                    Text {
+                        id: sortHoverText
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        // Reading boardRevision makes the line update when
+                        // a click changes what the button does.
+                        text: {
+                            jobPipelinesPage.jobPipelineBoardViewModel.boardRevision
+                            if (columnSortButtons.hoveredSortChoiceName === "") {
+                                return ""
+                            }
+                            return jobPipelinesPage.jobPipelineBoardViewModel
+                                .sortButtonHoverText(stageColumn.stageName,
+                                                     columnSortButtons.hoveredSortChoiceName)
+                        }
+                        color: JobCrushTheme.primaryTextColor
+                        font.pixelSize: JobCrushTheme.smallFontSize
+                        wrapMode: Text.Wrap
+                    }
+                }
+
                 // ---- What the column means, while the mouse is on the heading ----
                 Rectangle {
                     id: columnMeaningBox
@@ -369,7 +527,7 @@ Rectangle {
                 // what belongs here. Hidden while the hover box is open,
                 // because the two would overlap.
                 Text {
-                    anchors.top: columnHeading.bottom
+                    anchors.top: columnSortButtons.bottom
                     anchors.topMargin: 10
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -387,7 +545,7 @@ Rectangle {
                 // ---- The cards ----
                 Flickable {
                     id: columnScroller
-                    anchors.top: columnHeading.bottom
+                    anchors.top: columnSortButtons.bottom
                     anchors.topMargin: 8
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -399,18 +557,22 @@ Rectangle {
                     contentHeight: cardStack.implicitHeight
                     clip: true
 
-                    // One notch of the mouse wheel scrolls 240 pixels, which
-                    // is faster than Qt's default.
+                    // One notch of the mouse wheel scrolls about one card.
                     //
-                    // The steps: turn the wheel's raw count into notches,
-                    // turn notches into pixels, move the view up or down by
-                    // that much, and keep the result between the top and
-                    // the bottom of the cards. A column whose cards all fit
-                    // does not scroll.
+                    // The steps: find the height of the shortest card in the
+                    // column, plus the gap under it. That is one step. An
+                    // open card is taller than a shut one, so the shortest
+                    // card is used, which is a shut card. Then turn the
+                    // wheel's raw count into notches, turn notches into
+                    // steps, move the view up or down by that much, and keep
+                    // the result between the top and the bottom of the
+                    // cards. A column whose cards all fit does not scroll.
                     WheelHandler {
                         // Qt reports one wheel notch as 120 units of angleDelta.
                         readonly property real angleDeltaPerNotch: 120
-                        readonly property real pixelsPerNotch: 240
+
+                        // Used only if the column has no card to measure.
+                        readonly property real fallbackPixelsPerNotch: 120
 
                         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                         onWheel: function(wheelEvent) {
@@ -419,6 +581,23 @@ Rectangle {
                             if (scrollableDistance <= 0) {
                                 return
                             }
+
+                            // cardStack.children holds the card slots and the
+                            // Repeater. The Repeater has no height, so it is
+                            // skipped by the height check.
+                            let shortestCardHeight = 0
+                            for (let childIndex = 0; childIndex < cardStack.children.length;
+                                 ++childIndex) {
+                                const cardHeight = cardStack.children[childIndex].height
+                                if (cardHeight > 0 && (shortestCardHeight === 0
+                                                       || cardHeight < shortestCardHeight)) {
+                                    shortestCardHeight = cardHeight
+                                }
+                            }
+                            const pixelsPerNotch = shortestCardHeight > 0
+                                ? shortestCardHeight + cardStack.spacing
+                                : fallbackPixelsPerNotch
+
                             columnScroller.contentY = Math.max(0, Math.min(
                                 scrollableDistance,
                                 columnScroller.contentY

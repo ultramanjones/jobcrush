@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QObject>
 #include <QString>
 
@@ -10,8 +11,9 @@
 // Settings apply at once: every setter saves right away and sends its
 // changed signal. There is no Apply or OK button anywhere.
 //
-// It holds the board color theme, the packet export format and folder, and
-// the Moonlight tips settings.
+// It holds the board color theme, the packet export format and folder, the
+// Moonlight tips settings, and the sort order the user picked for each
+// column of the board.
 class AppPreferences : public QObject {
     Q_OBJECT
 public:
@@ -47,6 +49,13 @@ public:
     bool moonlightTipsAreTurnedOn() const;
     void setMoonlightTipsAreTurnedOn(bool turnedOn);
 
+    // The sort order the user picked for one column of the board, saved as
+    // text such as "date descending". stageName is the column's storage
+    // name, such as "applied". Empty text means the user has not picked one.
+    // BoardColumnOrder makes and reads this text. This class only saves it.
+    QString boardColumnOrderText(const QString &stageName) const;
+    void setBoardColumnOrderText(const QString &stageName, const QString &orderText);
+
 signals:
     void boardThemeNameChanged();
     void moonlightHintsDismissedChanged();
@@ -61,4 +70,10 @@ private:
     QString selectedExportFolderPath;
     bool hintsDismissed = false;
     bool tipsTurnedOn = true;
+
+    // Column storage name to saved sort order text. Filled the first time
+    // each column is asked for. The board asks on every redraw, and a read
+    // from QSettings can go to the Windows registry, so the answer is kept
+    // here after the first read.
+    mutable QHash<QString, QString> columnOrderTexts;
 };

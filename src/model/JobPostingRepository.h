@@ -91,6 +91,18 @@ public:
     // discoveredTimestamp is still the time of the sweep.
     QList<JobPosting> loadHandAddedJobPostings();
 
+    // Saves the current time as the time the user pressed Remove on this job
+    // in Discoveries. The row is kept. Discoveries reads the mark and never
+    // shows the job again.
+    bool markRemovedByUser(qint64 jobPostingId);
+
+    // Returns every job the user removed from Discoveries.
+    QList<JobPosting> loadRemovedJobPostings();
+
+    // Returns every job posting that has a card on the board, in any column.
+    // This reads the jobApplication table too, because a card is a row there.
+    QList<JobPosting> loadJobPostingsOnTheBoard();
+
     // Returns every job posting that has an id from its source, meaning
     // externalSourceId is not empty. These are the jobs JobScout found, from
     // all sources together. A job JobScout found with no id is left out. The

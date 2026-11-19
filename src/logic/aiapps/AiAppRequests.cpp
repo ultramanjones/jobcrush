@@ -203,13 +203,12 @@ AiAppAnswer AiAppRequests::addJob(const QJsonObject &arguments, const QDate &tod
         return errorAnswer(QStringLiteral("The applied date is in the future. Nothing was "
                                           "added."));
     }
-    // An applied date with no column means the job was applied to. Any
-    // column past Saved means it was applied to, so a missing date is today.
+    // An applied date with no column means the job was applied to. If the
+    // column is past Saved and no date was given, then the date stays empty
+    // here, and the board stamps the date and time right now when it puts
+    // the card up.
     if (columnText.isEmpty() && appliedDate.isValid()) {
         stage = PipelineStage::Applied;
-    }
-    if (stage != PipelineStage::Saved && !appliedDate.isValid()) {
-        appliedDate = today;
     }
 
     // The same job may already be known: found by a sweep, added by hand, or
@@ -271,13 +270,15 @@ AiAppAnswer AiAppRequests::markApplied(const QJsonObject &arguments, const QDate
     }
 
     const QString appliedText = argumentText(arguments, QStringLiteral("applied_on"));
-    QDate appliedDate = today;
+    QDate appliedDate;
     if (!appliedText.isEmpty() && !readDate(appliedText, today, appliedDate)) {
         return errorAnswer(QStringLiteral("Job Crush could not read \"%1\" as a date. Write "
                                           "it like 10/14/2026. Nothing changed.")
                                .arg(appliedText));
     }
 
+    // The move stamps the date and time right now, if the card has no
+    // applied date yet. JobPipelines::moveToStage does that for every move.
     const qint64 cardId = card.campaign.jobApplicationId;
     if (card.campaign.pipelineStage != PipelineStage::Applied
             && !board.moveToStage(cardId, PipelineStage::Applied)) {
@@ -286,14 +287,28 @@ AiAppAnswer AiAppRequests::markApplied(const QJsonObject &arguments, const QDate
         return errorAnswer(QStringLiteral("Job Crush could not move the job. Nothing "
                                           "changed."));
     }
-    QString reasonText;
-    if (!board.setAppliedDate(cardId, appliedDate, reasonText)) {
-        return errorAnswer(reasonText);
+
+    // If the AI app gave a date, then that date replaces the stamp. The AI
+    // may be recording an application the user sent days ago.
+    if (appliedDate.isValid()) {
+        QString reasonText;
+        if (!board.setAppliedDate(cardId, appliedDate, reasonText)) {
+            return errorAnswer(reasonText);
+        }
+    }
+
+    // Read the card back, so the answer names the date the board really kept.
+    QDateTime appliedTimestampKept;
+    for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
+        if (targetedJob.campaign.jobApplicationId == cardId) {
+            appliedTimestampKept = targetedJob.campaign.appliedTimestamp;
+            break;
+        }
     }
     return { QStringLiteral("#%1, %2 at %3, is now Applied, sent %4.")
                  .arg(cardId)
                  .arg(card.posting.positionTitle, card.posting.companyName,
-                      JobQuestFile::appliedOnTextFor(appliedDate)),
+                      JobQuestFile::appliedOnTextFor(appliedTimestampKept)),
              false };
 }
 

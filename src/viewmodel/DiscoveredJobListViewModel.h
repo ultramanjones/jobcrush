@@ -2,6 +2,7 @@
 
 #include <QAbstractListModel>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QVariantMap>
 
@@ -253,6 +254,18 @@ public:
     // For example, it can say the job is already on the board.
     Q_INVOKABLE QString crushJobPostingAt(int rowIndex);
 
+    // The Close button calls this. It puts the job in row rowIndex in the
+    // Closed column of the board, so the board keeps a record of it. If the
+    // job is already on the board, its card moves to Closed. It returns a
+    // sentence that says what happened.
+    Q_INVOKABLE QString closeJobPostingAt(int rowIndex);
+
+    // The Remove button calls this. It takes the job in row rowIndex out of
+    // Discoveries for good, with no record kept on the board. Every copy of
+    // the same job from another site goes too. It returns a sentence that
+    // says what happened.
+    Q_INVOKABLE QString removeJobPostingAt(int rowIndex);
+
     // Returns the row number of the job the user added by hand most
     // recently, in the rows of the tab showing now. Returns -1 if that job is
     // not in these rows. After "Show me", the page scrolls to that row and
@@ -299,6 +312,18 @@ private:
     // whenRowsAreReady receives them.
     void requestRowsForTheActiveTab();
 
+    // Takes off the list every row whose job matches one of jobIdentities.
+    // The identities are made by crossSourceIdentityOf (company plus title).
+    // Rows are taken off one at a time, so the list keeps its place on
+    // screen instead of reloading and jumping back to the top.
+    void takeOffRowsFor(const QSet<QString> &jobIdentities);
+
+    // Called when the board changes. Top Prospects and Outside your area
+    // leave off jobs that are on the board, so a job that just went on the
+    // board is taken off those two tabs. Every other tab updates its
+    // "on your board" labels.
+    void whenTheBoardChanges();
+
     // Receives rows from JobScout. Each request for rows has a number. This
     // shows the rows only if they answer the newest request. If a newer
     // request was made since, these rows are out of date, so this ignores
@@ -309,6 +334,9 @@ private:
     // gone on or off the board. This tells the page to read
     // IsOnTheBoardRole again for every row.
     void refreshIsOnTheBoardForEveryRow();
+
+    // True while Top Prospects or Outside your area is showing.
+    bool showingATabThatLeavesOffBoardJobs() const;
 
     JobScout &discoveryJobScout;
     JobPipelines &jobPipelines;

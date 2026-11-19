@@ -8,6 +8,10 @@
 
 namespace {
 
+// The hour a typed or file-read applied date is stored at.
+// JobPipelines::setAppliedDate says why it is noon.
+constexpr int appliedHourOfDayForTypedDates = 12;
+
 // The fields, as the reader knows them.
 enum class QuestField {
     CreatedBy, Company, Title, Link, FoundOn, Status, AppliedOn, Pay, Where, Notes,
@@ -294,7 +298,20 @@ QString statusWordFor(PipelineStage pipelineStage)
 
 bool readAppliedOn(const QString &appliedOnText, const QDate &today, QDate &dateRead)
 {
-    return TypedDateReader::readTypedDate(appliedOnText, today, monthFirstLocale(), dateRead);
+    // The line may end with a time of day, as Job Crush writes it:
+    // "11/18/2026 6:41 PM". The time is taken off before the date is read.
+    // The pattern finds, at the very end of the text:
+    //   - one or more spaces,
+    //   - the word "at", if it is there,
+    //   - one or two digits, a colon, two digits,
+    //   - a colon and two more digits for seconds, if they are there,
+    //   - AM or PM, with or without dots, if it is there.
+    static const QRegularExpression timeAtTheEnd(
+        QStringLiteral("\\s+(at\\s+)?\\d{1,2}:\\d{2}(:\\d{2})?\\s*([ap]\\.?\\s*m\\.?)?$"),
+        QRegularExpression::CaseInsensitiveOption);
+    QString dateText = appliedOnText.trimmed();
+    dateText.remove(timeAtTheEnd);
+    return TypedDateReader::readTypedDate(dateText, today, monthFirstLocale(), dateRead);
 }
 
 QString appliedOnTextFor(const QDate &appliedDate)
@@ -303,6 +320,22 @@ QString appliedOnTextFor(const QDate &appliedDate)
         return QString();
     }
     return appliedDate.toString(QStringLiteral("MM/dd/yyyy"));
+}
+
+QString appliedOnTextFor(const QDateTime &appliedTimestamp)
+{
+    if (!appliedTimestamp.isValid()) {
+        return QString();
+    }
+    // A date the user typed, or a date read from a file, is stored at exactly
+    // noon. That noon is not a real time, so it is not written. Any other
+    // time was stamped by the board at the moment the card moved, so it is
+    // written after the date.
+    if (appliedTimestamp.time() == QTime(appliedHourOfDayForTypedDates, 0)) {
+        return appliedOnTextFor(appliedTimestamp.date());
+    }
+    return appliedOnTextFor(appliedTimestamp.date()) + QLatin1Char(' ')
+           + appliedTimestamp.time().toString(QStringLiteral("h:mm AP"));
 }
 
 QString questTextFor(const JobQuest &quest)

@@ -375,6 +375,16 @@ bool JobCrushDatabase::createSchemaIfMissing()
         return false;
     }
 
+    // When the user pressed Remove on this job in Discoveries. Empty means
+    // they never did. A removed job is kept in the table but never shown in
+    // Discoveries again, so a sweep that finds it again does not bring it
+    // back.
+    if (!addColumnIfMissing(QStringLiteral("jobPosting"),
+                            QStringLiteral("removedByUserTimestamp"),
+                            QStringLiteral("TEXT NOT NULL DEFAULT ''"))) {
+        return false;
+    }
+
     // The same job must never land twice. A board's own id, paired with the
     // board name, is the only identity Job Crush trusts — titles and company
     // names are written by humans and vary between boards.

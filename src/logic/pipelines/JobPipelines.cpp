@@ -13,6 +13,17 @@ namespace {
 // The hour an applied date is stored at. See setAppliedDate for why it is noon.
 constexpr int appliedHourOfDay = 12;
 
+// True for the columns a job only reaches after the user sent the
+// application: Applied, Interview and Offer. A card in one of these columns
+// must have an applied date. Saved means not sent yet. Closed can mean either,
+// because a job can be closed without ever being sent.
+bool stageMeansTheJobWasApplied(PipelineStage pipelineStage)
+{
+    return pipelineStage == PipelineStage::Applied
+           || pipelineStage == PipelineStage::Interview
+           || pipelineStage == PipelineStage::Offer;
+}
+
 } // namespace
 
 JobPipelines::JobPipelines(JobApplicationRepository &applicationRepository,
@@ -174,6 +185,14 @@ qint64 JobPipelines::putOnBoardFromJobFolder(qint64 jobPostingId,
     newCampaign.appliedTimestamp = appliedTimestamp;
     newCampaign.notesText = notesText;
 
+    // If the job goes into Applied, Interview or Offer and the caller gave no
+    // applied date, then the date and time right now are stamped. The callers
+    // try to give a date. This check makes sure no card in those columns is
+    // ever left without one.
+    if (stageMeansTheJobWasApplied(pipelineStage) && !appliedTimestamp.isValid()) {
+        newCampaign.appliedTimestamp = QDateTime::currentDateTime();
+    }
+
     if (!campaignRepository.insertJobApplication(newCampaign)) {
         qWarning().noquote() << QStringLiteral(
             "JobPipelines::putOnBoardFromJobFolder: could not add a card for job posting "
@@ -188,6 +207,49 @@ qint64 JobPipelines::putOnBoardFromJobFolder(qint64 jobPostingId,
         emit jobWasCrushed(newCampaign.jobApplicationId);
     }
     return newCampaign.jobApplicationId;
+}
+
+bool JobPipelines::closeJobPosting(qint64 jobPostingId, QString &reasonText)
+{
+    bool postingFound = false;
+    const JobPosting posting = postingRepository.loadJobPostingById(jobPostingId, postingFound);
+    if (!postingFound) {
+        reasonText = QStringLiteral("That job isn't in Job Crush any more, so there was "
+                                    "nothing to close.");
+        return false;
+    }
+
+    // Already on the board: move its card.
+    for (const TargetedJob &targetedJob : std::as_const(loadedTargetedJobs)) {
+        if (targetedJob.campaign.jobPostingId != jobPostingId) {
+            continue;
+        }
+        if (targetedJob.campaign.pipelineStage == PipelineStage::Closed) {
+            reasonText = QStringLiteral("%1 at %2 is already in Closed on your board.")
+                             .arg(posting.positionTitle, posting.companyName);
+            return false;
+        }
+        if (!moveToStage(targetedJob.campaign.jobApplicationId, PipelineStage::Closed)) {
+            reasonText = QStringLiteral("Job Crush couldn't move %1 at %2 to Closed. "
+                                        "Nothing changed.")
+                             .arg(posting.positionTitle, posting.companyName);
+            return false;
+        }
+        reasonText = QStringLiteral("%1 at %2 moved to Closed on your board.")
+                         .arg(posting.positionTitle, posting.companyName);
+        return true;
+    }
+
+    // Not on the board: make a card straight in Closed.
+    QString putOnBoardReasonText;
+    if (putOnBoardFromJobFolder(jobPostingId, PipelineStage::Closed, QDateTime(), QString(),
+                                putOnBoardReasonText) == 0) {
+        reasonText = putOnBoardReasonText;
+        return false;
+    }
+    reasonText = QStringLiteral("%1 at %2 is in Closed on your board.")
+                     .arg(posting.positionTitle, posting.companyName);
+    return true;
 }
 
 qint64 JobPipelines::jobApplicationIdForPosting(qint64 jobPostingId) const
@@ -206,15 +268,23 @@ bool JobPipelines::moveToStage(qint64 jobApplicationId, PipelineStage newPipelin
         return false; // the repository logs why
     }
 
-    // Arriving at Applied stamps the date, once. "When did I apply?" is the
-    // question every job search fails to answer three weeks later, and the
-    // only moment anyone reliably knows the answer is the moment they drag
-    // the card across.
+    // Arriving at Applied stamps the date and time, once. "When did I apply?"
+    // is the question every job search fails to answer three weeks later, and
+    // the only moment anyone reliably knows the answer is the moment the card
+    // moves.
+    //
+    // Every move goes through this function: a drag on the board, an AI app's
+    // move_job or mark_applied, and a Status line changed in a JobQuest.txt
+    // file. So all three get the stamp.
+    //
+    // Interview and Offer stamp it too, if the card has no date yet. A job
+    // that jumps straight from Crushed to Interview was still applied to, and
+    // the Stats page places every job by its applied date.
     //
     // Dragging back out does NOT clear it. You applied on the 3rd; moving the
     // card somewhere else does not make that untrue, and erasing the date
     // would destroy the one fact the board was keeping for you.
-    if (newPipelineStage == PipelineStage::Applied) {
+    if (stageMeansTheJobWasApplied(newPipelineStage)) {
         for (const TargetedJob &targetedJob : loadedTargetedJobs) {
             if (targetedJob.campaign.jobApplicationId == jobApplicationId
                     && !targetedJob.campaign.appliedTimestamp.isValid()) {

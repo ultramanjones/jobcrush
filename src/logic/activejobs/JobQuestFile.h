@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDate>
+#include <QDateTime>
 #include <QString>
 #include <QStringList>
 
@@ -79,12 +80,19 @@ bool readStatus(const QString &statusText, PipelineStage &stageRead);
 QString statusWordFor(PipelineStage pipelineStage);
 
 // Reads appliedOnText as a date. 10/14/2026 is read month first, the way the
-// instructions given to outside AIs write it. today is passed in so the
-// answer is the same every time it is tested.
+// instructions given to outside AIs write it. A time of day after the date,
+// such as "10/14/2026 6:41 PM", is allowed and ignored. today is passed in so
+// the answer is the same every time it is tested.
 bool readAppliedOn(const QString &appliedOnText, const QDate &today, QDate &dateRead);
 
 // How a date is written into the file: 10/14/2026.
 QString appliedOnTextFor(const QDate &appliedDate);
+
+// How an applied timestamp is written into the file. If the board stamped it
+// when the card moved, then the time is written too: "10/14/2026 6:41 PM".
+// If the user typed the date, then it is stored at noon with no real time,
+// and only the date is written: "10/14/2026".
+QString appliedOnTextFor(const QDateTime &appliedTimestamp);
 
 // A whole new file for a job.
 QString questTextFor(const JobQuest &quest);

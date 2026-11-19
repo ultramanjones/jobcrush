@@ -11,6 +11,10 @@ const QString exportFolderSettingsKey = QStringLiteral("packets/exportFolderPath
 const QString hintsDismissedSettingsKey = QStringLiteral("moonlight/hintsDismissed");
 const QString tipsTurnedOnSettingsKey = QStringLiteral("moonlight/tipsTurnedOn");
 
+// Each board column's sort order is saved under this group, one key per
+// column: "board/columnOrder/applied".
+const QString columnOrderSettingsGroup = QStringLiteral("board/columnOrder/");
+
 // What a preference is when nothing has been saved yet.
 const QString fallbackBoardThemeName = QStringLiteral("classic");
 const QString fallbackDownloadFormat = QStringLiteral("docx");
@@ -124,4 +128,29 @@ void AppPreferences::setMoonlightTipsAreTurnedOn(bool turnedOn)
     QSettings settings;
     settings.setValue(tipsTurnedOnSettingsKey, turnedOn);
     emit moonlightTipsTurnedOnChanged();
+}
+
+QString AppPreferences::boardColumnOrderText(const QString &stageName) const
+{
+    const auto savedText = columnOrderTexts.constFind(stageName);
+    if (savedText != columnOrderTexts.constEnd()) {
+        return savedText.value();
+    }
+    QSettings settings;
+    const QString orderText =
+        settings.value(columnOrderSettingsGroup + stageName, QString()).toString();
+    columnOrderTexts.insert(stageName, orderText);
+    return orderText;
+}
+
+void AppPreferences::setBoardColumnOrderText(const QString &stageName,
+                                             const QString &orderText)
+{
+    if (boardColumnOrderText(stageName) == orderText) {
+        return;
+    }
+    columnOrderTexts.insert(stageName, orderText);
+
+    QSettings settings;
+    settings.setValue(columnOrderSettingsGroup + stageName, orderText);
 }

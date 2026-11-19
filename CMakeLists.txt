@@ -149,6 +149,8 @@ qt_add_executable(jobcrush
     src/logic/prodocs/WordDocumentReader.cpp
     src/logic/pipelines/JobPipelines.h
     src/logic/pipelines/JobPipelines.cpp
+    src/logic/pipelines/BoardColumnOrder.h
+    src/logic/pipelines/BoardColumnOrder.cpp
     src/logic/pipelines/TypedDateReader.h
     src/logic/pipelines/TypedDateReader.cpp
     src/logic/pipelines/PostingGoneConfirmer.h

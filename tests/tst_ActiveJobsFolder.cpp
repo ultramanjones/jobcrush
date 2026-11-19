@@ -11,6 +11,7 @@
 #include "model/JobPostingRepository.h"
 #include "model/PostingSourceRepository.h"
 #include "logic/activejobs/ActiveJobsFolder.h"
+#include "logic/activejobs/JobQuestFile.h"
 #include "logic/aiapps/AiAppRequests.h"
 #include "logic/aiapps/AiAppTools.h"
 #include "logic/pipelines/JobPipelines.h"
@@ -196,6 +197,79 @@ private slots:
         QCOMPARE(onlyCard().campaign.pipelineStage, PipelineStage::Closed);
     }
 
+    void anAiChangingTheStatusToAppliedStampsTheDateAndTime()
+    {
+        const QString filePath = questPath(QStringLiteral("Acme - Qt Dev"));
+        writeTextFile(filePath, QStringLiteral("Company: Acme\nTitle: Qt Dev\nStatus: Crushed\n"));
+        activeJobs->startKeepingTheBoardAndFolderTheSame();
+        QVERIFY(!onlyCard().campaign.appliedTimestamp.isValid());
+
+        // The outside AI moves the job to Applied and gives no date.
+        writeTextFile(filePath, QStringLiteral("Company: Acme\nTitle: Qt Dev\nStatus: Applied\n"));
+        markChangedLater(filePath, 5);
+        const QDateTime beforeTheLook = QDateTime::currentDateTime().addSecs(-1);
+        activeJobs->lookAtEveryJobFolder();
+
+        const QDateTime stamped = onlyCard().campaign.appliedTimestamp;
+        QCOMPARE(onlyCard().campaign.pipelineStage, PipelineStage::Applied);
+        QVERIFY(stamped.isValid());
+        QVERIFY(stamped >= beforeTheLook);
+
+        // The file gets the date and the time written back into it.
+        const QString fileText = readTextFile(filePath);
+        QVERIFY2(fileText.contains(QStringLiteral("Applied on: %1")
+                                       .arg(JobQuestFile::appliedOnTextFor(stamped))),
+                 qPrintable(fileText));
+    }
+
+    void anAiWritingTodaysDateKeepsTheStampedTime()
+    {
+        const QString filePath = questPath(QStringLiteral("Acme - Qt Dev"));
+        writeTextFile(filePath, QStringLiteral("Company: Acme\nTitle: Qt Dev\nStatus: Crushed\n"));
+        activeJobs->startKeepingTheBoardAndFolderTheSame();
+
+        // The AI writes Applied and today's date, with no time.
+        writeTextFile(filePath, QStringLiteral(
+            "Company: Acme\nTitle: Qt Dev\nStatus: Applied\nApplied on: %1\n")
+                .arg(JobQuestFile::appliedOnTextFor(QDate::currentDate())));
+        markChangedLater(filePath, 5);
+        activeJobs->lookAtEveryJobFolder();
+
+        // The move stamped the time. The file's date is the same day, so it
+        // must not replace that time with noon.
+        const QDateTime stamped = onlyCard().campaign.appliedTimestamp;
+        QCOMPARE(stamped.date(), QDate::currentDate());
+        QVERIFY(qAbs(stamped.secsTo(QDateTime::currentDateTime())) < 60);
+    }
+
+    void closeFromDiscoveriesKeepsARecordOnTheBoard()
+    {
+        JobPosting posting;
+        posting.companyName = QStringLiteral("Golf");
+        posting.positionTitle = QStringLiteral("Qt Dev");
+        posting.discoveredTimestamp = QDateTime::currentDateTime();
+        QVERIFY(postingRepository->insertJobPosting(posting));
+
+        // Not on the board yet: a card is made straight in Closed, with no date.
+        QString reasonText;
+        QVERIFY2(board->closeJobPosting(posting.jobPostingId, reasonText),
+                 qPrintable(reasonText));
+        QCOMPARE(onlyCard().campaign.pipelineStage, PipelineStage::Closed);
+        QVERIFY(!onlyCard().campaign.appliedTimestamp.isValid());
+
+        // Closing it again changes nothing and says so.
+        QVERIFY(!board->closeJobPosting(posting.jobPostingId, reasonText));
+        QCOMPARE(board->everyTargetedJob().count(), 1);
+
+        // A card already on the board moves to Closed and keeps its date.
+        const qint64 cardId = onlyCard().campaign.jobApplicationId;
+        QVERIFY(board->moveToStage(cardId, PipelineStage::Applied));
+        const QDateTime appliedTimestamp = onlyCard().campaign.appliedTimestamp;
+        QVERIFY(board->closeJobPosting(posting.jobPostingId, reasonText));
+        QCOMPARE(onlyCard().campaign.pipelineStage, PipelineStage::Closed);
+        QCOMPARE(onlyCard().campaign.appliedTimestamp, appliedTimestamp);
+    }
+
     void aCardCrushedInJobCrushGetsAFolder()
     {
         activeJobs->startKeepingTheBoardAndFolderTheSame();
@@ -351,6 +425,45 @@ private slots:
         QCOMPARE(board->everyTargetedJob().count(), 1);
     }
 
+    void anAiAppMovingAJobPastCrushedStampsTheDate()
+    {
+        activeJobs->startKeepingTheBoardAndFolderTheSame();
+        const AiAppRequests requests(*board, *postingRepository, *activeJobs);
+        const QDate today = QDate::currentDate();
+
+        QVERIFY(!requests.runAction(
+                    AiAppTools::AddJob,
+                    QJsonObject { { QStringLiteral("company"), QStringLiteral("Echo") },
+                                  { QStringLiteral("title"), QStringLiteral("C++ Dev") } },
+                    today).isError);
+        const qint64 cardId = onlyCard().campaign.jobApplicationId;
+        QVERIFY(!onlyCard().campaign.appliedTimestamp.isValid());
+
+        // Straight from Crushed to Interview, with no applied date given.
+        QVERIFY(!requests.runAction(
+                    AiAppTools::MoveJob,
+                    QJsonObject { { QStringLiteral("job_id"), cardId },
+                                  { QStringLiteral("column"), QStringLiteral("Interview") } },
+                    today).isError);
+        QVERIFY(onlyCard().campaign.appliedTimestamp.isValid());
+        QVERIFY(qAbs(onlyCard().campaign.appliedTimestamp.secsTo(
+                    QDateTime::currentDateTime())) < 60);
+
+        // add_job into Applied with no date is stamped right now too.
+        QVERIFY(!requests.runAction(
+                    AiAppTools::AddJob,
+                    QJsonObject { { QStringLiteral("company"), QStringLiteral("Foxtrot") },
+                                  { QStringLiteral("title"), QStringLiteral("Qt Lead") },
+                                  { QStringLiteral("column"), QStringLiteral("Applied") } },
+                    today).isError);
+        for (const TargetedJob &card : board->everyTargetedJob()) {
+            if (card.posting.companyName == QStringLiteral("Foxtrot")) {
+                QVERIFY(qAbs(card.campaign.appliedTimestamp.secsTo(
+                            QDateTime::currentDateTime())) < 60);
+            }
+        }
+    }
+
     void anAiAppMovesMarksAndNotesAJob()
     {
         activeJobs->startKeepingTheBoardAndFolderTheSame();
@@ -381,6 +494,10 @@ private slots:
         const AiAppAnswer waiting =
             requests.runAction(AiAppTools::WhatsWaiting, QJsonObject {}, QDate(2026, 10, 20));
         QVERIFY2(waiting.text.contains(QStringLiteral("follow up")), qPrintable(waiting.text));
+
+        // mark_applied with no date keeps the date the card already has.
+        QVERIFY(!requests.runAction(AiAppTools::MarkApplied, jobId, today).isError);
+        QCOMPARE(onlyCard().campaign.appliedTimestamp.date(), QDate(2026, 10, 2));
 
         QJsonObject moveArguments = jobId;
         moveArguments.insert(QStringLiteral("column"), QStringLiteral("Rejected"));

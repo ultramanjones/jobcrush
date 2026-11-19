@@ -650,6 +650,11 @@ void JobScout::addJobFromFilledForm(const JobPosting &formFields)
     beginHuntForOneLead(jobLead);
 }
 
+bool JobScout::removeFromDiscoveries(qint64 jobPostingId)
+{
+    return jobPostingRepository.markRemovedByUser(jobPostingId);
+}
+
 void JobScout::lookForOtherPlacesToApply(qint64 jobPostingId)
 {
     bool jobPostingWasFound = false;

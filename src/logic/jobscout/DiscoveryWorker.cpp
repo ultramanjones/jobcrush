@@ -185,6 +185,21 @@ void DiscoveryWorker::prepareRows(int requestNumber, const DiscoveryRowRequest &
     const ProspectScorer prospectScorer(scoringProfile);
     const bool searchAreaIsNarrowed = !scoringProfile.preferredWorkLocations.isEmpty();
 
+    // Jobs left off every tab: the ones the user pressed Remove on. A job
+    // that two sites list is one job to the user, so every copy of a removed
+    // job is left off, not only the copy the user removed. The copies are
+    // matched by crossSourceIdentityOf (company plus title).
+    QSet<QString> removedJobIdentities;
+    for (const JobPosting &removedJobPosting :
+         workerJobPostingRepository->loadRemovedJobPostings()) {
+        removedJobIdentities.insert(crossSourceIdentityOf(removedJobPosting));
+    }
+
+    // True when the user removed this job, or another copy of it.
+    const auto wasRemoved = [&removedJobIdentities](const JobPosting &jobPosting) {
+        return removedJobIdentities.contains(crossSourceIdentityOf(jobPosting));
+    };
+
     // Three things need every saved job from every site: the Top Prospects
     // tab, the Outside your area tab, and the count of jobs that the location
     // filter hides. If this request needs any of them, load that list once
@@ -196,7 +211,25 @@ void DiscoveryWorker::prepareRows(int requestNumber, const DiscoveryRowRequest &
         || rowRequest.rowKind == DiscoveryRowRequest::RowKind::TopProspects
         || rowRequest.rowKind == DiscoveryRowRequest::RowKind::OutsideSearchArea;
     if (needsEveryDiscoveredJob) {
-        allDiscoveredJobPostings = workerJobPostingRepository->loadAllDiscoveredJobPostings();
+        // Top Prospects and Outside your area also leave off the jobs already
+        // on the board, because those two tabs are for jobs the user has not
+        // acted on yet. The count of hidden jobs leaves them off too, so the
+        // "Outside your area (N)" label matches that tab. The site tabs and
+        // Manual Add still show board jobs, with "on your board" in place of
+        // the CRUSH button.
+        QSet<QString> boardJobIdentities;
+        for (const JobPosting &boardJobPosting :
+             workerJobPostingRepository->loadJobPostingsOnTheBoard()) {
+            boardJobIdentities.insert(crossSourceIdentityOf(boardJobPosting));
+        }
+        for (const JobPosting &discoveredJobPosting :
+             workerJobPostingRepository->loadAllDiscoveredJobPostings()) {
+            if (!wasRemoved(discoveredJobPosting)
+                    && !boardJobIdentities.contains(
+                           crossSourceIdentityOf(discoveredJobPosting))) {
+                allDiscoveredJobPostings.append(discoveredJobPosting);
+            }
+        }
     }
 
     if (searchAreaIsNarrowed) {
@@ -225,7 +258,8 @@ void DiscoveryWorker::prepareRows(int requestNumber, const DiscoveryRowRequest &
         for (const JobPosting &storedJobPosting :
              workerJobPostingRepository->loadJobPostingsFromSource(
                  rowRequest.sourceStorageName)) {
-            if (!prospectScorer.jobPostingIsInsideSearchArea(storedJobPosting)) {
+            if (!prospectScorer.jobPostingIsInsideSearchArea(storedJobPosting)
+                    || wasRemoved(storedJobPosting)) {
                 continue;
             }
             preparedRows.scoredJobPostings.append(
@@ -238,6 +272,9 @@ void DiscoveryWorker::prepareRows(int requestNumber, const DiscoveryRowRequest &
         // added these jobs by hand, so the app never hides them.
         for (const JobPosting &storedJobPosting :
              workerJobPostingRepository->loadHandAddedJobPostings()) {
+            if (wasRemoved(storedJobPosting)) {
+                continue;
+            }
             preparedRows.scoredJobPostings.append(
                 { storedJobPosting, prospectScorer.scoreJobPosting(storedJobPosting) });
         }

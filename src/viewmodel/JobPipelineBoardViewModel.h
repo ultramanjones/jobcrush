@@ -5,7 +5,10 @@
 #include <QString>
 #include <QVariantList>
 
+#include "../logic/pipelines/BoardColumnOrder.h"
+
 class ActiveJobsFolder;
+class AppPreferences;
 class JobScout;
 class JobPipelines;
 class PostingStillListedChecker;
@@ -46,6 +49,7 @@ public:
                               PostingStillListedChecker &stillListedChecker,
                               ActiveJobsFolder &activeJobsFolder,
                               JobScout &jobScout,
+                              AppPreferences &appPreferences,
                               QObject *parent = nullptr);
 
     int boardRevision() const;
@@ -70,7 +74,8 @@ public:
     // a card belongs in that column.
     Q_INVOKABLE QString hoverLineForStage(const QString &stageName) const;
 
-    // The cards in one column, oldest crush first. Each is a plain object the
+    // The cards in one column, in the order the user picked for that column
+    // with its sort buttons. Each is a plain object the
     // QML delegate reads by name: jobApplicationId, positionTitle,
     // companyName, locationText, salaryText, sourceName, sourceUrl,
     // isRemoteRole, stageName, notesText, targetedText, appliedText,
@@ -81,6 +86,34 @@ public:
     Q_INVOKABLE QVariantList cardsInStage(const QString &stageName) const;
 
     Q_INVOKABLE int countInStage(const QString &stageName) const;
+
+    // --- Sorting a column -------------------------------------------------
+    //
+    // Each column has three sort buttons: date, title and company. The names
+    // the view passes in are "date", "title" and "company".
+
+    // The three sort button names, left to right.
+    Q_INVOKABLE QStringList sortChoiceNames() const;
+
+    // True for the one button whose sort the column is using now.
+    Q_INVOKABLE bool sortChoiceIsInUse(const QString &stageName,
+                                       const QString &sortChoiceName) const;
+
+    // The words on a sort button. A button not in use says what it sorts by:
+    // "Date added", "Title", "Company". The Applied column's date button says
+    // "Date applied". The button in use says which way the column is sorted:
+    // "Newest first", "Title A-Z", "Company Z-A".
+    Q_INVOKABLE QString sortButtonText(const QString &stageName,
+                                       const QString &sortChoiceName) const;
+
+    // The line shown when the mouse rests on a sort button.
+    Q_INVOKABLE QString sortButtonHoverText(const QString &stageName,
+                                            const QString &sortChoiceName) const;
+
+    // The user clicked a sort button. If it is the button in use, then the
+    // order flips. If not, then the column sorts by that button. The choice
+    // is saved, so the column opens the same way next time.
+    Q_INVOKABLE void chooseSortFor(const QString &stageName, const QString &sortChoiceName);
 
     // --- The verbs --------------------------------------------------------
 
@@ -141,10 +174,14 @@ private:
     // card every time the board is drawn. The board is drawn on every drag.
     void workOutWhichJobsCannotBeChecked();
 
+    // The sort order saved for one column, or the default if none is saved.
+    BoardColumnOrder::ColumnOrder columnOrderFor(const QString &stageName) const;
+
     JobPipelines &board;
     PostingStillListedChecker &postingChecker;
     ActiveJobsFolder &activeJobs;
     JobScout &scout;
+    AppPreferences &preferences;
     int boardChangeCounter = 0;
     QString lastActionSentence;
 

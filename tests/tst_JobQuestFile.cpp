@@ -155,6 +155,30 @@ private slots:
             "Company: Acme\nTitle: Qt Dev\nNotes: see\nhttps://example.com/a:b\n"));
         QCOMPARE(result.quest.notesText, QStringLiteral("see\nhttps://example.com/a:b"));
     }
+
+    void appliedOnWithATimeIsReadAsTheDate()
+    {
+        const QDate today(2026, 11, 18);
+        QDate dateRead;
+        QVERIFY(JobQuestFile::readAppliedOn(QStringLiteral("11/18/2026 6:41 PM"), today, dateRead));
+        QCOMPARE(dateRead, QDate(2026, 11, 18));
+        QVERIFY(JobQuestFile::readAppliedOn(QStringLiteral("11/3/2026 at 9:05 am"), today, dateRead));
+        QCOMPARE(dateRead, QDate(2026, 11, 3));
+        QVERIFY(JobQuestFile::readAppliedOn(QStringLiteral("11/2/2026 18:41"), today, dateRead));
+        QCOMPARE(dateRead, QDate(2026, 11, 2));
+    }
+
+    void aStampedTimeIsWrittenAndATypedDateIsNot()
+    {
+        // The board stamped this one when the card moved, so the time is real.
+        QCOMPARE(JobQuestFile::appliedOnTextFor(
+                     QDateTime(QDate(2026, 11, 18), QTime(18, 41, 7))),
+                 QStringLiteral("11/18/2026 6:41 PM"));
+        // A typed date is stored at noon, which is not a real time.
+        QCOMPARE(JobQuestFile::appliedOnTextFor(QDateTime(QDate(2026, 11, 18), QTime(12, 0))),
+                 QStringLiteral("11/18/2026"));
+        QCOMPARE(JobQuestFile::appliedOnTextFor(QDateTime()), QString());
+    }
 };
 
 QTEST_GUILESS_MAIN(JobQuestFileTest)

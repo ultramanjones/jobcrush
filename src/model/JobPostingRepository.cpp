@@ -34,6 +34,8 @@ JobPosting jobPostingFromQueryRow(const QSqlQuery &row)
         row.value(QStringLiteral("postingGoneSinceTimestamp")).toString(), Qt::ISODate);
     jobPosting.userSaysStillOpenTimestamp = QDateTime::fromString(
         row.value(QStringLiteral("userSaysStillOpenTimestamp")).toString(), Qt::ISODate);
+    jobPosting.removedByUserTimestamp = QDateTime::fromString(
+        row.value(QStringLiteral("removedByUserTimestamp")).toString(), Qt::ISODate);
     return jobPosting;
 }
 
@@ -327,6 +329,52 @@ bool JobPostingRepository::markStillOpenByUser(qint64 jobPostingId)
 
     return runQuery(updateQuery, "markStillOpenByUser",
                     QStringLiteral("job posting %1").arg(jobPostingId));
+}
+
+bool JobPostingRepository::markRemovedByUser(qint64 jobPostingId)
+{
+    QSqlQuery updateQuery(jobCrushDatabase.connection());
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE jobPosting SET removedByUserTimestamp = :removedByUserTimestamp "
+        "WHERE jobPostingId = :jobPostingId"));
+    updateQuery.bindValue(QStringLiteral(":removedByUserTimestamp"),
+                          timestampTextOrEmpty(QDateTime::currentDateTime()));
+    updateQuery.bindValue(QStringLiteral(":jobPostingId"), jobPostingId);
+
+    return runQuery(updateQuery, "markRemovedByUser",
+                    QStringLiteral("job posting %1").arg(jobPostingId));
+}
+
+QList<JobPosting> JobPostingRepository::loadRemovedJobPostings()
+{
+    QList<JobPosting> removedJobPostings;
+    QSqlQuery selectQuery(jobCrushDatabase.connection());
+    selectQuery.prepare(QStringLiteral(
+        "SELECT * FROM jobPosting WHERE removedByUserTimestamp <> ''"));
+    if (!runQuery(selectQuery, "loadRemovedJobPostings", QStringLiteral("every removed job"))) {
+        return removedJobPostings;
+    }
+    while (selectQuery.next()) {
+        removedJobPostings.append(jobPostingFromQueryRow(selectQuery));
+    }
+    return removedJobPostings;
+}
+
+QList<JobPosting> JobPostingRepository::loadJobPostingsOnTheBoard()
+{
+    QList<JobPosting> boardJobPostings;
+    QSqlQuery selectQuery(jobCrushDatabase.connection());
+    selectQuery.prepare(QStringLiteral(
+        "SELECT * FROM jobPosting WHERE jobPostingId IN "
+        "  (SELECT jobPostingId FROM jobApplication)"));
+    if (!runQuery(selectQuery, "loadJobPostingsOnTheBoard",
+                  QStringLiteral("every job on the board"))) {
+        return boardJobPostings;
+    }
+    while (selectQuery.next()) {
+        boardJobPostings.append(jobPostingFromQueryRow(selectQuery));
+    }
+    return boardJobPostings;
 }
 
 QList<JobPosting> JobPostingRepository::loadHandAddedJobPostings()

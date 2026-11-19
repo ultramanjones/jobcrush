@@ -43,8 +43,9 @@ struct TargetedJob {
 //  - the joined view of campaign-plus-posting the board is made of,
 //  - the counts each column shows.
 //
-// What does NOT live here: anything about columns, colors, dragging, or
-// order on screen. Those are the view's business.
+// What does NOT live here: anything about columns, colors or dragging.
+// Those are the view's business. The order of the cards inside one column is
+// worked out by BoardColumnOrder, which is also in this folder.
 class JobPipelines : public QObject {
     Q_OBJECT
 public:
@@ -92,6 +93,8 @@ public:
 
     // Puts a job from a job folder on the board, in the column the folder's
     // JobQuest.txt names, with the applied date and notes the file gave.
+    // If the column is Applied, Interview or Offer and appliedTimestamp is
+    // empty, then the card is stamped with the date and time right now.
     //
     // Different from CRUSH on purpose. A packet is only started when the job
     // lands in Crushed. A job that was already sent needs no cover letter, and
@@ -103,6 +106,20 @@ public:
                                    const QDateTime &appliedTimestamp,
                                    const QString &notesText, QString &reasonText);
 
+    // Close from Discoveries. Puts a job in the Closed column, so the board
+    // keeps a record of it: the user looked at it, and it is over.
+    //
+    // If the job is not on the board, a new card is made straight in Closed.
+    // No packet is started, because nothing will be sent. The card has no
+    // applied date. The user can type one on the card.
+    //
+    // If the job is already on the board, its card moves to Closed. Its
+    // applied date and notes stay.
+    //
+    // reasonText says what happened, in words the user can read. Returns
+    // false when nothing changed.
+    bool closeJobPosting(qint64 jobPostingId, QString &reasonText);
+
     // The card for one posting, or 0 when that posting is not on the board.
     qint64 jobApplicationIdForPosting(qint64 jobPostingId) const;
 
@@ -113,9 +130,10 @@ public:
 
     // --- Moving through the stages ----------------------------------------
 
-    // Moves a campaign. Arriving at Applied for the first time stamps the
-    // date; going back does NOT clear it, because the fact that you applied
-    // on the 3rd stays true even if you drag the card somewhere else.
+    // Moves a campaign. Arriving at Applied, Interview or Offer with no
+    // applied date stamps the date and time right now. Going back does NOT
+    // clear it, because the fact that you applied on the 3rd stays true even
+    // if you drag the card somewhere else.
     bool moveToStage(qint64 jobApplicationId, PipelineStage newPipelineStage);
 
     // The user's own running notes on one campaign.

@@ -7,6 +7,7 @@
 #include <QUrlQuery>
 #include <QVariantMap>
 
+#include "../logic/AppPreferences.h"
 #include "../logic/activejobs/ActiveJobsFolder.h"
 #include "../logic/jobscout/AtsBoardIdentity.h"
 #include "../logic/jobscout/JobScout.h"
@@ -103,12 +104,14 @@ JobPipelineBoardViewModel::JobPipelineBoardViewModel(JobPipelines &pipelines,
                                                      PostingStillListedChecker &stillListedChecker,
                                                      ActiveJobsFolder &activeJobsFolder,
                                                      JobScout &jobScout,
+                                                     AppPreferences &appPreferences,
                                                      QObject *parent)
     : QObject(parent)
     , board(pipelines)
     , postingChecker(stillListedChecker)
     , activeJobs(activeJobsFolder)
     , scout(jobScout)
+    , preferences(appPreferences)
 {
     // A card's folder path is part of the card. When a folder is made the
     // cards are served again so the link shows.
@@ -345,12 +348,17 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
 {
     const PipelineStage wantedStage = pipelineStageFromStorageText(stageName);
 
-    QVariantList cards;
+    // The cards in this column, put in the order the user picked for it.
+    QList<TargetedJob> cardsInThisColumn;
     for (const TargetedJob &targetedJob : board.everyTargetedJob()) {
-        if (targetedJob.campaign.pipelineStage != wantedStage) {
-            continue;
+        if (targetedJob.campaign.pipelineStage == wantedStage) {
+            cardsInThisColumn.append(targetedJob);
         }
+    }
+    BoardColumnOrder::sortCards(cardsInThisColumn, columnOrderFor(stageName));
 
+    QVariantList cards;
+    for (const TargetedJob &targetedJob : std::as_const(cardsInThisColumn)) {
         QVariantMap card;
         card.insert(QStringLiteral("jobApplicationId"),
                     QVariant::fromValue(targetedJob.campaign.jobApplicationId));
@@ -435,6 +443,118 @@ QVariantList JobPipelineBoardViewModel::cardsInStage(const QString &stageName) c
         cards.append(card);
     }
     return cards;
+}
+
+BoardColumnOrder::ColumnOrder JobPipelineBoardViewModel::columnOrderFor(
+    const QString &stageName) const
+{
+    return BoardColumnOrder::columnOrderFromStorageText(
+        preferences.boardColumnOrderText(stageName));
+}
+
+QStringList JobPipelineBoardViewModel::sortChoiceNames() const
+{
+    return BoardColumnOrder::sortFieldNames();
+}
+
+bool JobPipelineBoardViewModel::sortChoiceIsInUse(const QString &stageName,
+                                                  const QString &sortChoiceName) const
+{
+    BoardColumnOrder::SortField sortField;
+    if (!BoardColumnOrder::sortFieldFromName(sortChoiceName, sortField)) {
+        return false;
+    }
+    return columnOrderFor(stageName).sortField == sortField;
+}
+
+QString JobPipelineBoardViewModel::sortButtonText(const QString &stageName,
+                                                  const QString &sortChoiceName) const
+{
+    using BoardColumnOrder::SortDirection;
+    using BoardColumnOrder::SortField;
+
+    SortField sortField;
+    if (!BoardColumnOrder::sortFieldFromName(sortChoiceName, sortField)) {
+        return QString();
+    }
+    const BoardColumnOrder::ColumnOrder columnOrder = columnOrderFor(stageName);
+    const bool inUse = columnOrder.sortField == sortField;
+    const bool ascending = columnOrder.sortDirection == SortDirection::Ascending;
+    const bool appliedColumn =
+        pipelineStageFromStorageText(stageName) == PipelineStage::Applied;
+
+    // A button not in use names what it sorts by. The button in use says
+    // which way the column is sorted right now.
+    switch (sortField) {
+    case SortField::Date:
+        if (!inUse) {
+            return appliedColumn ? QStringLiteral("Date applied")
+                                 : QStringLiteral("Date added");
+        }
+        return ascending ? QStringLiteral("Oldest first") : QStringLiteral("Newest first");
+    case SortField::JobTitle:
+        if (!inUse) {
+            return QStringLiteral("Title");
+        }
+        return ascending ? QStringLiteral("Title A-Z") : QStringLiteral("Title Z-A");
+    case SortField::CompanyName:
+        if (!inUse) {
+            return QStringLiteral("Company");
+        }
+        return ascending ? QStringLiteral("Company A-Z") : QStringLiteral("Company Z-A");
+    }
+    return QString();
+}
+
+QString JobPipelineBoardViewModel::sortButtonHoverText(const QString &stageName,
+                                                       const QString &sortChoiceName) const
+{
+    using BoardColumnOrder::SortField;
+
+    SortField sortField;
+    if (!BoardColumnOrder::sortFieldFromName(sortChoiceName, sortField)) {
+        return QString();
+    }
+    const bool inUse = columnOrderFor(stageName).sortField == sortField;
+    const bool appliedColumn =
+        pipelineStageFromStorageText(stageName) == PipelineStage::Applied;
+
+    QString whatItSortsBy;
+    switch (sortField) {
+    case SortField::Date:
+        whatItSortsBy = appliedColumn
+            ? QStringLiteral("Sort by the date you applied.")
+            : QStringLiteral("Sort by the date the job went on the board.");
+        break;
+    case SortField::JobTitle:
+        whatItSortsBy = QStringLiteral("Sort by job title.");
+        break;
+    case SortField::CompanyName:
+        whatItSortsBy = QStringLiteral("Sort by company name.");
+        break;
+    }
+    return inUse ? whatItSortsBy + QStringLiteral(" Click again to flip the order.")
+                 : whatItSortsBy;
+}
+
+void JobPipelineBoardViewModel::chooseSortFor(const QString &stageName,
+                                              const QString &sortChoiceName)
+{
+    BoardColumnOrder::SortField clickedField;
+    if (!BoardColumnOrder::sortFieldFromName(sortChoiceName, clickedField)) {
+        qWarning().noquote() << QStringLiteral(
+            "JobPipelineBoardViewModel::chooseSortFor: \"%1\" is not a sort choice")
+                .arg(sortChoiceName);
+        return;
+    }
+    const BoardColumnOrder::ColumnOrder newOrder =
+        BoardColumnOrder::orderAfterClicking(columnOrderFor(stageName), clickedField);
+    preferences.setBoardColumnOrderText(stageName, BoardColumnOrder::storageTextFor(newOrder));
+
+    // The columns read boardRevision, so raising it makes them ask for their
+    // cards again, now in the new order.
+    ++boardChangeCounter;
+    emit boardChanged();
 }
 
 int JobPipelineBoardViewModel::countInStage(const QString &stageName) const

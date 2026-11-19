@@ -70,6 +70,11 @@ struct JobPosting {
     // The user's word wins over any check Job Crush can make.
     QDateTime userSaysStillOpenTimestamp;
 
+    // When the user pressed Remove on this job in Discoveries. While this is
+    // set, Discoveries never shows the job, or any other copy of the same job
+    // from another site. Invalid means the user never removed it.
+    QDateTime removedByUserTimestamp;
+
     // True when the user brought this job in by hand. The Manual Add tab shows
     // exactly these.
     bool wasAddedByHand() const;

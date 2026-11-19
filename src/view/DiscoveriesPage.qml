@@ -65,11 +65,49 @@ Rectangle {
         highlightFadeTimer.stop()
     }
 
-    // The message about what the last CRUSH press did. A strip at the bottom
-    // of the page shows it. An empty string hides the strip. The page uses a
-    // strip and not a dialog, because the user may press CRUSH many times in
-    // a row. A dialog for each press would get in the way.
+    // The message about what the last CRUSH, Close or Remove press did. A
+    // strip at the bottom of the page shows it. An empty string hides the
+    // strip. The page uses a strip and not a dialog, because the user may
+    // press these buttons many times in a row. A dialog for each press would
+    // get in the way.
     property string crushOutcomeText: ""
+
+    // A small outlined button on a job row, as wide as its own words. Used
+    // for Close and Remove. It fills in with edgeColor while the mouse is on
+    // it.
+    component RowEndButton: Rectangle {
+        id: rowEndButton
+
+        property string labelText: ""
+        property color edgeColor: JobCrushTheme.hairlineBorderColor
+
+        signal pressed
+
+        width: rowEndButtonLabel.implicitWidth + 16
+        height: 24
+        radius: 5
+        color: rowEndButtonMouseArea.containsMouse ? rowEndButton.edgeColor : "transparent"
+        border.width: 1
+        border.color: rowEndButton.edgeColor
+
+        Text {
+            id: rowEndButtonLabel
+            anchors.centerIn: parent
+            text: rowEndButton.labelText
+            textFormat: Text.PlainText
+            color: rowEndButtonMouseArea.containsMouse
+                ? JobCrushTheme.onAccentTextColor : JobCrushTheme.secondaryTextColor
+            font.pixelSize: JobCrushTheme.smallFontSize
+        }
+
+        MouseArea {
+            id: rowEndButtonMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: rowEndButton.pressed()
+        }
+    }
 
     // The row number of the job to outline, or -1 for no outline. The page
     // sets this after it scrolls to the job the user just added.
@@ -719,7 +757,8 @@ Rectangle {
                 anchors.rightMargin: 14
                 anchors.top: parent.top
                 anchors.topMargin: 12
-                width: 84
+                // Wide enough for Close and Remove on the left of CRUSH.
+                width: 84 + 8 + rowEndButtons.width
                 implicitHeight: matchScoreBadge.height + 8 + crushButton.height
             }
 
@@ -928,6 +967,38 @@ Rectangle {
                 }
             }
 
+            // Close and Remove, on the left of CRUSH, on the same line. On the
+            // same line so a row is no taller than before.
+            //
+            // Close puts the job in the Closed column of the board, so the
+            // board keeps a record that the user looked at it, applied, or
+            // was turned down. Remove takes the job out of Discoveries for
+            // good and keeps no record.
+            Row {
+                id: rowEndButtons
+                anchors.right: crushButton.left
+                anchors.rightMargin: 8
+                anchors.verticalCenter: crushButton.verticalCenter
+                spacing: 6
+                z: 2
+
+                RowEndButton {
+                    labelText: "Close"
+                    edgeColor: JobCrushTheme.stageClosedColor
+                    onPressed: discoveriesPage.crushOutcomeText
+                        = discoveriesPage.discoveredJobListViewModel
+                              .closeJobPostingAt(discoveredJobRow.index)
+                }
+
+                RowEndButton {
+                    labelText: "Remove"
+                    edgeColor: JobCrushTheme.pendingColor
+                    onPressed: discoveriesPage.crushOutcomeText
+                        = discoveriesPage.discoveredJobListViewModel
+                              .removeJobPostingAt(discoveredJobRow.index)
+                }
+            }
+
             MouseArea {
                 id: discoveredJobRowMouseArea
                 anchors.fill: parent
@@ -953,7 +1024,7 @@ Rectangle {
     }
 
     // ------------------------------------------------------------------
-    // What the last CRUSH did
+    // What the last CRUSH, Close or Remove did
     // ------------------------------------------------------------------
     Rectangle {
         id: crushOutcomeStrip

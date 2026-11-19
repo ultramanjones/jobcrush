@@ -207,6 +207,16 @@ public:
     // JobScout is the only class the view model calls about found jobs.
     bool searchProfileCanRank() const;
 
+    // Remove from Discoveries. Marks the job so that no tab in Discoveries
+    // shows it again, and no other copy of the same job from another site
+    // either. A sweep that finds it again does not bring it back. The job
+    // stays in the database, and a card for it on the board is not touched.
+    //
+    // This does not send discoveriesChanged. The page takes the row off
+    // itself, so the list does not reload and jump back to the top.
+    // Returns false when the save failed. The repository logs why.
+    bool removeFromDiscoveries(qint64 jobPostingId);
+
 signals:
     // sweepIsRunning() or sweepProgressText() changed.
     void sweepProgressChanged();

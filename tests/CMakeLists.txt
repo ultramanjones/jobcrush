@@ -47,6 +47,12 @@ add_job_crush_test(tst_WorkdayBoardSource
     ${CMAKE_SOURCE_DIR}/src/logic/jobscout/WorkdayBoardSource.cpp
 )
 
+# The order of the cards in one board column: by date, title or company.
+add_job_crush_test(tst_BoardColumnOrder
+    tst_BoardColumnOrder.cpp
+    ${CMAKE_SOURCE_DIR}/src/logic/pipelines/BoardColumnOrder.cpp
+)
+
 # Reading and writing the JobQuest.txt file in each job folder.
 add_job_crush_test(tst_JobQuestFile
     tst_JobQuestFile.cpp

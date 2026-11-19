@@ -26,10 +26,11 @@ struct DiscoveryRowRequest {
     enum class RowKind {
         // Top Prospects tab: every saved job from every site that passes the
         // location filter, highest score first. A job that two sites list
-        // shows once.
+        // shows once. A job already on the board is left off.
         TopProspects,
         // Outside your area tab: every saved job that the location filter
         // hides, highest score first. A job that two sites list shows once.
+        // A job already on the board is left off.
         OutsideSearchArea,
         // One site's tab: the jobs from the site named in sourceStorageName
         // that pass the location filter, newest posting first.
@@ -132,7 +133,9 @@ public:
                                              const QStringList &employersReadInFull,
                                              const QList<JobPosting> &foundJobPostings);
 
-    // Loads and scores the job rows for the tab that rowRequest names.
+    // Loads and scores the job rows for the tab that rowRequest names. A job
+    // the user removed from Discoveries is left off every tab, and so is any
+    // other copy of the same job from another site.
     // scoringProfile is a copy of the user's search profile. When done, it
     // sends rowsPrepared with the same requestNumber. The user can switch
     // tabs before an answer comes back, so the caller ignores any answer
